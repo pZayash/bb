@@ -128,8 +128,8 @@ export const inlineVisRpcContract = defineRpcContract({
           kind: z.literal("html"),
           file: z.string(),
           source: z.enum(["workspace", "thread-storage"]),
-          target: previewTargetSchema,
           content: z.string(),
+          target: previewTargetSchema,
         })
         .strict(),
       z

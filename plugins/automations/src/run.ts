@@ -298,6 +298,10 @@ export async function executeScriptRun(
       serverUrl: args.serverUrl,
       workingDir,
     });
+    // bb-fork(windows): surface a missing bb CLI on the plugin log instead of the run output.
+    if (result.warning !== null && result.warning !== undefined) {
+      bb.log.warn(`Automation ${args.automation.id}: ${result.warning}`);
+    }
     const mapped = mapScriptResultToRun(result);
     closeAutomationRun(db, {
       runId: args.run.id,

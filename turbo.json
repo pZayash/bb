@@ -172,6 +172,10 @@
       ],
       "outputs": ["dist/**"]
     },
+    "@bb/plugin-api-map#topo": {
+      "dependsOn": ["^topo"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/plugins/*/package.json"]
+    },
     "prepare:bundled": {
       "dependsOn": ["topo", "^build"],
       "inputs": ["$TURBO_DEFAULT$", "!dist/**", "!.bundled-runtime/**"],
@@ -605,6 +609,7 @@
       "dependsOn": [
         "//#ensure-native-modules",
         "@get-bb/plugin-sdk#build",
+        "@get-bb/plugin-sdk#build:types",
         "topo"
       ],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/vitest.shared.ts"]
