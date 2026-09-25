@@ -9,9 +9,13 @@ import { renderTemplate } from "@bb/templates";
 import type { LoggedPendingInteractionWorkSessionDeps } from "../../types.js";
 // bb-fork(parent-notify-tail): excerpt helpers keep the tail of a trimmed child report
 import {
+  buildChildThreadBatchOutputSegments,
   buildChildThreadNotificationExcerpt,
   CHILD_THREAD_BATCH_FULL_OUTPUT_GUIDANCE,
+  CHILD_THREAD_EMPTY_OUTPUT_TEXT,
+  childThreadBatchOutputExcerptLimit,
   childThreadFullOutputGuidance,
+  parentSystemSegmentsTextLength,
 } from "./child-thread-notification-excerpt.fork.js";
 import {
   buildParentSystemInputFromTemplateSlot,
@@ -151,7 +155,8 @@ function formatChildThreadCompletionOutputExcerpt(
 ): string {
   const trimmedOutput = output?.trim();
   if (!trimmedOutput) {
-    return "No final output was recorded.";
+    // bb-fork(parent-notify-tail): shared with the batched excerpt fallback
+    return CHILD_THREAD_EMPTY_OUTPUT_TEXT;
   }
   return truncateChildThreadOutput(
     trimmedOutput,
@@ -231,11 +236,13 @@ function buildChildThreadBatchStatusLineSegments(
   const workflowClause = formatChildThreadRunningWorkflowClause(
     line.item.activeWorkflowCount,
   );
+  // bb-fork(parent-notify-tail): a completed row now introduces its excerpt
+  const statusSuffix = line.item.turnStatus === "completed" ? ":" : ".";
   return [
     { kind: "mention", mention: line.mention },
     {
       kind: "text",
-      text: ` ${childThreadTurnStatusLabel(line.item)}${workflowClause}.`,
+      text: ` ${childThreadTurnStatusLabel(line.item)}${workflowClause}${statusSuffix}`,
     },
   ];
 }
@@ -274,6 +281,18 @@ function buildChildThreadTurnStatusBatchSegments(
   args.lines.forEach((line, index) => {
     segments.push({ kind: "text", text: index === 0 ? "\n\n- " : "\n- " });
     segments.push(...buildChildThreadBatchStatusLineSegments({ line }));
+    // bb-fork(parent-notify-tail): completed rows carry a budgeted head+tail excerpt
+    if (line.item.turnStatus === "completed") {
+      segments.push(
+        ...buildChildThreadBatchOutputSegments({
+          limit: childThreadBatchOutputExcerptLimit({
+            usedLength: parentSystemSegmentsTextLength(segments),
+          }),
+          output: line.item.terminalOutput,
+          truncationMarker: CHILD_THREAD_OUTPUT_TRUNCATION_MARKER,
+        }),
+      );
+    }
   });
   if (args.lines.some((line) => line.item.activeWorkflowCount > 0)) {
     segments.push({
@@ -281,7 +300,7 @@ function buildChildThreadTurnStatusBatchSegments(
       text: `\n\n${CHILD_THREAD_BATCH_RUNNING_WORKFLOW_GUIDANCE}`,
     });
   }
-  // bb-fork(parent-notify-tail): batched lines carry status only, so name where the text lives
+  // bb-fork(parent-notify-tail): one bounded line names where trimmed output lives
   segments.push({
     kind: "text",
     text: `\n\n${CHILD_THREAD_BATCH_FULL_OUTPUT_GUIDANCE}`,
