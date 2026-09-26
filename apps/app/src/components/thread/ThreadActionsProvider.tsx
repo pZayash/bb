@@ -79,7 +79,7 @@ interface ThreadActionsProviderProps {
 }
 
 interface ArchiveThreadActionRequest {
-  closeDialog: () => void;
+  closeDialog?: () => void;
   thread: Thread;
 }
 
@@ -91,6 +91,7 @@ interface DeleteThreadActionRequest {
 
 interface ThreadActionContext {
   childThreadCount: number;
+  unarchivedDescendantCount: number;
 }
 
 const ARCHIVE_UNDO_TOAST_DURATION_MS = 10_000;
@@ -215,6 +216,7 @@ export function ThreadActionsProvider({
 
         return {
           childThreadCount: childSummary?.nonDeletedChildCount ?? 0,
+          unarchivedDescendantCount: childSummary?.unarchivedDescendantCount ?? 0,
         };
       } catch (error) {
         if (signal.aborted) return null;
@@ -317,7 +319,7 @@ export function ThreadActionsProvider({
     ({ closeDialog, thread }: ArchiveThreadActionRequest) => {
       archiveThreadAndChildrenMutateAsync({ id: thread.id }).then(
         (response) => {
-          closeDialog();
+          closeDialog?.();
           const viewedThreadId = viewedThreadIdRef.current;
           const archiveDisplacedThread = viewedThreadId === thread.id;
           const closeResult = closePanesForThreads(
@@ -387,7 +389,7 @@ export function ThreadActionsProvider({
           });
         },
         (error: unknown) => {
-          closeDialog();
+          closeDialog?.();
           showMutationErrorToast({
             error,
             fallbackMessage: "Failed to archive thread and children",
@@ -413,12 +415,20 @@ export function ThreadActionsProvider({
       if (threadActionContextAbortRef.current === controller) {
         threadActionContextAbortRef.current = null;
       }
-      openArchiveDialog(buildDialogTargetFromContext({ thread }, context));
+      if (context.unarchivedDescendantCount === 0) {
+        performArchive({ thread });
+        return;
+      }
+      openArchiveDialog({
+        thread,
+        childThreadCount: context.unarchivedDescendantCount,
+      });
     },
     [
       claimThreadActionContextAbortController,
       loadThreadActionContext,
       openArchiveDialog,
+      performArchive,
     ],
   );
 

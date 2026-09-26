@@ -223,6 +223,7 @@ function createThreadListEntry(
 ): ThreadWithPendingInteractionState {
   return {
     ...args.thread,
+    draft: null,
     modelOverride: null,
     reasoningLevelOverride: null,
     storageDeletedAt: null,
@@ -475,6 +476,42 @@ describe("thread runtime display", () => {
       null,
       null,
     ]);
+  });
+
+  it("reports the selected machine before a new thread has an environment", () => {
+    const { db, hostId, hub } = setup();
+    const { project } = createThreadWithEnvironment({ db, hostId });
+    const thread = createThread(db, noopNotifier, {
+      projectId: project.id,
+      environmentId: null,
+      providerId: "codex",
+      status: "pending",
+      startupContext: JSON.stringify({
+        kind: "pending",
+        environmentIntent: {
+          type: "provider",
+          environmentProviderId: "git-worktree",
+          machine: { type: "existing", hostId },
+          inputs: null,
+          selectionResolved: true,
+        },
+        fork: null,
+        startedOnBehalfOf: null,
+        titleProvided: false,
+      }),
+    });
+
+    const [entry] = toThreadListEntryResponses(
+      { db, hub, providerRegistry },
+      {
+        threads: listThreadsWithPendingInteractionState(db, {
+          projectId: project.id,
+        }).filter((row) => row.id === thread.id),
+      },
+    );
+
+    expect(entry?.environmentHostId).toBe(hostId);
+    expect(entry?.environmentId).toBeNull();
   });
 
   it("resolves list entry runtime from daemon registration per host", () => {

@@ -196,7 +196,7 @@ describe("bb CLI injection into a script run", () => {
 });
 
 // bb-fork(windows): Git Bash descendants survive `taskkill /T`, so the runner must
-// still resolve a timed-out run instead of waiting on the pipe they keep open.
+// bb-fork(windows): still resolve a timed-out run instead of waiting on the pipe they keep open.
 describe.runIf(process.platform === "win32")(
   "Windows timeout with a lingering descendant",
   () => {

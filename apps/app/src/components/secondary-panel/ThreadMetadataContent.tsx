@@ -68,6 +68,7 @@ import { useThreads } from "@/hooks/queries/thread-queries";
 import { buildParentSelectorOptions } from "@/views/thread-detail/threadParentSelectorOptions";
 import { getThreadRoutePath } from "@/lib/route-paths";
 import { getThreadDisplayTitle } from "@/lib/thread-title";
+import { ThreadTitle } from "@/components/thread/ThreadTitleMentions";
 import {
   PULL_REQUEST_STATE_DISPLAY,
   getPullRequestAttentionDisplay,
@@ -163,11 +164,14 @@ export function ParentSelectorRow({
                 threadId: parentThreadId,
               })}
               className={cn(
-                "min-w-0 truncate text-foreground no-underline transition-[text-decoration-color] duration-150 hover:underline hover:underline-offset-2",
+                "block min-w-0 text-foreground no-underline transition-[text-decoration-color] duration-150 hover:underline hover:underline-offset-2",
                 COARSE_POINTER_TEXT_SM_CLASS,
               )}
             >
-              {selectedParentOptionLabel ?? "Parent thread"}
+              <ThreadTitle
+                title={selectedParentOptionLabel ?? "Parent thread"}
+                tooltip
+              />
             </Link>
             <Button
               type="button"
@@ -262,10 +266,9 @@ function ForksRow({ thread, projectId }: ForksRowProps) {
         renderItem={(fork) => (
           <Link
             to={getThreadRoutePath({ projectId, threadId: fork.id })}
-            className="block min-w-0 truncate text-xs text-foreground no-underline transition-[text-decoration-color] duration-150 hover:underline hover:underline-offset-2"
-            title={getThreadDisplayTitle(fork)}
+            className="block min-w-0 text-xs text-foreground no-underline transition-[text-decoration-color] duration-150 hover:underline hover:underline-offset-2"
           >
-            {getThreadDisplayTitle(fork)}
+            <ThreadTitle title={getThreadDisplayTitle(fork)} tooltip />
           </Link>
         )}
       />
@@ -311,8 +314,8 @@ export function EnvironmentRow({
   const infoDisplay = getEnvironmentWorkspaceInfoDisplay({
     display,
     providerLookup,
-    environmentName: environment.name,
     hostName: environmentDisplayHost.identity?.name ?? null,
+    locality: environmentDisplayHost.locality,
   });
   const displayHost = environmentHost ?? {
     name:
@@ -320,7 +323,9 @@ export function EnvironmentRow({
     type: "persistent" as const,
     machineProviderId: null,
   };
-  const showCreateThreadButton = isReusableEnvironment(environment);
+  const showCreateThreadButton =
+    environment.hostLifecycle === "active" &&
+    isReusableEnvironment(environment);
   return (
     <DetailRow
       label={
@@ -349,9 +354,11 @@ export function EnvironmentRow({
           <span
             className="inline-flex min-w-0 shrink-0 items-center gap-1.5 text-muted-foreground"
             title={`On ${environmentDisplayHost.identity.name} (${
-              environmentDisplayHost.identity.connected
-                ? "connected"
-                : "offline"
+              environment.hostLifecycle !== "active"
+                ? "unavailable"
+                : environmentDisplayHost.identity.connected
+                  ? "connected"
+                  : "offline"
             })`}
           >
             <span>·</span>
@@ -359,7 +366,8 @@ export function EnvironmentRow({
               host={displayHost}
               machineProvider={machineProvider}
             />
-            {environmentDisplayHost.identity.connected ? null : (
+            {environmentDisplayHost.identity.connected ||
+            environment.hostLifecycle !== "active" ? null : (
               <span>(offline)</span>
             )}
           </span>
@@ -1114,36 +1122,46 @@ export function ThreadMetadataContent(props: ThreadMetadataContentProps) {
         failed={environmentProvisioningFailure}
       />
       <WorkspacePathRow environment={environment} />
-      <BranchRow workspaceStatus={workspaceStatus} />
-      <MergeBaseRow
-        workspaceStatus={workspaceStatus}
-        selectedMergeBaseBranch={selectedMergeBaseBranch}
-        mergeBaseBranchRef={mergeBaseBranchRef}
-        mergeBaseBranchOptions={mergeBaseBranchOptions}
-        mergeBaseRemoteBranchOptions={mergeBaseRemoteBranchOptions}
-        isLoadingMergeBaseBranchOptions={isLoadingMergeBaseBranchOptions}
-        onMergeBaseBranchChange={onMergeBaseBranchChange}
-        onMergeBasePickerOpenChange={onMergeBasePickerOpenChange}
-        onMergeBaseBranchSearchQueryChange={onMergeBaseBranchSearchQueryChange}
-      />
-      <GitStatusRow
-        thread={thread}
-        environment={environment}
-        workspaceStatus={workspaceStatus}
-        workspaceStatusError={workspaceStatusError}
-        workspaceUnavailable={workspaceUnavailable}
-        selectedMergeBaseBranch={selectedMergeBaseBranch}
-      />
+      {environment !== null && environment.hostLifecycle !== "active" ? null : (
+        <>
+          <BranchRow workspaceStatus={workspaceStatus} />
+          <MergeBaseRow
+            workspaceStatus={workspaceStatus}
+            selectedMergeBaseBranch={selectedMergeBaseBranch}
+            mergeBaseBranchRef={mergeBaseBranchRef}
+            mergeBaseBranchOptions={mergeBaseBranchOptions}
+            mergeBaseRemoteBranchOptions={mergeBaseRemoteBranchOptions}
+            isLoadingMergeBaseBranchOptions={isLoadingMergeBaseBranchOptions}
+            onMergeBaseBranchChange={onMergeBaseBranchChange}
+            onMergeBasePickerOpenChange={onMergeBasePickerOpenChange}
+            onMergeBaseBranchSearchQueryChange={
+              onMergeBaseBranchSearchQueryChange
+            }
+          />
+          <GitStatusRow
+            thread={thread}
+            environment={environment}
+            workspaceStatus={workspaceStatus}
+            workspaceStatusError={workspaceStatusError}
+            workspaceUnavailable={workspaceUnavailable}
+            selectedMergeBaseBranch={selectedMergeBaseBranch}
+          />
+        </>
+      )}
       <PullRequestRow pullRequest={pullRequest} />
       <ArchivedRow thread={thread} />
-      <ThreadCommitsRow
-        workspaceStatus={workspaceStatus}
-        onCommitClick={onCommitClick}
-      />
-      <ChangedFilesRow
-        workspaceStatus={workspaceStatus}
-        onChangedFileClick={onChangedFileClick}
-      />
+      {environment !== null && environment.hostLifecycle !== "active" ? null : (
+        <>
+          <ThreadCommitsRow
+            workspaceStatus={workspaceStatus}
+            onCommitClick={onCommitClick}
+          />
+          <ChangedFilesRow
+            workspaceStatus={workspaceStatus}
+            onChangedFileClick={onChangedFileClick}
+          />
+        </>
+      )}
       {storage ? <ThreadStorageRow {...storage} /> : null}
     </ThreadMetadataCard>
   );

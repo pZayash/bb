@@ -1,5 +1,5 @@
 // bb-fork(windows): small always-visible timestamp under each chat message,
-// with the duration of the turn that produced it.
+// bb-fork(windows): with the duration of the turn that produced it.
 import { useContext } from "react";
 import { durationToCompactString } from "@bb/thread-view";
 import { useSecondTick } from "@/hooks/useSecondTick";

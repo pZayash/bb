@@ -52,6 +52,8 @@ export function threadListEntry(
     sectionId: null,
     status: busy ? "active" : "idle",
     parentThreadId: null,
+    // bb-fork(parent-mute): the demo world never mutes parent notifications.
+    parentNotificationsMutedAt: null,
     sourceThreadId: null,
     lifecycleOwnerThreadId: null,
     originKind: null,
@@ -109,8 +111,10 @@ export function threadResponse(
   return {
     ...thread,
     activeBackgroundAgentCount: 0,
+    canRestoreEnvironment: false,
     canSpawnChild: true,
     queuedMessageCount: 0,
+    draft: null,
   };
 }
 

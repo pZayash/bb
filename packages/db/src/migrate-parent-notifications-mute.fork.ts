@@ -1,9 +1,13 @@
-// bb-fork(parent-mute): keep migration 0131 replay-safe for legacy databases
+// bb-fork(parent-mute): keep the fork's muted-at migration replay-safe for legacy databases
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { DbConnection } from "./connection.js";
 
-const MIGRATION_TAG = "0131_cute_praxagora";
+const MIGRATION_TAG = "0133_modern_vermin";
+const LEGACY_MUTED_AT_MIGRATION_WHEN = 1790254777753;
+const ENVIRONMENT_RETENTION_MIGRATION_TAG =
+  "0131_environment_retention_indexes";
 const MUTED_AT_COLUMN = "parent_notifications_muted_at";
 const STAGED_MUTED_AT_COLUMN = "_bb_parent_notifications_muted_at_pending";
 const JOURNAL_PATH = "meta/_journal.json";
@@ -31,7 +35,10 @@ function columnExists(
   return rows.some((row) => (row as { name?: unknown }).name === columnName);
 }
 
-function migrationCreatedAt(migrationsFolder: string): number | null {
+function migrationCreatedAt(
+  migrationsFolder: string,
+  tag: string,
+): number | null {
   const journal: unknown = JSON.parse(
     readFileSync(resolve(migrationsFolder, JOURNAL_PATH), "utf-8"),
   );
@@ -40,7 +47,7 @@ function migrationCreatedAt(migrationsFolder: string): number | null {
     return null;
   }
   const entry = entries.find(
-    (candidate) => (candidate as { tag?: unknown }).tag === MIGRATION_TAG,
+    (candidate) => (candidate as { tag?: unknown }).tag === tag,
   );
   const when = (entry as { when?: unknown } | undefined)?.when;
   return typeof when === "number" ? when : null;
@@ -74,7 +81,7 @@ export function stageExistingParentNotificationsMutedAtColumn(
   ) {
     return false;
   }
-  const createdAt = migrationCreatedAt(migrationsFolder);
+  const createdAt = migrationCreatedAt(migrationsFolder, MIGRATION_TAG);
   if (createdAt === null || readAppliedMigrationCreatedAts(db).has(createdAt)) {
     return false;
   }
@@ -82,6 +89,46 @@ export function stageExistingParentNotificationsMutedAtColumn(
     `ALTER TABLE threads RENAME COLUMN ${MUTED_AT_COLUMN} TO ${STAGED_MUTED_AT_COLUMN}`,
   );
   return true;
+}
+
+export function repairLegacyParentNotificationsMuteMigration(
+  db: DbConnection,
+  migrationsFolder: string,
+): void {
+  if (!tableExists(db, "__drizzle_migrations")) {
+    return;
+  }
+  const appliedCreatedAts = readAppliedMigrationCreatedAts(db);
+  if (!appliedCreatedAts.has(LEGACY_MUTED_AT_MIGRATION_WHEN)) {
+    return;
+  }
+  const environmentRetentionCreatedAt = migrationCreatedAt(
+    migrationsFolder,
+    ENVIRONMENT_RETENTION_MIGRATION_TAG,
+  );
+  if (
+    environmentRetentionCreatedAt === null ||
+    appliedCreatedAts.has(environmentRetentionCreatedAt)
+  ) {
+    return;
+  }
+  const migration = readMigrationFiles({ migrationsFolder }).find(
+    (candidate) => candidate.folderMillis === environmentRetentionCreatedAt,
+  );
+  if (migration === undefined) {
+    return;
+  }
+  const apply = db.$client.transaction(() => {
+    for (const statement of migration.sql) {
+      db.$client.exec(statement);
+    }
+    db.$client
+      .prepare(
+        "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
+      )
+      .run(migration.hash, migration.folderMillis);
+  });
+  apply();
 }
 
 export function restoreStagedParentNotificationsMutedAtColumn(

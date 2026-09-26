@@ -15,6 +15,8 @@ import {
   type Thread,
 } from "@bb/domain";
 import { type ThreadProvisionContext } from "./thread-startup-store.js";
+// bb-fork(windows): accept drive-letter and UNC host paths from providers.
+import { isHostAbsolutePath } from "../environments/environment-path.windows.js";
 import { type ThreadProvisioningDeps } from "./thread-provisioning-environment.js";
 import { buildSuggestedBranchName } from "./thread-create-helpers.js";
 import { toThreadResponseFromThread } from "./thread-runtime-display.js";
@@ -876,7 +878,9 @@ function threadProvisionContextEnvironment(
     return null;
   }
   const environment = getEnvironment(deps.db, environmentId);
-  return environment === null ? null : toEnvironmentResponse(environment);
+  return environment === null
+    ? null
+    : toEnvironmentResponse(deps.db, environment);
 }
 export async function refreshAttachedEnvironmentBranch(
   deps: ThreadProvisioningDeps,
@@ -1149,8 +1153,10 @@ export function prepareProviderEnvironment(
   const changed =
     row !== null &&
     (row.environmentProviderId !== record.provider.id ||
-      JSON.stringify(row.environmentProviderSelection) !==
-        JSON.stringify(selected));
+      row.hostId !== context.host.id ||
+      (row.status !== "ready" &&
+        JSON.stringify(row.environmentProviderSelection) !==
+          JSON.stringify(selected)));
   if (
     row !== null &&
     !changed &&
@@ -1286,7 +1292,7 @@ async function providerPlacement(
     const parsed = z
       .string()
       .min(1)
-      .startsWith("/")
+      .refine((path) => isHostAbsolutePath(path))
       .refine((path) => !path.includes("\0"))
       .nullable()
       .safeParse(invocation.value);

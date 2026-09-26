@@ -1,8 +1,8 @@
 import { posix, win32 } from "node:path";
 
 // bb-fork(windows): the CLI resolves file flags for the daemon host named by the
-// invoking thread, which may use a different path convention than the local one.
-// Pick the resolver from the path itself, then from the cwd the host reported.
+// bb-fork(windows): invoking thread, which may use a different path convention than the local one.
+// bb-fork(windows): Pick the resolver from the path itself, then from the cwd the host reported.
 export function isHostAbsolutePath(value: string): boolean {
   return (
     value.startsWith("/") ||

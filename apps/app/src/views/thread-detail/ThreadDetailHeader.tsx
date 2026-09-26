@@ -30,7 +30,7 @@ import { useAppCommandShortcut } from "@/components/commands/AppCommandProvider"
 import { AppCommandShortcutHint } from "@/components/commands/AppCommandShortcutHint";
 import { useSidebarRename } from "@/components/sidebar/SidebarInlineRename";
 import { useThreadActions } from "@/components/thread/ThreadActionsProvider";
-import { ThreadTitleMentions } from "@/components/thread/ThreadTitleMentions";
+import { ThreadTitle } from "@/components/thread/ThreadTitleMentions";
 import { SecondaryPanelHostLayoutContext } from "@/components/secondary-panel/SecondaryPanelHostLayoutContext";
 import { RIGHT_PANEL_TOGGLE_ICON_NAME } from "@/components/secondary-panel/panelToggleControlState";
 import { CHROME_SUBTLE_ICON_BUTTON_FOREGROUND_CLASS } from "@bb/shared-ui/chrome-style-tokens";
@@ -167,7 +167,7 @@ export function ThreadDetailHeader({
         <p
           className={cn(
             "relative min-w-0 text-sm font-normal transition-colors",
-            isEditing ? "overflow-visible" : "bb-thread-title",
+            isEditing && "overflow-visible",
             isSplitPaneHeader &&
               !isFocused &&
               dimsInactiveSplits &&
@@ -178,7 +178,7 @@ export function ThreadDetailHeader({
           onDoubleClick={handleTitleDoubleClick}
           onPointerDown={beginPaneDrag ? handleTitlePointerDown : undefined}
         >
-          {isEditing ? editor : <ThreadTitleMentions title={threadTitle} />}
+          {isEditing ? editor : <ThreadTitle title={threadTitle} />}
         </p>
       </div>
       {childPillLabel ? (
@@ -245,6 +245,22 @@ export function ThreadDetailHeader({
         className="ml-1 flex items-center gap-0.5"
         data-thread-header-pane-actions=""
       >
+        <PaneMaximizeButton />
+        {onClosePane ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={cn(
+              HEADER_PANE_ACTION_ICON_BUTTON_CLASS,
+              CHROME_SUBTLE_ICON_BUTTON_FOREGROUND_CLASS,
+            )}
+            aria-label="Close pane"
+            onClick={onClosePane}
+          >
+            <Icon name="CloseThreadPane" />
+          </Button>
+        ) : null}
         {showRightPanelToggle ? (
           <span className="inline-flex items-center gap-1.5">
             <AppCommandShortcutHint shortcut={panelShortcut} />
@@ -268,22 +284,6 @@ export function ThreadDetailHeader({
               <Icon name={rightPanelIconName} />
             </Button>
           </span>
-        ) : null}
-        <PaneMaximizeButton />
-        {onClosePane ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className={cn(
-              HEADER_PANE_ACTION_ICON_BUTTON_CLASS,
-              CHROME_SUBTLE_ICON_BUTTON_FOREGROUND_CLASS,
-            )}
-            aria-label="Close pane"
-            onClick={onClosePane}
-          >
-            <Icon name="CloseThreadPane" />
-          </Button>
         ) : null}
         {reservesWindowPanelToggle && !isWindowPanelOpen ? (
           <span aria-hidden className={HEADER_ICON_BUTTON_CLASS} />

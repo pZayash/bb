@@ -211,7 +211,9 @@ const storedAutomationScriptExecutionSchema = z
   .strict()
   .transform((execution) => ({
     ...execution,
-    workingDirectory: execution.workingDirectory ?? { type: "automation-storage" as const },
+    workingDirectory: execution.workingDirectory ?? {
+      type: "automation-storage" as const,
+    },
   }));
 
 const automationScriptExecutionRequestSchema = z

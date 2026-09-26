@@ -374,7 +374,7 @@ describe("startup reconciliation", () => {
 
   function thread(
     threadId: string,
-    status: "idle" | "active" | "starting" | "stopping" | "error",
+    status: "idle" | "pending" | "active" | "starting" | "stopping" | "error",
     extra: { deletedAt?: number | null; archivedAt?: number | null } = {},
   ) {
     return {
@@ -439,6 +439,11 @@ describe("startup reconciliation", () => {
       {
         id: "auto_starting",
         thread: thread("thr_starting", "starting"),
+        status: "running",
+      },
+      {
+        id: "auto_pending",
+        thread: thread("thr_pending", "pending"),
         status: "running",
       },
       {
@@ -2039,7 +2044,7 @@ describe("automation CLI --script-file", () => {
 });
 
 // bb-fork(windows): these cases assert POSIX absolute paths and `/`-joined
-// candidates, while `isAbsolute`/`join` use drive letters and `\` on Windows.
+// bb-fork(windows): candidates, while `isAbsolute`/`join` use drive letters and `\` on Windows.
 describe.skipIf(process.platform === "win32")(
   "bb CLI injection for script runs",
   () => {
@@ -2161,7 +2166,7 @@ describe("script process containment", () => {
 });
 
 // bb-fork(windows): bash here is Git Bash, whose `pwd -P` prints MSYS paths that
-// never match the native paths asserted below; the runs themselves still pass.
+// bb-fork(windows): never match the native paths asserted below; the runs themselves still pass.
 describe.skipIf(process.platform === "win32")("script project context", () => {
   function withoutMissingBbCliWarning(
     output: string | null | undefined,

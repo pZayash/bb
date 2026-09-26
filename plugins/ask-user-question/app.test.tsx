@@ -84,7 +84,7 @@ function getButtonByText(
 
 describe("question interaction adapter", () => {
   it("submits the selected option value", () => {
-    const submit = vi.fn(async () => undefined);
+    const submit = vi.fn(async (_value: unknown) => undefined);
     const slot = render(singleSelect, { submit });
 
     expect(slot.getAllByText("Which database should we use?")).toHaveLength(2);

@@ -10,6 +10,7 @@ import {
 } from "./migration-history.js";
 // bb-fork(parent-mute): keep the parent notification mute migration replay-safe
 import {
+  repairLegacyParentNotificationsMuteMigration,
   restoreStagedParentNotificationsMutedAtColumn,
   stageExistingParentNotificationsMutedAtColumn,
 } from "./migrate-parent-notifications-mute.fork.js";
@@ -1592,6 +1593,8 @@ export function migrate(db: DbConnection, options: MigrateOptions = {}): void {
     // bb-fork(parent-mute): keep the parent notification mute migration replay-safe
     const stagedParentNotificationsMutedAt =
       stageExistingParentNotificationsMutedAtColumn(db, migrationsFolder);
+    // bb-fork(parent-mute): reconcile the fork's legacy 0131 with upstream's renumbered 0131
+    repairLegacyParentNotificationsMuteMigration(db, migrationsFolder);
     try {
       drizzleMigrate(db, { migrationsFolder });
     } finally {

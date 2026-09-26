@@ -50,6 +50,10 @@ import {
 } from "../ui/environment-workspace-display.js";
 import type { SidebarProject } from "../model/use-sidebar-data.js";
 import {
+  resolveSectionName,
+  sectionNameOverridesAtom,
+} from "../model/section-name-overrides.js";
+import {
   ConfirmDeleteDialog,
   ConfirmDeleteDialogContent,
 } from "../ui/ConfirmDeleteDialog.js";
@@ -165,8 +169,7 @@ import {
 import { SectionThreadDndProvider } from "../dnd/SectionThreadDndContext.js";
 import {
   useSidebarThreadDragOverlayModifiers,
-  SIDEBAR_THREAD_DRAG_CHIP_CLASS,
-  SIDEBAR_THREAD_DRAG_CHIP_STYLE,
+  SidebarThreadDragChip,
 } from "../dnd/sidebarThreadDragChip.js";
 
 const SIDEBAR_STICKY_PARENT_DEPTH_CAP = 4;
@@ -247,6 +250,7 @@ interface ChronologicalSectionThreadSectionsProps extends SectionThreadTreeProps
   fullSectionOrder: readonly SidebarSectionId[];
   onTopLevelSectionOrderChange: (order: SidebarSectionId[]) => void;
   pinnedReorderPending: boolean;
+  pinnedRootItems?: readonly ProjectThreadItem[];
   pinnedRootNodes?: readonly ProjectThreadNode[];
   pinnedThreads: readonly SidebarThread[];
   onReorderPinnedThread: (
@@ -928,7 +932,7 @@ function EnvironmentThreadGroupHeader({
           expandLabel={`Expand ${displayName} threads`}
           collapseLabel={`Collapse ${displayName} threads`}
           onToggle={() => onToggleCollapsed(environmentId)}
-          revealOnHover
+          revealOnHover={!isCollapsed}
         />
       </span>
       <span
@@ -943,7 +947,7 @@ function EnvironmentThreadGroupHeader({
             className={cn(
               SIDEBAR_HOVER_ACTIONS_FADE_CLASS,
               COARSE_POINTER_ROW_ACTION_SIZE_CLASS,
-              "pointer-events-none absolute right-0 flex items-center justify-end text-subtle-foreground max-md:pointer-coarse:static max-md:pointer-coarse:shrink-0 max-md:pointer-coarse:justify-center",
+              "pointer-events-none absolute right-0 flex items-center justify-center text-subtle-foreground max-md:pointer-coarse:static max-md:pointer-coarse:shrink-0",
             )}
           >
             <CollapsedThreadStatusGlyph activity={childActivity} />
@@ -1144,6 +1148,59 @@ const EnvironmentThreadGroupRow = memo(function EnvironmentThreadGroupRow({
   );
 });
 
+interface PinnedEnvironmentThreadGroupRowProps {
+  group: EnvironmentThreadGroup;
+  selectedThreadId?: string;
+  collapsedThreadIds: Set<string>;
+  collapsedEnvironmentIds: Set<string>;
+  onProjectSelect?: () => void;
+  onToggleThreadCollapsed: (threadId: string) => void;
+  onToggleEnvironmentCollapsed: (environmentId: string) => void;
+}
+
+export const PinnedEnvironmentThreadGroupRow = memo(
+  function PinnedEnvironmentThreadGroupRow({
+    group,
+    selectedThreadId,
+    collapsedThreadIds,
+    collapsedEnvironmentIds,
+    onProjectSelect,
+    onToggleThreadCollapsed,
+    onToggleEnvironmentCollapsed,
+  }: PinnedEnvironmentThreadGroupRowProps) {
+    const sectionDnd = useChronologicalSectionThreadDnd();
+    const itemId = getSidebarDndItemId({ kind: "environment", group });
+    const { dragBindings, setNodeRef, style } = useSidebarSortable({
+      id: itemId,
+      disabled: sectionDnd === null,
+      displace: false,
+    });
+    return (
+      <EnvironmentThreadGroupRow
+        projectId={group.nodes[0].thread.projectId}
+        environmentThreadGroup={group}
+        sectionDnd={sectionDnd ?? undefined}
+        dragBindings={dragBindings}
+        sortableRef={setNodeRef}
+        sortableStyle={
+          sectionDnd?.activeItemId === itemId
+            ? { ...style, opacity: 0.35, pointerEvents: "none" }
+            : style
+        }
+        depthOffset={0}
+        selectedThreadId={selectedThreadId}
+        isCollapsed={collapsedEnvironmentIds.has(group.environmentId)}
+        collapsedThreadIds={collapsedThreadIds}
+        collapsedEnvironmentIds={collapsedEnvironmentIds}
+        variant="section"
+        onProjectSelect={onProjectSelect}
+        onToggleThreadCollapsed={onToggleThreadCollapsed}
+        onToggleEnvironmentCollapsed={onToggleEnvironmentCollapsed}
+      />
+    );
+  },
+);
+
 const ThreadTreeItemRow = memo(function ThreadTreeItemRow({
   isEnvGrouped = false,
   projectId,
@@ -1291,18 +1348,7 @@ export function SectionThreadDragOverlay({
 }: {
   thread: SidebarThread;
 }) {
-  return (
-    <div
-      aria-hidden="true"
-      data-sidebar-section-drag-overlay="true"
-      style={SIDEBAR_THREAD_DRAG_CHIP_STYLE}
-      className={SIDEBAR_THREAD_DRAG_CHIP_CLASS}
-    >
-      <span className="min-w-0 flex-1 truncate">
-        {thread.displayTitle}
-      </span>
-    </div>
-  );
+  return <SidebarThreadDragChip title={thread.displayTitle} />;
 }
 
 const SectionTreeItemRow = memo(function SectionTreeItemRow({
@@ -1325,13 +1371,46 @@ const SectionTreeItemRow = memo(function SectionTreeItemRow({
   sortableStyle,
 }: SectionTreeItemRowProps) {
   const sdk = useSdk();
+  const sectionNameOverrides = useAtomValue(sectionNameOverridesAtom);
+  const setSectionNameOverrides = useSetAtom(sectionNameOverridesAtom);
+  const sectionName = resolveSectionName(
+    section.id,
+    section.name,
+    sectionNameOverrides,
+  );
   const rename = useSidebarRename({
     kind: "section",
     id: section.id,
     ownerKey: `section:${section.id}:${variant}:${depthOffset}`,
-    name: section.name,
+    name: sectionName,
     label: "Section name",
-    onSave: (name) => sdk.threadSections.update({ id: section.id, name }),
+    onSave: async (name) => {
+      const previousName =
+        sectionNameOverrides.get(section.id)?.previousName ?? section.name;
+      setSectionNameOverrides((current) =>
+        new Map(current).set(section.id, {
+          previousName,
+          name,
+        }),
+      );
+      try {
+        const result = await sdk.threadSections.update({ id: section.id, name });
+        setSectionNameOverrides((current) =>
+          new Map(current).set(section.id, {
+            previousName,
+            name: result.name ?? name,
+          }),
+        );
+        return result;
+      } catch (error) {
+        setSectionNameOverrides((current) => {
+          const next = new Map(current);
+          next.delete(section.id);
+          return next;
+        });
+        throw error;
+      }
+    },
   });
   const [isTopLevelActionsOpen, setIsTopLevelActionsOpen] = useState(false);
   const collapsedSections = useAtomValue(sidebarCollapsedThreadSectionsAtom);
@@ -1417,7 +1496,7 @@ const SectionTreeItemRow = memo(function SectionTreeItemRow({
   if (variant === "section" && depthOffset === 0) {
     const topLevelActions = (
       <SidebarHeaderControls
-        label={`${section.name} section`}
+        label={`${sectionName} section`}
         sectionId={buildSidebarEntitySectionId("section", section.id)}
         onNewThread={
           onCreateThreadInSection
@@ -1437,7 +1516,7 @@ const SectionTreeItemRow = memo(function SectionTreeItemRow({
     );
     return (
       <TopLevelSidebarSection
-        label={section.name}
+        label={sectionName}
         labelEditor={rename.editor}
         onRename={rename.startEditing}
         sectionId={section.id}
@@ -1473,8 +1552,8 @@ const SectionTreeItemRow = memo(function SectionTreeItemRow({
         <SectionDropTargetOverlay state={threadDropState} />
       ) : null}
       <SidebarSectionRow
-        name={section.name}
-        label={section.name}
+        name={sectionName}
+        label={sectionName}
         sectionId={buildSidebarEntitySectionId("section", section.id)}
         labelEditor={rename.editor}
         onRename={rename.startEditing}
@@ -1981,6 +2060,7 @@ export const ChronologicalSectionThreadSections = memo(
     fullSectionOrder,
     onTopLevelSectionOrderChange,
     pinnedReorderPending,
+    pinnedRootItems,
     pinnedRootNodes = EMPTY_PINNED_ROOT_NODES,
     pinnedThreads,
     onReorderPinnedThread,
@@ -2018,19 +2098,16 @@ export const ChronologicalSectionThreadSections = memo(
         groupThreadsByEnvironment,
       ],
     );
-    const persistedSectionItems = rootItems.filter(
-      (item) => item.kind === "section",
-    );
     const sectionDnd = useSectionThreadDnd({
       containerId: CHRONOLOGICAL_CONTAINER_ID,
-      enabled:
-        topLevelSectionOrder.length > 1 || persistedSectionItems.length > 0,
+      enabled: true,
       rootItems,
       topLevelSectionOrder,
       onTopLevelSectionOrderChange,
       onExpandThread: expandThread,
       pinnedReorderPending,
       pinnedThreads,
+      pinnedRootItems,
       pinnedRootNodes,
       onReorderPinnedThread,
     });

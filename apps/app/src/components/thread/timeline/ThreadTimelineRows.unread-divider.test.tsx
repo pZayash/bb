@@ -43,11 +43,12 @@ function renderTopLevelSequence(
   if (list === null) {
     throw new Error("Timeline did not render a top-level row list");
   }
-  return [...list.children].map((child) =>
-    child.querySelector('[data-testid="thread-unread-divider"]') === null
-      ? // bb-fork(windows): message timestamps are chrome, not row content.
-        withoutMessageTimestamps(child)
-      : DIVIDER,
+  return [...list.querySelectorAll(":scope > [data-timeline-items] > *")].map(
+    (child) =>
+      child.querySelector('[data-testid="thread-unread-divider"]') === null
+        ? // bb-fork(windows): message timestamps are chrome, not row content.
+          withoutMessageTimestamps(child)
+        : DIVIDER,
   );
 }
 

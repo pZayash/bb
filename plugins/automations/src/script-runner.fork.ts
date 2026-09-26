@@ -1,7 +1,7 @@
 // bb-fork(windows): a Windows host has no execute bit, Node's execFile refuses a .cmd
-// launcher (EINVAL on Node 22) and cannot run an extensionless shim at all, so the bb CLI
-// is probed through cmd.exe, through Node for an extensionless bundle, and a POSIX-shell
-// shim is reported as unusable instead of "found".
+// bb-fork(windows): launcher (EINVAL on Node 22) and cannot run an extensionless shim at all, so the bb CLI
+// bb-fork(windows): is probed through cmd.exe, through Node for an extensionless bundle, and a POSIX-shell
+// bb-fork(windows): shim is reported as unusable instead of "found".
 import { spawn, type ChildProcess } from "node:child_process";
 import { closeSync, openSync, readSync } from "node:fs";
 import { extname } from "node:path";
@@ -46,10 +46,10 @@ export function isPosixShellEntry(entry: string): boolean {
   );
 }
 
-/**
- * Adds the launchers a Windows host actually runs next to every candidate: a packaged
- * host ships `bb.cmd` beside its `bb` bundle, and a dev checkout ships one beside its
- * POSIX shim. Off Windows the candidates are returned unchanged.
+/** bb-fork(windows): adds the launchers a Windows host actually runs next
+ * to every candidate: a packaged host ships `bb.cmd` beside its `bb` bundle,
+ * and a dev checkout ships one beside its POSIX shim. Off Windows the
+ * candidates are returned unchanged.
  */
 export function bbProbeCandidates(
   candidates: readonly string[],
@@ -63,7 +63,8 @@ export function bbProbeCandidates(
   return expanded;
 }
 
-/** `null` means the candidate is not runnable on this platform. */
+/** bb-fork(windows): `null` means the candidate is not runnable on this
+ * platform. */
 export function bbProbeCommand(
   candidate: string,
   args: readonly string[],
@@ -84,11 +85,11 @@ export function bbProbeCommand(
   return { command: candidate, args: [...args], shell: false };
 }
 
-/**
- * bb-fork(windows): a Windows host has no POSIX process groups, so killing the shell
- * leaves script descendants alive and holding the child's stdout pipe open, which keeps
- * `close` from firing. Kill the whole tree with `taskkill /T /F` instead. Returns false
- * off Windows so the caller keeps the existing POSIX process-group path.
+/** bb-fork(windows): a Windows host has no POSIX process groups, so killing
+ * the shell leaves script descendants alive and holding the child's stdout
+ * pipe open, which keeps `close` from firing. Kill the whole tree with
+ * `taskkill /T /F` instead. Returns false off Windows so the caller keeps the
+ * existing POSIX process-group path.
  */
 export function killWindowsProcessTree(
   child: ChildProcess,
@@ -112,10 +113,10 @@ export function killWindowsProcessTree(
   return true;
 }
 
-/**
- * bb-fork(windows): `taskkill /T` cannot reap a Git Bash descendant, which keeps the
- * child's stdout/stderr pipes open and stops `close` from firing, so a timed-out run never
- * resolves. Release the pipes once buffered output has had a moment to arrive.
+/** bb-fork(windows): `taskkill /T` cannot reap a Git Bash descendant, which
+ * keeps the child's stdout/stderr pipes open and stops `close` from firing, so
+ * a timed-out run never resolves. Release the pipes once buffered output has
+ * had a moment to arrive.
  */
 export function releaseWindowsStdioAfterKill(
   child: ChildProcess,

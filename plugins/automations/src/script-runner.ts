@@ -34,7 +34,7 @@ async function commandWorks(
   args: string[],
 ): Promise<boolean> {
   // bb-fork(windows): a .cmd launcher needs shell, an extensionless bundle needs Node,
-  // and a POSIX-shell shim is not runnable here at all.
+  // bb-fork(windows): and a POSIX-shell shim is not runnable here at all.
   const probe = bbProbeCommand(candidate, args);
   if (probe === null) return false;
   try {
@@ -144,9 +144,9 @@ export interface ScriptRunResult {
   output: string;
   stderr: string;
   timedOut: boolean;
-  /**
-   * bb-fork(windows): plugin diagnostics about the run itself (today: bb is not on the
-   * script's PATH). Kept out of `output` so it cannot turn a silent tick into a run.
+  /** bb-fork(windows): plugin diagnostics about the run itself (today: bb is
+   * not on the script's PATH). Kept out of `output` so it cannot turn a silent
+   * tick into a run.
    */
   warning?: string | null;
 }

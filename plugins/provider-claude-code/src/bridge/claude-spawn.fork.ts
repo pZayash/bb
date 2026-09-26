@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 
 // bb-fork(windows): Windows cannot execute a Node `.mjs`/`.js`/extensionless
-// entry through its shebang the way POSIX does, so run it through Node.
+// bb-fork(windows): entry through its shebang the way POSIX does, so run it through Node.
 export function resolveClaudeSpawn(
   command: string,
   args: readonly string[],

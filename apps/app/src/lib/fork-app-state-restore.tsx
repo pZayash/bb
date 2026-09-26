@@ -72,8 +72,9 @@ function isKnownThread(value: ForkLastThread): boolean {
   if (project === undefined) return false;
   if (project.threads.some((thread) => thread.id === value.threadId))
     return true;
-  // The cached bootstrap is bounded per project, so a miss on a full page may
-  // still exist on the server; keep it rather than silently forgetting.
+  // bb-fork(windows): the cached bootstrap is bounded per project, so a miss
+  // bb-fork(windows): on a full page may still exist on the server; keep it
+  // bb-fork(windows): rather than silently forgetting.
   return project.threads.length >= MAX_CACHED_SIDEBAR_THREADS_PER_PROJECT;
 }
 

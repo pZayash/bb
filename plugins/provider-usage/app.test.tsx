@@ -11,6 +11,7 @@ import {
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -32,6 +33,7 @@ function threadOnMachine(
     originKind: null,
     originPluginId: null,
     providerId: "codex",
+    model: null,
     status: "idle",
     runtimeStatus: "idle",
     queuedWork: "none",
@@ -272,6 +274,9 @@ describe("provider usage footer disclosure", () => {
     expect(slot.getByRole("heading", { name: "Codex" })).toBeTruthy();
     expect(slot.getByText("codex@example.com")).toBeTruthy();
     expect(slot.getByText("97%")).toBeTruthy();
+    expect(localStorage.getItem("bb.test-plugin.selected-machine.v1")).toBe(
+      "host-m5",
+    );
 
     fireEvent.pointerDown(machinePicker, { button: 0 });
     fireEvent.click(slot.getByRole("menuitemradio", { name: "M4" }));

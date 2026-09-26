@@ -418,6 +418,7 @@ export function ActiveSidebarModeSections({
 
 interface GroupedModePinnedProps {
   pinnedReorderPending: boolean;
+  pinnedRootItems: readonly ProjectThreadItem[];
   pinnedRootNodes: readonly ProjectThreadNode[];
   pinnedThreads: readonly SidebarThread[];
   onReorderPinnedThread: NonNullable<
@@ -492,6 +493,7 @@ function useGroupedModeThreadDnd({
     groups: true,
     pinnedReorderPending: pinned.pinnedReorderPending,
     pinnedThreads: pinned.pinnedThreads,
+    pinnedRootItems: pinned.pinnedRootItems,
     pinnedRootNodes: pinned.pinnedRootNodes,
     onReorderPinnedThread: pinned.onReorderPinnedThread,
   });
@@ -538,6 +540,7 @@ function ProjectModeSections({
   onToggleEnvironmentCollapsed,
   onToggleThreadCollapsed,
   pinnedReorderPending,
+  pinnedRootItems,
   pinnedRootNodes,
   pinnedSection,
   pinnedThreads,
@@ -587,14 +590,16 @@ function ProjectModeSections({
   }, [effectivePinnedThreadIds, threads]);
   const projectRows = useMemo<ProjectListRowModel[]>(
     () =>
-      projects.map((project) => ({
-        project,
-        threadListState: getProjectThreadListState({
-          status,
-          threads: threadsByProject.get(project.id),
-        }),
-        isActive: false,
-      })),
+      projects
+        .filter((project) => !project.isPersonal)
+        .map((project) => ({
+          project,
+          threadListState: getProjectThreadListState({
+            status,
+            threads: threadsByProject.get(project.id),
+          }),
+          isActive: false,
+        })),
     [projects, status, threadsByProject],
   );
   const projectSectionIds = useMemo(
@@ -681,6 +686,7 @@ function ProjectModeSections({
     onOrderChange,
     pinned: {
       pinnedReorderPending,
+      pinnedRootItems,
       pinnedRootNodes,
       pinnedThreads,
       onReorderPinnedThread,
@@ -850,6 +856,7 @@ interface SectionModeSectionsProps extends BuiltInSectionRenderState {
   onToggleThreadCollapsed: ToggleCollapsedId;
   pinnedSection: BuiltInSidebarSectionOptions;
   pinnedReorderPending: boolean;
+  pinnedRootItems: readonly ProjectThreadItem[];
   pinnedRootNodes: readonly ProjectThreadNode[];
   pinnedThreads: readonly SidebarThread[];
   onReorderPinnedThread: NonNullable<
@@ -878,6 +885,7 @@ function SectionModeSections({
   onToggleThreadCollapsed,
   pinnedSection,
   pinnedReorderPending,
+  pinnedRootItems,
   pinnedRootNodes,
   pinnedThreads,
   onReorderPinnedThread,
@@ -926,6 +934,7 @@ function SectionModeSections({
       topLevelSectionOrder={order}
       onTopLevelSectionOrderChange={onOrderChange}
       pinnedReorderPending={pinnedReorderPending}
+      pinnedRootItems={pinnedRootItems}
       pinnedRootNodes={pinnedRootNodes}
       pinnedThreads={pinnedThreads}
       onReorderPinnedThread={onReorderPinnedThread}
@@ -958,6 +967,7 @@ interface MachineModeSectionsProps
       onRename: () => void;
       onCloseAutoFocus: (event: Event) => void;
     },
+    hostId?: string,
   ) => ReactNode;
   isSectionDisplayOptionsOpen: (sectionId: SidebarSectionId) => boolean;
   selectedThreadId?: string;
@@ -993,10 +1003,15 @@ function MachineSidebarSection({
       disabled={props.disabled || rename.isEditing}
       labelEditor={rename.editor}
       onRename={rename.startEditing}
-      actions={renderActions(props.id, props.label, {
-        onRename: rename.startEditingFromMenu,
-        onCloseAutoFocus: rename.onCloseAutoFocus,
-      })}
+      actions={renderActions(
+        props.id,
+        props.label,
+        {
+          onRename: rename.startEditingFromMenu,
+          onCloseAutoFocus: rename.onCloseAutoFocus,
+        },
+        hostId,
+      )}
     />
   );
 }
@@ -1015,6 +1030,7 @@ export function MachineModeSections({
   onToggleEnvironmentCollapsed,
   onToggleThreadCollapsed,
   pinnedReorderPending,
+  pinnedRootItems,
   pinnedRootNodes,
   pinnedSection,
   pinnedThreads,
@@ -1154,6 +1170,7 @@ export function MachineModeSections({
     onOrderChange,
     pinned: {
       pinnedReorderPending,
+      pinnedRootItems,
       pinnedRootNodes,
       pinnedThreads,
       onReorderPinnedThread,
@@ -1277,7 +1294,12 @@ export function MachineModeSections({
                 id={sectionId}
                 label={section.label}
                 disabled={reorderDisabled}
-                actions={renderSectionDisplayOptions(sectionId, section.label)}
+                actions={renderSectionDisplayOptions(
+                  sectionId,
+                  section.label,
+                  undefined,
+                  hostsById.has(section.key) ? section.key : undefined,
+                )}
                 actionsOpen={isSectionDisplayOptionsOpen(sectionId)}
                 actionsMobileAlways
                 collapsedActivity={section.activity}
@@ -1367,11 +1389,12 @@ function ProjectListComponent({
     [sdk],
   );
   const openRootComposeForProject = useCallback(
-    (projectId: string | null, sectionId?: string) => {
+    (projectId: string | null, sectionId?: string, hostId?: string) => {
       onProjectSelect?.();
       sidebarActions.openNewThread({
         ...(projectId !== null ? { projectId } : {}),
         ...(sectionId ? { sectionId } : {}),
+        ...(hostId ? { hostId } : {}),
         focusPrompt: true,
       });
     },
@@ -1388,9 +1411,9 @@ function ProjectListComponent({
   }, [openRootComposeForProject, personalProjectId]);
   const handleCreateThreadInSection = useCallback(
     (sectionId: string) => {
-      openRootComposeForProject(personalProjectId, sectionId);
+      openRootComposeForProject(null, sectionId);
     },
-    [openRootComposeForProject, personalProjectId],
+    [openRootComposeForProject],
   );
   const [isSectionCreateDialogOpen, setIsSectionCreateDialogOpen] =
     useState(false);
@@ -1514,13 +1537,18 @@ function ProjectListComponent({
       onRename: () => void;
       onCloseAutoFocus: (event: Event) => void;
     },
+    hostId?: string,
   ) => {
     const menuId = `displayOptions:${sectionId}` as const;
     return (
       <SidebarHeaderControls
         label={label}
         sectionId={sectionId}
-        onNewThread={handleCreateProjectlessThread}
+        onNewThread={
+          hostId
+            ? () => openRootComposeForProject(personalProjectId, undefined, hostId)
+            : handleCreateProjectlessThread
+        }
         open={openSidebarMenu === menuId}
         onOpenChange={(open) => setSidebarMenuOpen(menuId, open)}
         onCloseAutoFocus={renameActions?.onCloseAutoFocus}
@@ -1536,6 +1564,9 @@ function ProjectListComponent({
   const isSectionDisplayOptionsOpen = (sectionId: SidebarSectionId) =>
     openSidebarMenu === `displayOptions:${sectionId}`;
   const organizationMode = useAtomValue(sidebarOrganizationModeAtom);
+  const groupThreadsByEnvironment = useAtomValue(
+    sidebarGroupThreadsByEnvironmentAtom,
+  );
   const [chronologicalSort, setChronologicalSort] = useAtom(
     sidebarChronologicalSortAtom,
   );
@@ -1587,8 +1618,13 @@ function ProjectListComponent({
     }
   }, [chronologicalSort, setChronologicalSort]);
   const pinnedSidebarState = useMemo(
-    () => buildPinnedSidebarState({ draftThreadIds, threads }),
-    [draftThreadIds, threads],
+    () =>
+      buildPinnedSidebarState({
+        draftThreadIds,
+        groupEnvironmentThreads: groupThreadsByEnvironment,
+        threads,
+      }),
+    [draftThreadIds, groupThreadsByEnvironment, threads],
   );
   const pinnedRootThreads = useMemo(
     () => pinnedSidebarState.rootNodes.map((node) => node.thread),
@@ -1627,6 +1663,7 @@ function ProjectListComponent({
 
   const pinnedSectionContent = (
     <PinnedThreadTree
+      rootItems={pinnedSidebarState.rootItems}
       rootNodes={pinnedSidebarState.rootNodes}
       selectedThreadId={selectedThreadId}
       collapsedThreadIds={collapsedThreadIds}
@@ -1712,6 +1749,7 @@ function ProjectListComponent({
               showPinnedSection={hasPinnedSection}
               pinnedSection={pinnedSection}
               pinnedReorderPending={isPinnedReorderPending}
+              pinnedRootItems={pinnedSidebarState.rootItems}
               pinnedRootNodes={pinnedSidebarState.rootNodes}
               pinnedThreads={pinnedRootThreads}
               onReorderPinnedThread={handleReorderPinnedRoot}
@@ -1741,6 +1779,7 @@ function ProjectListComponent({
               sections={sections}
               pinnedSection={pinnedSection}
               pinnedReorderPending={isPinnedReorderPending}
+              pinnedRootItems={pinnedSidebarState.rootItems}
               pinnedRootNodes={pinnedSidebarState.rootNodes}
               pinnedThreads={pinnedRootThreads}
               onReorderPinnedThread={handleReorderPinnedRoot}
@@ -1772,6 +1811,7 @@ function ProjectListComponent({
               showPinnedSection={hasPinnedSection}
               pinnedSection={pinnedSection}
               pinnedReorderPending={isPinnedReorderPending}
+              pinnedRootItems={pinnedSidebarState.rootItems}
               pinnedRootNodes={pinnedSidebarState.rootNodes}
               pinnedThreads={pinnedRootThreads}
               onReorderPinnedThread={handleReorderPinnedRoot}

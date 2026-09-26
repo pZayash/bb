@@ -13,16 +13,19 @@ every window and client sees the same value.
 
 ## Sidebar preferences
 
-The sidebar thread list uses an explicit plugin selection and defaults to the bundled
-Thread list plugin (`thread-list/thread-list`). Existing `__automatic__` and
-`__builtin__` selections resolve to that default; other plugin selections are preserved.
-Use `bb settings ui reset sidebar.threadListProvider` to restore the default, or
+The sidebar thread list defaults to `__automatic__`: the first installed thread list
+plugin other than the bundled Thread list plugin (`thread-list/thread-list`), or the
+bundled plugin when there is none. Installing a thread list plugin therefore switches
+to it. Legacy `__builtin__` selections resolve to the bundled plugin; other plugin
+selections are preserved.
+Use `bb settings ui reset sidebar.threadListProvider` to restore Automatic, or
 `bb settings ui set sidebar.threadListProvider <plugin-id>/<slot-id>` to select
 another plugin. The SDK exposes the same setting through `uiPreferences`.
 
 The sidebar navigation works the same way: `sidebar.navigationProvider` defaults
-to the bundled Navigation plugin (`navigation/navigation`), and legacy
-`__automatic__` and `__builtin__` selections resolve to it. Navigation order and
+to `__automatic__`, which prefers an installed navigation plugin over the bundled
+Navigation plugin (`navigation/navigation`), and legacy `__builtin__` selections
+resolve to the bundled plugin. Navigation order and
 visibility stay in `sidebar.pluginPanelOrder` and `sidebar.visiblePluginPanels`,
 so they carry over between navigation plugins.
 
@@ -129,6 +132,16 @@ so they carry over between navigation plugins.
   provider default, and the next send records that default. Select the custom
   model again after you turn streamer mode off.
 
+## Fast service tier
+
+- `allowFastServiceTier` defaults to true. Set it with
+  `bb settings general allowFastServiceTier <true|false|on|off>` or use the
+  switch in Settings → Providers.
+- When disabled, new turns use the default tier even if a request, project
+  default, automation, or queued message selected fast. The app hides Fast mode.
+  Turn it on to choose fast again; project defaults saved while it was off
+  retain the default tier.
+
 ## New branch prefix
 
 - `managedBranchPrefix` defaults to `bb/`. Set it with
@@ -190,6 +203,13 @@ so they carry over between navigation plugins.
 - Enable it with `bb settings experiment changelogPreview true` to show the
   latest release notes on Settings → Updates.
 
+## Legacy plugin loader
+
+- The `legacyJitiPluginLoader` experiment defaults to false.
+- Enable it with `bb settings experiment legacyJitiPluginLoader true`.
+- Running plugins are unchanged when it is toggled. The selected loader applies
+  the next time a plugin is installed, reloaded, enabled, updated, or loaded
+  after a server restart.
 
 ## Sidebar progressive disclosure
 
@@ -202,10 +222,8 @@ so they carry over between navigation plugins.
 
 ## Timeline windowing
 
-- The `timelineWindowing` experiment defaults to false.
-- Enable it with `bb settings experiment timelineWindowing true`.
-- It keeps stable timeline wrappers while mounting only rows near the active
-  main or nested detail scrollport.
+- Long timelines keep stable row wrappers while mounting only rows near the
+  active main or nested detail scrollport.
 
 ## Server move
 
@@ -213,14 +231,6 @@ so they carry over between navigation plugins.
 - Enable it with `bb settings experiment serverMove true`.
 - It shows Move server here in Settings → Machines and lets the server run
   `bb server move`, `bb server export`, and old server copy deletion.
-
-## Multi-machine picker
-
-- The `multiMachinePicker` experiment defaults to false.
-- Enable it with `bb settings experiment multiMachinePicker true`.
-- Projects with at least three machines use a searchable, target-first
-  environment picker. Machine-only pickers add search when they contain more
-  than five machines.
 
 Machine access: `bb settings general machineServerUrl https://bb.example.com`
 sets the server URL reachable by machines. Set `null` to use BB_EXTERNAL_URL.

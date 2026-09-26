@@ -1,3 +1,5 @@
+import { useServerThreadDraftSync } from "./useServerThreadDraftSync";
+import type { MachineRemovalStatus } from "@/lib/machine-removal-display";
 import { ThreadMachineStatus } from "@/components/promptbox/banner/ThreadMachineStatus";
 import {
   useCallback,
@@ -9,7 +11,7 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useImmediateRouteNavigate } from "@/components/ui/app-route-anchor";
 import type { IconName } from "@bb/shared-ui/icon";
 import type { PromptMentionLinkResolver } from "@/components/promptbox/editor/prompt-mention-link";
 import {
@@ -105,7 +107,10 @@ import {
   useClearThreadGoal,
   useStopThread,
 } from "@/hooks/mutations/thread-runtime-mutations";
-import { useUnarchiveThread } from "@/hooks/mutations/thread-state-mutations";
+import {
+  useRestoreThreadEnvironment,
+  useUnarchiveThread,
+} from "@/hooks/mutations/thread-state-mutations";
 import {
   getLatestPendingInteraction,
   useThreadQueuedMessages,
@@ -173,11 +178,12 @@ const EMPTY_QUEUED_MESSAGES: readonly ThreadQueuedMessage[] = [];
 
 interface ThreadDetailPromptAreaProps {
   activeBackgroundAgentCount: number;
+  canRestoreEnvironment: boolean;
   canUseGitUi: boolean;
   contextWindowUsage?: ThreadTimelineResponse["contextWindowUsage"];
   environmentCheckout?: WorkspaceCheckoutDisplay;
   environmentCompactLabel?: string;
-  environmentGoneStatus: "destroyed" | null;
+  environmentGoneStatus: "destroyed" | MachineRemovalStatus | null;
   environmentHostId?: string;
   environmentHost?: MachineLabelHost;
   environmentMachineProvider?: MachineProviderPresentation | null;
@@ -193,6 +199,7 @@ interface ThreadDetailPromptAreaProps {
   pendingInteractions: readonly PendingInteraction[];
   pendingInteractionsInitialLoading: boolean;
   queuedMessageCount: number;
+  serverDraft: PromptInput[] | null;
   onChangedFileClick: (selection: WorkspaceChangedFileSelection) => void;
   projectId: string;
   resolveMentionLink: PromptMentionLinkResolver;
@@ -386,6 +393,7 @@ async function runWhileFollowUpShortcutSending(
 
 export function ThreadDetailPromptArea({
   activeBackgroundAgentCount,
+  canRestoreEnvironment,
   canUseGitUi,
   contextWindowUsage,
   environmentCheckout,
@@ -406,6 +414,7 @@ export function ThreadDetailPromptArea({
   pendingInteractions,
   pendingInteractionsInitialLoading,
   queuedMessageCount,
+  serverDraft,
   onChangedFileClick,
   projectId,
   resolveMentionLink,
@@ -428,7 +437,7 @@ export function ThreadDetailPromptArea({
   composerFocusRequestNonce,
   thread,
 }: ThreadDetailPromptAreaProps) {
-  const navigate = useNavigate();
+  const navigate = useImmediateRouteNavigate();
   const defaultExecutionOptionsQuery = useThreadDefaultExecutionOptions(
     thread.id,
     {
@@ -499,6 +508,7 @@ export function ThreadDetailPromptArea({
   const cancelThreadPlan = useCancelThreadPlan();
   const clearThreadGoal = useClearThreadGoal();
   const unarchiveThread = useUnarchiveThread();
+  const restoreThreadEnvironment = useRestoreThreadEnvironment();
   const createThread = useCreateThread();
   const projectName = useProjectDisplayName(
     thread.projectId === PERSONAL_PROJECT_ID ? undefined : thread.projectId,
@@ -520,6 +530,14 @@ export function ThreadDetailPromptArea({
     },
     inlineDraft: inlineEditingQueuedMessage?.draft ?? null,
     inlineSessionRef: inlineDraftSessionRef,
+  });
+  useServerThreadDraftSync({
+    threadId: thread.id,
+    status: thread.status,
+    archived: thread.archivedAt !== null,
+    serverDraft,
+    localDraft: currentPromptDraft,
+    setLocalDraft: promptDraft.setDraft,
   });
   const subscribeInlineQueuedDraft = useComposerHostDraftNotifier(
     inlineEditingQueuedMessage?.draft ?? null,
@@ -1083,14 +1101,16 @@ export function ThreadDetailPromptArea({
     ],
   );
   const hasPromptDraftInput = currentPromptDraftInput.length > 0;
-  const canSubmitModifierShortcut = canSubmitFollowUpShortcut({
-    hasPromptDraftInput,
-    isFollowUpSubmitting,
-    isQueueMutationPending,
-    queuedMessageCount: queuedMessages.length,
-    runtimeDisplayStatus,
-    submitModeKind: submitMode.kind,
-  });
+  const canSubmitModifierShortcut =
+    !shouldHideComposer &&
+    canSubmitFollowUpShortcut({
+      hasPromptDraftInput,
+      isFollowUpSubmitting,
+      isQueueMutationPending,
+      queuedMessageCount: queuedMessages.length,
+      runtimeDisplayStatus,
+      submitModeKind: submitMode.kind,
+    });
   const followUpExecutionSelection = useMemo<FollowUpExecutionSelection>(() => {
     if (!hasConcreteDefaultExecutionOptions) {
       return null;
@@ -1242,6 +1262,7 @@ export function ThreadDetailPromptArea({
       submitOptions: ExperimentalComposerSubmitOptions,
       pluginSubmission: SendMessageRequest["pluginSubmission"],
     ) => {
+      if (shouldHideComposer) throw new Error("This thread is read-only.");
       if (isHandoffSelection) {
         if (effectiveSelectedModel.length === 0) {
           throw new Error("The selected model is still loading.");
@@ -1305,6 +1326,7 @@ export function ThreadDetailPromptArea({
     },
     [
       createHandoffThread,
+      shouldHideComposer,
       effectiveSelectedModel,
       followUpExecutionSelection,
       isDefaultExecutionOptionsLoading,
@@ -1411,6 +1433,12 @@ export function ThreadDetailPromptArea({
   const handleUnarchiveCurrentThread = useCallback(() => {
     unarchiveThread.mutate({ id: thread.id });
   }, [thread.id, unarchiveThread]);
+  const isRestoreCurrentEnvironmentPending =
+    restoreThreadEnvironment.isPending &&
+    restoreThreadEnvironment.variables?.id === thread.id;
+  const handleRestoreCurrentEnvironment = useCallback(() => {
+    restoreThreadEnvironment.mutate({ id: thread.id });
+  }, [restoreThreadEnvironment, thread.id]);
   const bottomAttachmentsConfig = useMemo(
     () => ({
       items: currentPromptDraft.attachments,
@@ -1501,7 +1529,6 @@ export function ThreadDetailPromptArea({
     !isFollowUpSubmitting &&
     !isQueueMutationPending &&
     !sentMessageEdit.isSubmitting &&
-    queuedMessages.length === 0 &&
     activeBackgroundAgentCount === 0 &&
     activeWorkflows.length === 0 &&
     activeBackgroundCommands.length === 0;
@@ -1982,8 +2009,8 @@ export function ThreadDetailPromptArea({
           isExpanded={isBackgroundCommandsExpanded}
           onToggle={() => setIsBackgroundCommandsExpanded((value) => !value)}
         />
-        {activePromptModeCard}
-        {activeGoalCard}
+        {shouldHideComposer ? null : activePromptModeCard}
+        {shouldHideComposer ? null : activeGoalCard}
         <ThreadTodoCard
           pendingTodos={
             thread.archivedAt === null && environmentGoneStatus === null
@@ -2011,7 +2038,15 @@ export function ThreadDetailPromptArea({
           environmentGoneSection={
             environmentGoneStatus === null
               ? null
-              : { status: environmentGoneStatus }
+              : {
+                  status: environmentGoneStatus,
+                  ...(canRestoreEnvironment
+                    ? {
+                        onRestore: handleRestoreCurrentEnvironment,
+                        restorePending: isRestoreCurrentEnvironmentPending,
+                      }
+                    : {}),
+                }
           }
           parentThreadSection={parentThreadSection}
           childThreadsSection={childThreadsSection}
@@ -2079,8 +2114,11 @@ export function ThreadDetailPromptArea({
       handleSetQueuedMessageGroupBoundary,
       handleToggleBannerSection,
       handleUnarchiveCurrentThread,
+      handleRestoreCurrentEnvironment,
+      canRestoreEnvironment,
       environmentGoneStatus,
       isFollowUpSubmitting,
+      isRestoreCurrentEnvironmentPending,
       isUnarchiveCurrentThreadPending,
       isQueueMutationPending,
       queuedMessageEditor,
@@ -2150,6 +2188,7 @@ export function ThreadDetailPromptArea({
       activePromptMode={isHandoffSelection ? null : activePromptMode}
       composer={shouldHideComposer ? null : bottomComposerConfig}
       pluginComposerHost={normalPluginComposerHost}
+      voiceDraft={promptDraft}
       pluginComposerScope={normalPluginComposerHost.scope}
       textEffects={promptTextEffects}
       collapseResetKey={thread.id}

@@ -1,4 +1,5 @@
-import { PluginCardAuthor } from "@/components/plugin/management/PluginCard";
+import { PluginCardAuthorAvatar } from "@/components/plugin/management/PluginCard";
+import { CURATED_PLUGIN_MARKETPLACE_NAME } from "@bb/server-contract";
 import { useSyncExternalStore } from "react";
 import {
   ResourceActionButton,
@@ -36,7 +37,7 @@ import {
 import {
   PluginDetailMetadata,
   PluginDetailMetadataItem,
-  PluginMarketplaceCategoryPill,
+  PluginMarketplaceByline,
   PluginMarketplaceDetailMetadata,
   PluginMarketplaceListingSections,
   PluginMarketplaceOverview,
@@ -65,7 +66,37 @@ import {
   type PluginFrontendDiagnostic,
 } from "@/lib/plugin-frontend";
 import { usePluginSlots } from "@/lib/plugin-slots";
-import { useClipboardCopy } from "@/lib/clipboard";
+import { copyToClipboardWithToast, useClipboardCopy } from "@/lib/clipboard";
+
+function pluginMarketplaceUrl({
+  marketplace,
+  entryId,
+}: {
+  marketplace: string | null;
+  entryId: string | null;
+}): string | null {
+  if (marketplace !== CURATED_PLUGIN_MARKETPLACE_NAME || entryId === null) {
+    return null;
+  }
+  return `https://getbb.app/marketplace/${encodeURIComponent(entryId)}`;
+}
+
+function copyMarketplaceLinkItems(
+  url: string | null,
+): ResourceOverflowMenuItem[] {
+  if (url === null) return [];
+  return [
+    {
+      label: "Copy marketplace link",
+      icon: "Copy",
+      onSelect: () =>
+        void copyToClipboardWithToast(url, {
+          successMessage: "Marketplace link copied",
+          errorMessage: "Failed to copy marketplace link.",
+        }),
+    },
+  ];
+}
 
 export function pluginIsLocalSource(plugin: PluginListItem): boolean {
   return plugin.source.startsWith("path:");
@@ -140,6 +171,12 @@ function PluginLocalSource({
   );
 }
 
+const OFFICIAL_BYLINE_ENTRY = {
+  author: null,
+  marketplace: "bb-official",
+  publisherLabel: "BB Official",
+} as const;
+
 export function CatalogPluginDetail({
   entry,
   onInstall,
@@ -152,14 +189,15 @@ export function CatalogPluginDetail({
   onOpenPlugin: (pluginId: string) => void;
 }) {
   const count = pluginInstallCountPresentation(entry.installs);
+  const overflowItems = copyMarketplaceLinkItems(pluginMarketplaceUrl(entry));
   return (
     <ResourceDetailPage
       maxWidthClassName="max-w-5xl"
       leading={<CatalogEntryIconChip entry={entry} compact />}
       leadingClassName="size-6"
       title={entry.displayName}
-      titleMeta={<PluginMarketplaceCategoryPill entry={entry} />}
-      metadata={<PluginCardAuthor entry={entry} />}
+      metadataLeading={<PluginCardAuthorAvatar entry={entry} />}
+      metadata={<PluginMarketplaceByline entry={entry} />}
       actions={
         <PluginCatalogInstallControl
           displayName={entry.displayName}
@@ -170,6 +208,14 @@ export function CatalogPluginDetail({
           count={count}
           onInstall={() => onInstall(entry)}
         />
+      }
+      overflowMenu={
+        overflowItems.length === 0 ? undefined : (
+          <ResourceOverflowMenu
+            label={`${entry.displayName} actions`}
+            items={overflowItems}
+          />
+        )
       }
     >
       <ResourceDetailStack>
@@ -331,7 +377,14 @@ export function PluginDetail({
     settingsSections.some((section) => section.pluginId === plugin.id);
 
   const pluginName = plugin.name ?? plugin.id;
+  const marketplaceUrl = pluginMarketplaceUrl(
+    catalogEntry ?? {
+      marketplace: plugin.catalogMarketplaceName,
+      entryId: plugin.catalogEntryId,
+    },
+  );
   const overflowItems: ResourceOverflowMenuItem[] = [
+    ...copyMarketplaceLinkItems(marketplaceUrl),
     ...(canEditSource
       ? [
           {
@@ -354,29 +407,26 @@ export function PluginDetail({
       onSelect: () => onDelete(plugin),
     },
   ];
+  const bylineEntry =
+    catalogEntry ??
+    (plugin.provenance === "builtin" ||
+    plugin.catalogMarketplaceName === "bb-official"
+      ? OFFICIAL_BYLINE_ENTRY
+      : undefined);
   return (
     <ResourceDetailPage
       maxWidthClassName="max-w-5xl"
       leading={<PluginLogo plugin={plugin} className="size-4" />}
       title={pluginName}
-      titleMeta={
-        catalogEntry === undefined ? null : (
-          <PluginMarketplaceCategoryPill entry={catalogEntry} />
+      metadataLeading={
+        bylineEntry === undefined ? undefined : (
+          <PluginCardAuthorAvatar entry={bylineEntry} />
         )
       }
       metadata={
-        catalogEntry !== undefined ? (
-          <PluginCardAuthor entry={catalogEntry} />
-        ) : plugin.provenance === "builtin" ||
-          plugin.catalogMarketplaceName === "bb-official" ? (
-          <PluginCardAuthor
-            entry={{
-              author: null,
-              marketplace: "bb-official",
-              publisherLabel: "BB Official",
-            }}
-          />
-        ) : undefined
+        bylineEntry === undefined ? undefined : (
+          <PluginMarketplaceByline entry={bylineEntry} />
+        )
       }
       actions={
         hasConfiguration ? (
@@ -411,7 +461,7 @@ export function PluginDetail({
     >
       <ResourceDetailStack>
         {catalogEntry === undefined ? (
-          <section data-resource-detail-section="overview">
+          <section className="max-w-prose" data-resource-detail-section="overview">
             <PluginOverviewLead
               description={
                 plugin.description ?? "This plugin does not describe itself."

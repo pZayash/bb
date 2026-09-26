@@ -270,8 +270,9 @@ after a short movement and the menu closes as it starts.
 
 bb ships its own rows as the bundled Navigation plugin, which uses only this
 API; read `plugins/navigation/app/Navigation.tsx` for a complete provider.
-Users pick one provider under Settings → Appearance → Navigation; it defaults
-to Navigation (`navigation/navigation`), and there is no Automatic choice. While
+Users pick one provider under Settings → Appearance → Navigation. The default,
+Automatic, uses the first installed navigation plugin other than the bundled
+Navigation (`navigation/navigation`), or Navigation when there is none. While
 plugins load, bb shows skeleton rows at the height your component last had
 (nothing if it rendered nothing). If the picked provider is disabled or
 removed, bb uses Navigation until the user picks again; if it crashes, a
@@ -419,13 +420,13 @@ actions.openNewThread({ projectId, environmentId }); // reuse an environment
 actions.setPinned(id, true);
 actions.setRead(id, false);
 actions.rename(id, "New title"); // silent; for inline editing
-actions.archive(id); // opens bb's archive confirmation; cascades to children
+actions.archive(id); // archives immediately, or confirms first if there are children
 actions.requestDelete(id); // opens bb's delete confirmation
 ```
 
-Cascading actions deliberately route through the host's own flow, so there is
-no silent `delete` or `archive`: both reach child threads, and only bb can show
-the confirmation that counts them.
+Cascading actions route through the host's own flow. Archiving a thread with
+children opens bb's confirmation, which counts them; archiving a thread without
+children takes effect immediately. Deletion opens bb's confirmation.
 
 Unit-test a list with `renderSlot(...)` from `@get-bb/plugin-sdk/testing/app`:
 seed rows with the `sidebarThreads` option (plus `sidebarDraftThreadIds`,

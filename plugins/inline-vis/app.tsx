@@ -1,13 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Button } from "@bb/shared-ui/button";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@bb/shared-ui/dropdown-menu";
-import { Icon } from "@bb/shared-ui/icon";
-import { Skeleton } from "@bb/shared-ui/skeleton";
+} from "@/components/ui/dropdown-menu";
+import { Icon } from "@/components/ui/icon";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
   definePluginApp,
@@ -152,7 +152,9 @@ async function requestExport(input: {
   });
   if (!response.ok) {
     const raw = await response.text().catch(() => "");
-    throw new Error(raw.replace(/\s+/g, " ").trim() || `Export failed (${response.status})`);
+    throw new Error(
+      raw.replace(/\s+/g, " ").trim() || `Export failed (${response.status})`,
+    );
   }
   return response.blob();
 }
@@ -331,9 +333,7 @@ function InlineVisExportMenu({
         >
           Save {kind === "markdown" ? "Markdown" : "HTML"}
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={exportWord}>
-          Word (.docx)
-        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={exportWord}>Word (.docx)</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => exportDocument("print")}>
           Печать
         </DropdownMenuItem>

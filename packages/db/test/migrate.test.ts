@@ -741,6 +741,7 @@ function rewindEnvironmentProvisioningMigration(db: DbConnection): void {
   db.$client.exec("DROP TRIGGER IF EXISTS threads_lifecycle_owner_insert");
   db.$client.exec("DROP TRIGGER IF EXISTS threads_lifecycle_owner_immutable");
   db.$client.exec("DROP INDEX IF EXISTS threads_lifecycle_owner_idx");
+  db.$client.exec("DROP INDEX IF EXISTS environments_provider_lifecycle_idx");
   if (
     db.$client
       .prepare<[], TableInfoRow>("PRAGMA table_info(threads)")
@@ -781,7 +782,17 @@ function rewindEnvironmentProvisioningMigration(db: DbConnection): void {
     );
 }
 
+function dropThreadDraftColumn(db: DbConnection): void {
+  const columns = db.$client
+    .prepare<[], TableInfoRow>("PRAGMA table_info(threads)")
+    .all();
+  if (columns.some((column) => column.name === "draft")) {
+    db.$client.prepare("ALTER TABLE threads DROP COLUMN draft").run();
+  }
+}
+
 function dropQueuedMessageAttemptColumns(db: DbConnection): void {
+  dropThreadDraftColumn(db);
   const columns = db.$client
     .prepare<[], TableInfoRow>("PRAGMA table_info(queued_thread_messages)")
     .all();
@@ -1993,6 +2004,7 @@ describe("migrate", () => {
         defaultMachineAccess: null,
         machineGitCredentialsEnabled: true,
         streamerMode: false,
+        allowFastServiceTier: true,
         telemetryEnabled: true,
         managedBranchPrefix: "bb/",
       });

@@ -140,7 +140,7 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   // bb-fork(windows): pick the path API from the root's own convention; a POSIX
-  // remote root must not be joined with `\` just because the host is Windows.
+  // bb-fork(windows): remote root must not be joined with `\` just because the host is Windows.
   function pathApiFor(value: string): typeof path.posix {
     return /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("\\\\")
       ? path.win32

@@ -300,6 +300,7 @@ function CollapsibleMessageText({
           <span>{body.text}</span>
         ) : (
           <MarkdownPreview
+            allowHtml
             content={
               collapsedPreview?.wasCapped === true
                 ? closeUnterminatedMarkdownCodeSpan(body.text)
@@ -602,6 +603,7 @@ function AssistantConversationMessage({
     >
       <SelectableMessageProse onSelect={onSelectProse}>
         <MarkdownPreview
+          allowHtml
           className={
             streamingSplit === null
               ? undefined
@@ -617,6 +619,7 @@ function AssistantConversationMessage({
         />
         {streamingSplit === null ? null : (
           <MarkdownPreview
+            allowHtml
             className={STREAMING_TAIL_MARKDOWN_CLASS_NAME}
             content={liveMarkdown}
             sourcePrefix={streamingSplit.settled}

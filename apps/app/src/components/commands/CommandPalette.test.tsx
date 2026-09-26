@@ -12,7 +12,6 @@ import {
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { createStore, Provider } from "jotai";
 import { paletteThreadLifecyclesAtom } from "@/lib/command-palette/palette-preferences";
-import { sidebarThreadLifecyclesAtom } from "@/components/sidebar/sidebarCollapsedAtoms";
 import { splitLayoutAtom } from "@/lib/split-layout/atoms";
 import { MAX_PANES, type SplitLayout } from "@/lib/split-layout";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -1090,7 +1089,6 @@ describe("CommandPalette", () => {
     expect(input.getAttribute("aria-activedescendant")).toBe(
       selectedOption()?.id,
     );
-    expect(store.get(sidebarThreadLifecyclesAtom)).toEqual(["active"]);
   });
 
   it("operates the lifecycle filter with the keyboard without selecting a result", async () => {
@@ -1230,7 +1228,7 @@ describe("CommandPalette", () => {
     const match = rows[0].querySelector("mark");
     expectText(match, "Matching");
     expectClasses(match, "bg-[var(--sidebar-search-match)]", "text-foreground");
-    expectClasses(match?.parentElement, "text-foreground");
+    expectClasses(match?.closest(".bb-thread-title"), "text-foreground");
     expect(
       within(rows[1]).getByRole("img", { name: "Unread thread succeeded" }),
     ).toBeTruthy();

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "b1681bf3-57a1-4730-937f-cf8ba3acf4af",
+  "id": "5a2c6d7f-ecbd-404b-baee-91c38a401c76",
   "prevId": "ebb56de4-68e4-433f-bf12-f847fb00a1d8",
   "tables": {
     "app_settings": {
@@ -846,7 +846,8 @@
           "columns": [
             "owner_thread_id"
           ],
-          "isUnique": true
+          "isUnique": true,
+          "where": "\"environments\".\"owner_thread_id\" IS NOT NULL"
         },
         "environments_claim_idx": {
           "name": "environments_claim_idx",
@@ -877,6 +878,14 @@
             "environment_provider_instance_key"
           ],
           "isUnique": false
+        },
+        "environments_provider_lifecycle_idx": {
+          "name": "environments_provider_lifecycle_idx",
+          "columns": [
+            "environment_provider_id"
+          ],
+          "isUnique": false,
+          "where": "\"environments\".\"status\" <> 'destroyed' OR \"environments\".\"teardown_status\" IS NOT 'removed'"
         }
       },
       "foreignKeys": {
@@ -4665,13 +4674,6 @@
         "parent_thread_id": {
           "name": "parent_thread_id",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "parent_notifications_muted_at": {
-          "name": "parent_notifications_muted_at",
-          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

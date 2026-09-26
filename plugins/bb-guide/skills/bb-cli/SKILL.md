@@ -96,17 +96,28 @@ BB_HOST_DAEMON_PORT only for an intentional non-default target.
 - Use `bb machine enroll` for a private core-prepared bundle. Local lifecycle is
   handled by `install-machine.sh --start|--stop|--uninstall --host-id <id>`;
   see references/thread-creation.md for ownership checks.
-- Move the bb server to another machine with
-  `bb server move --to <machine> --check`, then the same command without
-  `--check`; it stops all running work. `bb server export --out <file>` backs
+- Moving the bb server to another machine is experimental (the `serverMove`
+  experiment). Never move a server, abandon a move, or unlock an old copy
+  without the user's explicit confirmation in this conversation: run
+  `bb server move --to <machine> --check`, show them the checklist, and run
+  the same command without `--check` only after they confirm. A move stops
+  all running work. `bb server export --out <file>` backs
   up a running server. `bb server import`, `unlock`, `allow-connect`, and
   `delete-old-copy` act on this computer's data directory without calling a
   server. An imported server keeps its connect tunnel off until
-  `bb server allow-connect`.
+  `bb server allow-connect`. On the computer a server moved away from,
+  `bb server install-machine-service` installs the persistent, self-updating
+  machine service (needs Node.js 22.19+ on the PATH).
 - Use `bb machine suspend|resume <id-or-name>` only for providers that expose
   suspend and resume. Resume waits for pending suspension and is a no-op
   when already active. Use `bb machine retry-cleanup <id-or-name>` to retry a
   failed provider teardown immediately.
+- Use `bb machine reconnect <id-or-name>` when a disconnected machine's
+  server access or host key is rejected but its BB host ID must remain.
+  Run the printed short-lived command on that machine as is; it reuses the
+  machine's recorded data directory, refreshes access, and re-enrolls under
+  the same host ID. Connected machines are refused, and
+  `--json` returns without waiting.
 - `bb environment providers` lists Project checkout, Worktree, then other
   installed providers by display name. With `--project <id> --machine <id>`
   it also prints that machine's availability (`available`, `setup-required`,
@@ -146,7 +157,7 @@ bb skill list --environment "$BB_ENVIRONMENT_ID" --json
 Confirm the command result and any affected thread, environment, plugin, or
 remote service. Report the stable ID or URL that the user needs next.
 
-`bb environment show <id>` reports core-owned lifecycle, retirement deadline and teardown attempts. Archive/delete of the last live thread starts the provider grace; unarchive cancels pending retirement. Teardown errors remain visible and retry automatically. `bb environment delete <id>` requests cleanup immediately, including under a never-retire policy; destroyed is recorded after cleanup completes. Removal waits for live or stopping runtimes. Project source deletion remains available during project deletion, including removal of the last source, so providers can finish cleanup.
+`bb environment show <id>` reports core-owned lifecycle, retirement deadline and teardown attempts. Archive/delete of the last live thread starts the provider grace; unarchive cancels pending retirement. Once the grace passes and the workspace is destroyed, sends to the thread fail until `bb thread restore-environment <id>` asks the environment provider to restore it and reattaches it to an unarchived thread, without starting a turn; providers decide what restoring means (a worktree returns on the branch it held), some cannot restore, and uncommitted changes in the removed workspace are gone. Teardown errors remain visible and retry automatically. `bb environment delete <id>` requests cleanup immediately, including under a never-retire policy; destroyed is recorded after cleanup completes. Removal waits for live or stopping runtimes. Project source deletion remains available during project deletion, including removal of the last source, so providers can finish cleanup.
 
 ## Plugin configuration
 

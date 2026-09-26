@@ -579,6 +579,7 @@ export const GeneratedConversationMessage = memo(
             <div ref={setCollapsedPreviewTextRef} className="min-w-0 truncate">
               {collapsedPreviewSource.parseAsMarkdown ? (
                 <MarkdownPreview
+                  allowHtml
                   content={collapsedPreviewMarkdown}
                   imagePolicy={
                     suppressGeneratedAgentImages ? "alt-text" : "render"
@@ -619,6 +620,7 @@ export const GeneratedConversationMessage = memo(
           <div className="pl-2 text-sm leading-relaxed text-foreground">
             {messageText ? (
               <MarkdownPreview
+                allowHtml
                 content={messageText}
                 imagePolicy={
                   suppressGeneratedAgentImages ? "alt-text" : "render"

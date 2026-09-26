@@ -1,11 +1,13 @@
-// bb-fork(windows): test-environment adjustments for hosts whose OS defaults and
-// I/O speeds differ from the en-US CI machines the suites were written on.
+// bb-fork(windows): test-environment adjustments for hosts whose OS defaults
+// bb-fork(windows): and I/O speeds differ from the en-US CI machines the
+// bb-fork(windows): suites were written on.
 export {};
 
-// Pin the default locale to en-US so assertions that hard-code English number
-// and date formatting stay stable. `LANG`/`LC_ALL` do not change Node's Intl
-// default on Windows, and the global Intl.NumberFormat binding does not affect
-// `toLocaleString`, so both entry points are patched.
+// bb-fork(windows): pin the default locale to en-US so assertions that
+// bb-fork(windows): hard-code English number and date formatting stay stable.
+// bb-fork(windows): `LANG`/`LC_ALL` do not change Node's Intl default on
+// bb-fork(windows): Windows, and the global Intl.NumberFormat binding does not
+// bb-fork(windows): affect `toLocaleString`, so both entry points are patched.
 const TEST_LOCALE = "en-US";
 
 const NativeNumberFormat = Intl.NumberFormat;
@@ -65,9 +67,9 @@ Date.prototype.toLocaleTimeString = function (
   );
 };
 
-// Native Windows transform/import startup is slower than CI, so the 1s
-// testing-library default is too tight for lazily imported code views and
-// tree models.
+// bb-fork(windows): native Windows transform/import startup is slower than
+// bb-fork(windows): CI, so the 1s testing-library default is too tight for
+// bb-fork(windows): lazily imported code views and tree models.
 if (typeof window !== "undefined") {
   const { configure } = await import("@testing-library/react");
   configure({ asyncUtilTimeout: 5_000 });

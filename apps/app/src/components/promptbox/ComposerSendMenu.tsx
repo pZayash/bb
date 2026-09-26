@@ -38,12 +38,9 @@ export function ComposerSendMenu({
     includePluginContributions ? (view?.scope.kind ?? null) : null,
   ).filter(
     ({ pluginId, customizationId, item }) =>
-      (pluginId === "drafts" &&
-        customizationId === "drafts" &&
-        item.id === "drafts") ||
-      (pluginId === "scheduled-send" &&
-        customizationId === "send-later" &&
-        item.id === "send-later"),
+      pluginId === "scheduled-send" &&
+      customizationId === "send-later" &&
+      item.id === "send-later",
   );
   const [open, setOpen] = useState(false);
 
@@ -102,13 +99,11 @@ export function ComposerSendMenu({
       className={cn(
         "group/send ml-1 inline-flex items-center rounded-md [&_[data-promptbox-submit-action]]:ml-0",
         CONTROL_HOVER_TRANSITION,
-        hasInput && [
-          "bg-foreground text-background [&_[data-promptbox-submit-action]]:rounded-r-none",
-          "[&_button]:!bg-transparent [&_button]:!text-inherit [&_button]:!opacity-100",
-          canSubmit
-            ? "[&_button:hover]:!bg-background/15 [&_button[data-state=open]]:!bg-background/15"
-            : "opacity-50",
-        ],
+        "bg-foreground text-background [&_button]:!bg-transparent [&_button]:!text-inherit [&_button]:!opacity-100",
+        hasInput && "[&_[data-promptbox-submit-action]]:rounded-r-none",
+        canSubmit
+          ? "[&_button:hover]:!bg-background/15 [&_button[data-state=open]]:!bg-background/15"
+          : "opacity-50",
       )}
     >
       {children}

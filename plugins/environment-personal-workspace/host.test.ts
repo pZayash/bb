@@ -43,7 +43,7 @@ afterEach(async () => {
 
 describe("personal workspace host entry", () => {
   // bb-fork(windows): `experimental_killProcessesWithCwdUnder` is POSIX-only, so
-  // a Windows child keeps the directory locked and `rm` fails with EBUSY.
+  // bb-fork(windows): a Windows child keeps the directory locked and `rm` fails with EBUSY.
   it.skipIf(process.platform === "win32")(
     "kills processes still running inside a workspace before removing it",
     async () => {

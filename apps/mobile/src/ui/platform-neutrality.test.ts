@@ -9,7 +9,7 @@ const SRC_ROOT = join(MOBILE_ROOT, "src");
 const APP_ROOT = join(MOBILE_ROOT, "app");
 
 // bb-fork(windows): `relative` separates with `\` on Windows, while the scan and
-// its assertions compare POSIX-style paths.
+// bb-fork(windows): its assertions compare POSIX-style paths.
 function relativePosix(file: string): string {
   return relative(MOBILE_ROOT, file).replaceAll("\\", "/");
 }

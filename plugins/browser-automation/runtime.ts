@@ -60,7 +60,7 @@ export function runtimeEnvironment(home: string): NodeJS.ProcessEnv {
   }
   env.DEV_BROWSER_HOME = home;
   // bb-fork(windows): keep the browser host's home convention; a POSIX remote
-  // home must not become `\tmp\...`.
+  // bb-fork(windows): home must not become `\tmp\...`.
   const homeApi =
     /^[A-Za-z]:[\\/]/u.test(home) || home.startsWith("\\\\") ? win32 : posix;
   env.DEV_BROWSER_SOCKET = homeApi.join(home, "daemon.sock");

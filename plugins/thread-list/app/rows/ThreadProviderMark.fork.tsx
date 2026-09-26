@@ -63,7 +63,9 @@ export function ThreadProviderMark({
     <Tooltip>
       <TooltipTrigger asChild>
         <span
-          data-sidebar-thread-provider=""
+          data-sidebar-thread-provider={provider.id}
+          role="img"
+          aria-label={provider.displayName}
           className="relative z-10 flex shrink-0 pointer-events-auto items-center text-subtle-foreground"
           onClick={handleClick}
         >

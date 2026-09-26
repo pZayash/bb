@@ -1,4 +1,5 @@
 import { usePendingAttachmentUploads } from "./usePendingAttachmentUploads";
+import { useLeaveWithDraftHandoff } from "./useLeaveWithDraftHandoff";
 import { useInitialPromptDraft } from "./mentions/initial-prompt-draft";
 import { ProviderRequirementBanner } from "./banner/ProviderRequirementBanner";
 import { Button } from "@bb/shared-ui/button";
@@ -114,6 +115,7 @@ import { sdk } from "@/lib/sdk";
 import {
   buildReuseThreadOptions,
   resolveHostEnvironmentProvider,
+  resolveNewThreadHostEnvironmentProvider,
   resolveRootComposeEffectiveEnvironmentValue,
   type SeededReuseEnvironment,
 } from "@/views/root-compose-environment-selection";
@@ -183,7 +185,6 @@ interface NewThreadComposerPromptOptions {
   id?: string;
   placeholder?: string;
   autoFocus?: boolean;
-  allowSoftKeyboardAutoFocus?: boolean;
   banner?: ReactNode;
   header?: ReactNode;
   blockedReason?: string;
@@ -220,6 +221,8 @@ export interface NewThreadComposerState {
   textEffects: NewThreadPromptBoxProps["textEffects"];
   isSubmitting: boolean;
   seedEnvironmentSelectionValue: (value: string) => void;
+  hostSelectionReady: boolean;
+  selectHostForNewEnvironment: (hostId: string) => void;
   setEnvironmentSelectionValue: (
     value: string,
     providerHostId?: string | null,
@@ -258,6 +261,10 @@ export interface NewThreadComposerProps {
   resetKey?: string | number | null;
   preferReadyProviderWhenUnset?: boolean;
   onSubmit: (request: NewThreadComposerSubmission) => void | Promise<void>;
+  onLeaveWithDraft?: (
+    request: NewThreadRequest,
+    draft: PromptDraftState,
+  ) => void;
   focusRequest?: number;
   children: (state: NewThreadComposerState) => ReactNode;
 }
@@ -458,6 +465,7 @@ export function NewThreadComposer({
   resetKey,
   preferReadyProviderWhenUnset = false,
   onSubmit,
+  onLeaveWithDraft,
   focusRequest,
   children,
 }: NewThreadComposerProps) {
@@ -673,7 +681,11 @@ export function NewThreadComposer({
         threads: [],
       },
     ];
-  }, [seededReuseEnvironmentRow, threadDerivedReuseOptions, worktreeHostNameById]);
+  }, [
+    seededReuseEnvironmentRow,
+    threadDerivedReuseOptions,
+    worktreeHostNameById,
+  ]);
   const { value: storedMachineId, setValue: setStoredMachineId } =
     usePromptBoxMachinePreference(projectId);
   const [activeSeedSignature, setActiveSeedSignature] = useState(seedSignature);
@@ -1021,6 +1033,27 @@ export function NewThreadComposer({
       selectedEnvironmentProvider,
     ],
   );
+  const selectHostForNewEnvironment = useCallback(
+    (hostId: string) => {
+      if (!knownHostIds.has(hostId)) return;
+      const currentProviderId =
+        parsedEnvironment?.type === "provider"
+          ? parsedEnvironment.environmentProviderId
+          : null;
+      const provider = resolveNewThreadHostEnvironmentProvider({
+        currentProviderId,
+        providers: environmentProvidersByHostId.get(hostId) ?? [],
+      });
+      if (provider === null) return;
+      changeEnvironment(encodeProviderValue(provider.id), hostId);
+    },
+    [
+      changeEnvironment,
+      environmentProvidersByHostId,
+      knownHostIds,
+      parsedEnvironment,
+    ],
+  );
   const selectedMachineProvider =
     providerMachine?.type === "new"
       ? machineProviders?.find(
@@ -1345,7 +1378,13 @@ export function NewThreadComposer({
         setIsUploading(pendingUploadCountRef.current > 0);
       }
     },
-    [projectId, promptDraft, uploadPromptAttachment, startUploads, finishUploads],
+    [
+      projectId,
+      promptDraft,
+      uploadPromptAttachment,
+      startUploads,
+      finishUploads,
+    ],
   );
   const changeProject = useCallback(
     async (nextProjectId: string | null): Promise<ProjectChangeOutcome> => {
@@ -1548,37 +1587,21 @@ export function NewThreadComposer({
     selectedThreadModel,
     submissionEnvironmentUnavailable: submissionEnvironment === null,
   });
-  const submitDraft = useCallback(
-    async (
-      blockedReason: string | null,
-      submitOptions: ExperimentalComposerSubmitOptions | null,
-      pluginSubmission?: NewThreadComposerSubmission["pluginSubmission"],
-    ) => {
-      const submittedDraft = promptDraft.getCurrent();
-      const input = promptDraftToInput(submittedDraft);
+  const buildNewThreadRequest = useCallback(
+    (input: NewThreadRequest["input"]): NewThreadRequest | null => {
       if (
-        blockedReason !== null ||
-        submitDisabledReason !== null ||
-        input.length === 0 ||
-        isSubmittingRef.current ||
         projectDefaultsUnavailable ||
         submissionEnvironment === null ||
         !selectedProviderId ||
         !selectedThreadModel
       ) {
-        throw new Error(
-          blockedReason ??
-            submitDisabledReason ??
-            (input.length === 0
-              ? "Type a message first."
-              : "This composer is not ready to submit yet."),
-        );
+        return null;
       }
       const sources: CreateExecutionInputSources = {
         ...executionInputSources,
         ...seededExecutionInputSources,
       };
-      const request: NewThreadComposerSubmission = {
+      return {
         projectId,
         providerId: selectedProviderId,
         model: selectedThreadModel,
@@ -1591,6 +1614,55 @@ export function NewThreadComposer({
         ),
         environment: submissionEnvironment,
         input,
+      };
+    },
+    [
+      executionInputSources,
+      permissionMode,
+      projectDefaultsUnavailable,
+      projectId,
+      reasoningLevel,
+      seededExecutionInputSources,
+      submissionEnvironment,
+      selectedProviderId,
+      selectedThreadModel,
+      serviceTier,
+      supportsServiceTier,
+    ],
+  );
+  useLeaveWithDraftHandoff({
+    buildRequest: buildNewThreadRequest,
+    getDraft: promptDraft.getCurrent,
+    isSubmittingRef,
+    onLeaveWithDraft,
+  });
+
+  const submitDraft = useCallback(
+    async (
+      blockedReason: string | null,
+      submitOptions: ExperimentalComposerSubmitOptions | null,
+      pluginSubmission?: NewThreadComposerSubmission["pluginSubmission"],
+    ) => {
+      const submittedDraft = promptDraft.getCurrent();
+      const input = promptDraftToInput(submittedDraft);
+      const baseRequest =
+        blockedReason !== null ||
+        submitDisabledReason !== null ||
+        input.length === 0 ||
+        isSubmittingRef.current
+          ? null
+          : buildNewThreadRequest(input);
+      if (baseRequest === null) {
+        throw new Error(
+          blockedReason ??
+            submitDisabledReason ??
+            (input.length === 0
+              ? "Type a message first."
+              : "This composer is not ready to submit yet."),
+        );
+      }
+      const request: NewThreadComposerSubmission = {
+        ...baseRequest,
         ...(submitOptions?.sendAt === undefined
           ? {}
           : { sendAt: submitOptions.sendAt }),
@@ -1615,21 +1687,13 @@ export function NewThreadComposer({
       }
     },
     [
+      buildNewThreadRequest,
       clearReuseEnvironment,
-      executionInputSources,
       onSubmit,
-      permissionMode,
-      projectDefaultsUnavailable,
-      projectId,
       promptDraft,
-      reasoningLevel,
-      seededExecutionInputSources,
+      setAttachmentError,
+      setIsSubmitting,
       submitDisabledReason,
-      submissionEnvironment,
-      selectedProviderId,
-      selectedThreadModel,
-      serviceTier,
-      supportsServiceTier,
     ],
   );
 
@@ -1835,7 +1899,6 @@ export function NewThreadComposer({
           placeholder={options.placeholder}
           mentionMenuPlacement={options.mentionMenuPlacement}
           autoFocus={options.autoFocus}
-          allowSoftKeyboardAutoFocus={options.allowSoftKeyboardAutoFocus}
           pluginComposerHost={options.pluginComposerHost ?? pluginComposerHost}
           textEffects={options.textEffects ?? textEffects}
           history={{
@@ -2091,6 +2154,12 @@ export function NewThreadComposer({
         textEffects,
         isSubmitting,
         seedEnvironmentSelectionValue: setCreationEnvironmentSelectionValue,
+        hostSelectionReady:
+          sidebarNavigationSettled &&
+          !hostsQuery.isPending &&
+          registeredEnvironmentProviders !== undefined &&
+          projectEnvironmentProviders !== undefined,
+        selectHostForNewEnvironment,
         setEnvironmentSelectionValue: changeEnvironment,
         setProviderModelReasoning,
         setPermissionMode,
