@@ -61,6 +61,15 @@
 This repository is a fork of `get-bb/bb` that adds native Windows support. Keep
 the fork delta small and merges cheap with these rules.
 
+### Push to the fork only
+
+- `origin` is our fork (`pZayash/bb`); `upstream` is `get-bb/bb`. Push commits
+  and branches to `origin` only.
+- Never push a branch to `upstream`, and never open, reopen, or comment on a
+  pull request in `get-bb/bb`. Only a human decides whether work goes upstream.
+- If a pull request in `get-bb/bb` was opened by mistake, close it; GitHub
+  cannot delete pull requests. Leave the fork branch in place.
+
 ### Keep fork code in fork-owned files
 
 - Put new behavior in new files (`*.windows.ts`, `*-windows.ts`, `*.fork.ts`,
