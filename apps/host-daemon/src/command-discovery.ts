@@ -11,6 +11,7 @@ import type {
   SkillRootKind,
 } from "@bb/host-daemon-contract";
 import { isPathWithinDirectory } from "@bb/process-utils";
+import { forkCanFollowSkillSymlink } from "./skill-symlink-policy.fork.js";
 
 export const SKILL_FILE_NAME = "SKILL.md";
 const MARKDOWN_FILE_EXTENSION = ".md";
@@ -69,12 +70,20 @@ interface SkillDirectoryCheckArgs {
   root: CommandScanDirectoryRoot;
 }
 
+interface MatchedFile {
+  filePath: string;
+  linked: boolean;
+}
+
 interface WalkMarkdownTreeArgs {
   budget: ScanBudget;
   currentPath: string;
   depth: number;
-  matchedFiles: string[];
+  followNested: boolean;
+  linked: boolean;
+  matchedFiles: MatchedFile[];
   matches: (entry: Dirent) => boolean;
+  root: CommandScanDirectoryRoot;
 }
 
 interface ParsedFrontmatter {
@@ -162,8 +171,12 @@ async function parseFrontmatter(filePath: string): Promise<ParsedFrontmatter> {
   };
 }
 
-function canFollowSkillSymlink(root: CommandScanRoot): boolean {
-  return root.origin === "user" && root.source === "skill";
+function canFollowSkillSymlink(
+  root: CommandScanRoot,
+  linkPath: string,
+): boolean {
+  // bb-fork(windows): follow project-origin skill symlinks that stay inside the workspace boundary
+  return forkCanFollowSkillSymlink(root, linkPath);
 }
 
 async function isSkillDirectory(
@@ -172,7 +185,10 @@ async function isSkillDirectory(
   if (args.entry.isDirectory()) {
     return true;
   }
-  if (!args.entry.isSymbolicLink() || !canFollowSkillSymlink(args.root)) {
+  if (
+    !args.entry.isSymbolicLink() ||
+    !canFollowSkillSymlink(args.root, args.entryPath)
+  ) {
     return false;
   }
   try {
@@ -192,7 +208,7 @@ async function statSkillFile(
     if (stat.isFile()) {
       return { linked: false };
     }
-    if (!stat.isSymbolicLink() || !canFollowSkillSymlink(root)) {
+    if (!stat.isSymbolicLink() || !canFollowSkillSymlink(root, filePath)) {
       return null;
     }
     const targetStat = await fs.stat(filePath);
@@ -290,22 +306,40 @@ async function walkMarkdownTree(args: WalkMarkdownTreeArgs): Promise<void> {
   }
 
   for (const entry of entries) {
+    const entryPath = path.join(args.currentPath, entry.name);
     if (entry.isSymbolicLink()) {
+      // bb-fork(windows): follow project-origin symlinks that stay inside the workspace boundary
+      if (!args.followNested || !canFollowSkillSymlink(args.root, entryPath)) {
+        continue;
+      }
+      const targetStat = await fs.stat(entryPath).catch(() => null);
+      if (targetStat === null) {
+        continue;
+      }
+      if (targetStat.isDirectory()) {
+        await walkMarkdownTree({
+          ...args,
+          currentPath: entryPath,
+          depth: args.depth + 1,
+          linked: true,
+        });
+        continue;
+      }
+      if (targetStat.isFile() && args.matches(entry)) {
+        args.matchedFiles.push({ filePath: entryPath, linked: true });
+      }
       continue;
     }
-    const entryPath = path.join(args.currentPath, entry.name);
     if (entry.isDirectory()) {
       await walkMarkdownTree({
-        budget: args.budget,
+        ...args,
         currentPath: entryPath,
         depth: args.depth + 1,
-        matchedFiles: args.matchedFiles,
-        matches: args.matches,
       });
       continue;
     }
     if (entry.isFile() && args.matches(entry)) {
-      args.matchedFiles.push(entryPath);
+      args.matchedFiles.push({ filePath: entryPath, linked: args.linked });
     }
   }
 }
@@ -337,24 +371,24 @@ async function scanRecursiveSkillRootFiles(
   if (rootPath === null) {
     return [];
   }
-  const matchedFiles: string[] = [];
+  const matchedFiles: MatchedFile[] = [];
   await walkMarkdownTree({
     budget,
-    currentPath: rootPath,
+    currentPath: root.rootPath,
     depth: 0,
+    // bb-fork(windows): project-origin nested symlinks stay followable, user-origin behavior is unchanged
+    followNested: root.origin === "project",
+    linked: await isSymbolicLinkPath(root.rootPath),
     matchedFiles,
     matches: (entry) => entry.name === SKILL_FILE_NAME,
+    root,
   });
-  const linked = await isSymbolicLinkPath(root.rootPath);
   return Promise.all(
-    matchedFiles.map(async (physicalFilePath) => ({
-      filePath: path.join(
-        root.rootPath,
-        path.relative(rootPath, physicalFilePath),
-      ),
-      frontmatter: await parseFrontmatter(physicalFilePath),
+    matchedFiles.map(async ({ filePath, linked }) => ({
+      filePath,
+      frontmatter: await parseFrontmatter(filePath),
       linked,
-      name: path.basename(path.dirname(physicalFilePath)),
+      name: path.basename(path.dirname(filePath)),
     })),
   );
 }
@@ -427,17 +461,20 @@ async function scanCommandRoot(
   if (args.root.shape !== "command") {
     throw new Error("scanCommandRoot requires a command root");
   }
-  const matchedFiles: string[] = [];
+  const matchedFiles: MatchedFile[] = [];
   await walkMarkdownTree({
     budget: args.budget,
     currentPath: args.root.rootPath,
     depth: 0,
+    followNested: false,
+    linked: false,
     matchedFiles,
     matches: (entry) => entry.name.endsWith(MARKDOWN_FILE_EXTENSION),
+    root: args.root,
   });
 
   const records: HostProviderCommand[] = [];
-  for (const filePath of matchedFiles) {
+  for (const { filePath } of matchedFiles) {
     const name = commandNameFromPath(args.root.rootPath, filePath);
     records.push(await buildRecord(args.root, filePath, name));
   }

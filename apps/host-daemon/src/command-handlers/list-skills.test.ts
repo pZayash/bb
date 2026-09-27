@@ -300,6 +300,29 @@ describe("resolveSkillScanRoots + discoverSkills", () => {
     expect(byName(skills, "linked-file")?.linked).toBe(true);
   });
 
+  it("marks a followed project-origin skill symlink inside the workspace as linked", async () => {
+    const fixture = await makeWorkspaceFixture();
+    const skillsRoot = path.join(fixture.cwd, ".agent", "skills");
+    const linkedTarget = path.join(
+      fixture.cwd,
+      "harness",
+      "skills",
+      "cc-1c",
+      "explore",
+    );
+    await writeSkill(path.join(linkedTarget, "SKILL.md"), "explore");
+    await mkdir(skillsRoot, { recursive: true });
+    await symlink(linkedTarget, path.join(skillsRoot, "explore"), "dir");
+
+    const skills = await listSkills(fixture, fixture.cwd, AGENT_SKILL_ROOTS);
+
+    expect(byName(skills, "explore")).toMatchObject({
+      rootKind: "provider-project",
+      linked: true,
+      filePath: path.join(skillsRoot, "explore", "SKILL.md"),
+    });
+  });
+
   it("classifies a prefixed declared root as a plugin root", async () => {
     const fixture = await makeWorkspaceFixture();
     await writeSkill(
