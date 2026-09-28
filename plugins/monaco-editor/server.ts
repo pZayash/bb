@@ -40,6 +40,8 @@ export const rpcContract = defineRpcContract({
         sha256: z.string(),
         absolutePath: z.string(),
         relativePath: z.string(),
+        // bb-fork(md-preview): root for document-relative Markdown link routing.
+        rootPath: z.string(),
       }),
       z.object({ kind: z.literal("unsupported"), reason: z.string() }),
     ]),
@@ -247,6 +249,7 @@ export default async function plugin(bb: BbPluginApi) {
         sha256: file.sha256,
         absolutePath: target.path,
         relativePath: relativeTo(target.rootPath, target.path),
+        rootPath: target.rootPath,
       };
     },
 

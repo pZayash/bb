@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { PluginFileOpenerProps } from "@get-bb/plugin-sdk/app";
@@ -18,6 +18,7 @@ const editor = vi.hoisted(() => ({
   onDidChangeModelContent: vi.fn(),
   addCommand: vi.fn(),
   updateOptions: vi.fn(),
+  getValue: vi.fn(() => "fixture"),
   dispose: vi.fn(),
 }));
 const create = vi.hoisted(() => vi.fn(() => editor));
@@ -54,6 +55,7 @@ const file = {
   sha256: "hash",
   absolutePath: "/fixture/target.ts",
   relativePath: "target.ts",
+  rootPath: "/fixture",
 };
 function mount(
   range: PluginFileOpenerProps["experimental_lineRange"],
@@ -191,4 +193,60 @@ it("does not apply a stale target cleared during loading", async () => {
   await act(async () => resolveRead(file));
   await waitFor(() => expect(create).toHaveBeenCalledOnce());
   expect(editor.setSelection).not.toHaveBeenCalled();
+});
+
+const markdownFile = {
+  ...file,
+  content: "# Title",
+  absolutePath: "/fixture/notes/readme.md",
+  relativePath: "notes/readme.md",
+};
+
+function mountMarkdown() {
+  const slot = renderSlot(
+    registration,
+    { ...base, path: "notes/readme.md" },
+    {
+      rpc: {
+        assets: () => ({ baseUrl: "/assets", expiresAtMs: 99999 }),
+        read: () => markdownFile,
+      },
+    },
+  );
+  return slot;
+}
+
+it("offers no view toggle for non-Markdown files", async () => {
+  const slot = mount(null);
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  expect(slot.queryByRole("button", { name: "Preview" })).toBeNull();
+  expect(slot.queryByRole("button", { name: "Source" })).toBeNull();
+});
+
+it("renders the Markdown preview and returns to the editor", async () => {
+  const slot = mountMarkdown();
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  editor.getValue.mockReturnValue("# Title");
+  const previewButton = await slot.findByRole("button", { name: "Preview" });
+  expect(slot.queryByText("# Title")).toBeNull();
+  expect(editor.getValue).not.toHaveBeenCalled();
+
+  fireEvent.click(previewButton);
+  expect(await slot.findByText("# Title")).toBeTruthy();
+  expect(editor.getValue).toHaveBeenCalled();
+
+  fireEvent.click(slot.getByRole("button", { name: "Source" }));
+  expect(slot.queryByText("# Title")).toBeNull();
+});
+
+it("drops the preview when another file is opened from the tree", async () => {
+  const slot = mountMarkdown();
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  editor.getValue.mockReturnValue("# Title");
+  fireEvent.click(await slot.findByRole("button", { name: "Preview" }));
+  expect(await slot.findByText("# Title")).toBeTruthy();
+  slot.lifecycle.rerender(
+    <Component {...base} path="notes/other.md" experimental_lineRange={null} />,
+  );
+  await waitFor(() => expect(slot.queryByText("# Title")).toBeNull());
 });

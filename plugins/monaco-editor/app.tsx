@@ -1,7 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import {
   definePluginApp,
   experimental_useCodeTheme,
+  Markdown,
   useRpc,
   type PluginFileOpenerProps,
 } from "@get-bb/plugin-sdk/app";
@@ -17,6 +25,13 @@ import { applyCodeTheme, editorBackground } from "./lib/monaco-theme.js";
 import { cn } from "@/lib/utils";
 import { FileToolbar, type SaveIndicator } from "./components/FileToolbar.js";
 import { FileTreePanel } from "./components/FileTreePanel.js";
+// bb-fork(md-preview): rendered Markdown preview next to the editor.
+import { MarkdownPreviewToggle } from "./components/MarkdownPreviewToggle.fork.js";
+import {
+  buildMarkdownPreviewDocument,
+  isMarkdownPreviewPath,
+  type MarkdownPreviewViewMode,
+} from "./lib/markdown-preview.fork.js";
 import type { FlatEntry } from "./lib/file-tree.js";
 import {
   EDITOR_COMMANDS,
@@ -32,6 +47,11 @@ type SaveState =
   | { kind: "saving" }
   | { kind: "error"; message: string }
   | { kind: "conflict" };
+
+// bb-fork(md-preview): match the built-in preview's Markdown content width.
+const MARKDOWN_PREVIEW_WRAPPER_STYLE = {
+  "--md-content-w": "100cqi",
+} as CSSProperties;
 
 function revealLineRange(
   editor: MonacoNs.editor.IStandaloneCodeEditor,
@@ -101,10 +121,25 @@ function MonacoFileOpener({
     | { kind: "error"; message: string }
   >({ kind: "loading" });
 
+  // bb-fork(md-preview): document identity for rendering the Markdown preview.
+  const [fileIdentity, setFileIdentity] = useState<{
+    relativePath: string;
+    rootPath: string;
+  } | null>(null);
+  const [viewMode, setViewMode] = useState<MarkdownPreviewViewMode>("source");
+  const [previewContent, setPreviewContent] = useState("");
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
+
   const setSaveState = useCallback((next: SaveState) => {
     saveStateRef.current = next;
     setSaveStateValue(next);
   }, []);
+
+  // bb-fork(md-preview): a newly selected file always opens in the editor.
+  useEffect(() => {
+    setViewMode("source");
+  }, [activePath]);
 
   const writeEditorContent = useCallback(
     async (expectedSha256: string | null) => {
@@ -150,6 +185,10 @@ function MonacoFileOpener({
       const file = await rpc.call("read", { path: activePath, source });
       if (file.kind !== "text") return;
       sha256Ref.current = file.sha256;
+      setFileIdentity({
+        relativePath: file.relativePath,
+        rootPath: file.rootPath,
+      });
       editor.setValue(file.content);
       setSaveState({ kind: "clean" });
     } catch (error) {
@@ -225,6 +264,7 @@ function MonacoFileOpener({
   useEffect(() => {
     let disposed = false;
     setStatus({ kind: "loading" });
+    setFileIdentity(null);
 
     void (async () => {
       try {
@@ -237,6 +277,10 @@ function MonacoFileOpener({
           setStatus({ kind: "delegate", reason: file.reason });
           return;
         }
+        setFileIdentity({
+          relativePath: file.relativePath,
+          rootPath: file.rootPath,
+        });
 
         const monaco = await loadMonaco(baseUrl);
         if (disposed) return;
@@ -281,6 +325,10 @@ function MonacoFileOpener({
           if (saveStateRef.current.kind === "clean") {
             setSaveState({ kind: "dirty" });
           }
+          // bb-fork(md-preview): keep the rendered preview in sync with disk.
+          if (viewModeRef.current === "preview") {
+            setPreviewContent(editor.getValue());
+          }
         });
         editor.addCommand(
           monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
@@ -321,6 +369,28 @@ function MonacoFileOpener({
     setOverflowWidgetsTheme(applied.base);
   }, [codeTheme, status]);
 
+  // bb-fork(md-preview): derive the Markdown preview state for the open file.
+  const canPreview =
+    status.kind === "ready" && isMarkdownPreviewPath(activePath);
+  const markdownPreviewDocument = useMemo(
+    () =>
+      canPreview && fileIdentity !== null
+        ? buildMarkdownPreviewDocument({
+            relativePath: fileIdentity.relativePath,
+            rootPath: fileIdentity.rootPath,
+            source,
+          })
+        : undefined,
+    [canPreview, fileIdentity, source],
+  );
+  const isPreviewVisible = canPreview && viewMode === "preview";
+  const handleViewModeChange = useCallback((next: MarkdownPreviewViewMode) => {
+    if (next === "preview") {
+      setPreviewContent(editorRef.current?.getValue() ?? "");
+    }
+    setViewMode(next);
+  }, []);
+
   if (status.kind === "delegate") return <Original />;
 
   return (
@@ -345,6 +415,14 @@ function MonacoFileOpener({
         onRefresh={requestRefresh}
         isFilesOpen={isFilesOpen}
         onToggleFiles={() => setIsFilesOpen((open) => !open)}
+        previewToggle={
+          canPreview ? (
+            <MarkdownPreviewToggle
+              viewMode={viewMode}
+              onViewModeChange={handleViewModeChange}
+            />
+          ) : undefined
+        }
       />
       <Notice
         onDiscardCancel={() => setPendingDiscard(false)}
@@ -365,7 +443,25 @@ function MonacoFileOpener({
         saveState={saveState}
         status={status}
       />
-      <div ref={containerRef} className="min-h-0 flex-1" />
+      <div
+        ref={containerRef}
+        className={cn("min-h-0 flex-1", isPreviewVisible && "hidden")}
+      />
+      {isPreviewVisible ? (
+        <div
+          className="@container/page min-h-0 flex-1 overflow-y-auto bg-background"
+          style={MARKDOWN_PREVIEW_WRAPPER_STYLE}
+        >
+          <div className="px-4 py-4">
+            <Markdown
+              content={previewContent}
+              {...(markdownPreviewDocument === undefined
+                ? {}
+                : { experimental_document: markdownPreviewDocument })}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

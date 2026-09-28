@@ -25,6 +25,7 @@ panel's file search, and `bb thread open`.
   path of the current file*. The sort rows appear only with a multi-line
   selection, and every row acts on the Monaco tab you last worked in.
 - **Follows your theme,** including light/dark switches and custom palettes.
+- **Markdown preview.** <!-- bb-fork(md-preview): Source/Preview switch in the editor toolbar. --> `.md`, `.markdown`, and `.mdx` files get a **Source / Preview** switch in the file bar. Preview renders the document with BB's Markdown renderer, including links and images relative to the file, without leaving the editor.
 
 ## Development
 
