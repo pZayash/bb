@@ -768,11 +768,10 @@ function ReadOnlyContextBanner({
   const isParentThreadExpanded =
     expandedSection === "parentThread" && parentThreadSection !== null;
   const isStatusExpanded = expandedSection === "status" && description !== null;
-  const hasMultipleSegments = parentThreadSection !== null;
   const statusIcon = (
     <Icon name={iconName} className="size-3.5 shrink-0" aria-hidden="true" />
   );
-  const showStatusAction = statusAction !== null && !hasMultipleSegments;
+  const showStatusAction = statusAction !== null;
   return (
     <PromptStackCard
       ariaLabel="Thread history"

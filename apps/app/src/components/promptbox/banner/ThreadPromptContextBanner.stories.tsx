@@ -726,7 +726,7 @@ export function Overview() {
       </StoryRow>
       <StoryRow
         label="archived + child thread"
-        hint="archived row plus parent context; action is hidden because archived is not the only segment"
+        hint="archived row plus parent context; unarchive stays pinned to the far right because it is the only way out"
       >
         <Row
           archived={archivedFixture}
@@ -759,10 +759,10 @@ export function Overview() {
       </StoryRow>
       <StoryRow
         label="environment archived + child thread"
-        hint="archived-environment row plus parent context"
+        hint="archived-environment row plus parent context; restore stays pinned to the far right because it is the only way out"
       >
         <Row
-          environmentGone={destroyedEnvironmentFixture}
+          environmentGone={restorableEnvironmentFixture}
           parentThread={parentThreadFixture}
           mergeBase={null}
         />

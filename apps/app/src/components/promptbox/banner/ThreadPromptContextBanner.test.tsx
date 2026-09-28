@@ -257,6 +257,59 @@ describe("ThreadPromptContextBanner", () => {
     expect(markup).toContain("disabled");
   });
 
+  it("keeps the restore action on a child thread with a parent segment", () => {
+    const markup = renderToStaticMarkup(
+      <MemoryRouter>
+        <ThreadPromptContextBanner
+          gitSection={null}
+          gitSectionPending={false}
+          archivedSection={null}
+          environmentGoneSection={{ status: "destroyed", onRestore: noop }}
+          parentThreadSection={{
+            parentThreadTitle: "Parent thread",
+            href: "/threads/thr_parent",
+            relationship: "parent",
+          }}
+          childThreadsSection={null}
+          pullRequestSection={null}
+          expandedSection={null}
+          onToggleSection={noop}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(markup).toContain("Environment unavailable");
+    expect(markup).toContain(">Restore workspace<");
+  });
+
+  it("keeps the unarchive action on a child thread with a parent segment", () => {
+    const markup = renderToStaticMarkup(
+      <MemoryRouter>
+        <ThreadPromptContextBanner
+          gitSection={null}
+          gitSectionPending={false}
+          archivedSection={{
+            archivedAt: 1_731_456_000_000,
+            onUnarchive: noop,
+          }}
+          environmentGoneSection={null}
+          parentThreadSection={{
+            parentThreadTitle: "Parent thread",
+            href: "/threads/thr_parent",
+            relationship: "parent",
+          }}
+          childThreadsSection={null}
+          pullRequestSection={null}
+          expandedSection={null}
+          onToggleSection={noop}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(markup).toContain("Thread is archived");
+    expect(markup).toContain(">Unarchive<");
+  });
+
   it("labels a standalone pull request without non-actionable attention text", () => {
     const markup = renderToStaticMarkup(
       <ThreadPromptContextBanner
