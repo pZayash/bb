@@ -862,6 +862,7 @@ function TestDiff({
   overflow = "scroll",
   showLineNumbers = true,
   experimental_fullFileContents,
+  experimental_expandUnchanged = false,
   className,
 }: DiffProps) {
   return (
@@ -874,6 +875,7 @@ function TestDiff({
       data-has-full-file-contents={
         experimental_fullFileContents === undefined ? "false" : "true"
       }
+      data-expand-unchanged={experimental_expandUnchanged ? "true" : "false"}
       className={className}
     >
       {patch}

@@ -6,6 +6,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  type ReactNode,
   useRef,
   useState,
   type RefObject,
@@ -206,6 +207,8 @@ interface ThreadDetailPromptAreaProps {
   workspaceChangedFilesSection: WorkspaceChangedFilesSection | null;
   workspaceStatusPending: boolean;
   contextBannerMergeBase: ContextBannerMergeBaseConfig | null;
+  // bb-fork(thread-start-ref): the start-commit control, built by the thread view.
+  threadStartControl?: ReactNode;
   pendingTodos: ThreadTimelinePendingTodos | null;
   activePromptMode: ThreadTimelineActivePromptMode | null;
   goal: ThreadTimelineGoal | null;
@@ -421,6 +424,7 @@ export function ThreadDetailPromptArea({
   workspaceChangedFilesSection,
   workspaceStatusPending,
   contextBannerMergeBase,
+  threadStartControl,
   pendingTodos,
   activePromptMode,
   goal,
@@ -2056,6 +2060,7 @@ export function ThreadDetailPromptArea({
               ? {
                   changedFiles: workspaceChangedFilesSection,
                   mergeBase: contextBannerMergeBase,
+                  threadStartControl,
                   onPromptBannerFileClick: canUseGitUi
                     ? onChangedFileClick
                     : ignorePromptBannerFileClick,
@@ -2105,6 +2110,8 @@ export function ThreadDetailPromptArea({
       childPendingInteractionBanners,
       contextBannerMergeBase,
       environmentHostId,
+      // bb-fork(thread-start-ref): the start-commit control rides in the git section.
+      threadStartControl,
       expandedBannerSection,
       handleDeleteQueuedMessage,
       beginEditQueuedMessage,

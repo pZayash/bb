@@ -19,13 +19,14 @@ panel's file search, and `bb thread open`.
   with the current file revealed. Right-click any row to copy its absolute
   path, relative path, or filename.
 - **Quick palette commands.** Open the quick palette (<kbd>⌘⇧P</kbd>) and
-  type "fold", "sort", or "copy" to reach *fold level 1–5*, *fold
-  recursively*, *unfold all*, *unfold recursively*, *unfold at cursor*,
-  *sort selected lines ascending/descending*, and *copy the path / relative
-  path of the current file*. The sort rows appear only with a multi-line
+  type "fold", "sort", or "copy" to reach _fold level 1–5_, _fold
+  recursively_, _unfold all_, _unfold recursively_, _unfold at cursor_,
+  _sort selected lines ascending/descending_, and _copy the path / relative
+  path of the current file_. The sort rows appear only with a multi-line
   selection, and every row acts on the Monaco tab you last worked in.
 - **Follows your theme,** including light/dark switches and custom palettes.
 - **Markdown preview.** <!-- bb-fork(md-preview): Source/Preview switch in the editor toolbar. --> `.md`, `.markdown`, and `.mdx` files get a **Source / Preview** switch in the file bar. Preview renders the document with BB's Markdown renderer, including links and images relative to the file, without leaving the editor.
+- **File diff.** <!-- bb-fork(file-diff): diff switch in the editor toolbar. --> Workspace files get a **Diff** switch in the file bar. It opens the whole file, both sides, against the workspace's Git state through BB's diff viewer — split or stacked — and a base picker switches between all changes since the merge base, committed changes, uncommitted changes, and individual commits. A **Since thread start** entry compares against the commit the workspace was provisioned at, so changes an agent committed onto the merge-base branch stay visible. The editor stays mounted, so unsaved edits survive.
 
 ## Development
 
@@ -57,7 +58,7 @@ emitted at all. `lib/monaco-loader.ts` loads the built files from a
 `monaco-bundle/editor.js` is the entry: Monaco's own `editor.main`, which is
 the API plus its contribution modules (find, folding, word navigation,
 sorting, …) and every Monarch grammar. What it leaves out is the language
-*services* for CSS, HTML, JSON, and TypeScript — completion and type checking
+_services_ for CSS, HTML, JSON, and TypeScript — completion and type checking
 this plugin has no use for. esbuild proves what is reachable, so the result is
 4.6 MB rather than the 24 MB of Monaco's prebuilt tree. Monaco's icon webfont
 is inlined as a data URL, so the bundle stays the three files the loader

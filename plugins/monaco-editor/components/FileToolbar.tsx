@@ -19,6 +19,8 @@ export interface FileToolbarProps {
   onToggleFiles: () => void;
   // bb-fork(md-preview): optional Source/Preview switch for Markdown files.
   previewToggle?: ReactNode;
+  // bb-fork(file-diff): optional diff toggle and base selector.
+  diffControls?: ReactNode;
 }
 
 export function FileToolbar({
@@ -29,6 +31,7 @@ export function FileToolbar({
   isFilesOpen,
   onToggleFiles,
   previewToggle,
+  diffControls,
 }: FileToolbarProps) {
   return (
     <div className="flex h-9 shrink-0 items-center gap-2 bg-surface-raised px-4">
@@ -47,6 +50,7 @@ export function FileToolbar({
         </ToolbarButton>
       </div>
       {previewToggle}
+      {diffControls}
       <SaveDot indicator={indicator} />
       <ToolbarButton
         label={isFilesOpen ? "Hide files" : "Show in files"}

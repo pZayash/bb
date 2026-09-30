@@ -579,6 +579,15 @@ export interface DiffProps {
    * loading these contents; omit the field to render from the patch alone.
    */
   experimental_fullFileContents?: ExperimentalDiffFullFileContents;
+  /**
+   * Render every unchanged region instead of collapsing it between hunks, so
+   * the whole file reads on both sides with the changes marked. Requires
+   * `experimental_fullFileContents` and is ignored without them; large sides
+   * fall back to the collapsed render. Defaults to `false`.
+   *
+   * @experimental Audit before relying on this as a stable contract.
+   */
+  experimental_expandUnchanged?: boolean;
   /** Applied to the renderer's root element. */
   className?: string;
 }
@@ -622,6 +631,11 @@ export interface PluginDiffRendererProps {
    * verification when it mounts.
    */
   experimental_fullFileContents: ExperimentalDiffFullFileContents | null;
+  /**
+   * Resolved `experimental_expandUnchanged`: the caller asked for both
+   * complete sides rather than only the patch's hunks.
+   */
+  experimental_expandUnchanged: boolean;
   /**
    * BB's diff renderer, bound to this request. Render it to delegate
    * conditionally without re-entering plugin replacement resolution.

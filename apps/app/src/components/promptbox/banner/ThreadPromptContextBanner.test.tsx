@@ -50,8 +50,10 @@ const pullRequestFixture: ThreadPullRequest = {
 function makeGitSection(
   kind: ThreadPromptGitSection["changedFiles"]["kind"] = "uncommitted",
   mergeBase: ThreadPromptGitSection["mergeBase"] = null,
+  threadStartControl: ThreadPromptGitSection["threadStartControl"] = null,
 ): ThreadPromptGitSection {
   return {
+    threadStartControl,
     changedFiles: {
       kind,
       label: kind === "committed" ? "Committed" : "Uncommitted",
@@ -71,7 +73,60 @@ function makeGitSection(
 
 afterEach(cleanup);
 
+// bb-fork(thread-start-ref): the git row hosts the start-commit control.
+function renderGitRow(threadStartControl: ThreadPromptGitSection["threadStartControl"]) {
+  return render(
+    <ThreadPromptContextBanner
+      gitSection={makeGitSection("committed", null, threadStartControl)}
+      gitSectionPending={false}
+      archivedSection={null}
+      environmentGoneSection={null}
+      parentThreadSection={null}
+      childThreadsSection={null}
+      pullRequestSection={null}
+      expandedSection={null}
+      onToggleSection={noop}
+    />,
+  );
+}
+
 describe("ThreadPromptContextBanner", () => {
+  it("renders the supplied start-commit control in the changed-files row", () => {
+    renderGitRow(<button type="button">Since start</button>);
+
+    expect(screen.getByRole("button", { name: "Since start" })).toBeTruthy();
+  });
+
+  it("renders no start-commit control when the thread view supplies none", () => {
+    renderGitRow(null);
+
+    expect(screen.queryByRole("button", { name: "Since start" })).toBeNull();
+  });
+
+  it("names the changed-files row after the section label", () => {
+    render(
+      <ThreadPromptContextBanner
+        gitSection={{
+          ...makeGitSection("committed", null, null),
+          changedFiles: {
+            ...makeGitSection("committed").changedFiles,
+            label: "Since thread start",
+          },
+        }}
+        gitSectionPending={false}
+        archivedSection={null}
+        environmentGoneSection={null}
+        parentThreadSection={null}
+        childThreadsSection={null}
+        pullRequestSection={null}
+        expandedSection={null}
+        onToggleSection={noop}
+      />,
+    );
+
+    expect(screen.getAllByText(/Since thread start/).length).toBeGreaterThan(0);
+  });
+
   it("renders the archived read-only status without an action", () => {
     const markup = renderToStaticMarkup(
       <ThreadPromptContextBanner

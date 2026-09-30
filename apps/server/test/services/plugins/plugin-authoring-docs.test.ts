@@ -388,6 +388,8 @@ const FRONTEND_SLOT_PROP_FIELDS = {
     "overflow",
     "showLineNumbers",
     "experimental_fullFileContents",
+    // bb-fork(file-diff): whole-file rendering flag.
+    "experimental_expandUnchanged",
     "Original",
     "experimental_Original",
   ],

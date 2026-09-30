@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { DiffPresentation } from "@/components/code/code-rendering";
 import type { WorkspaceDiffTarget } from "@bb/domain";
@@ -36,6 +36,11 @@ import { clearDiffFileCardStates } from "./git-diff/diffFilesStore";
 import { buildGitDiffIdentity } from "./git-diff/gitDiffPanelHelpers";
 import { useDiffFileContentsRequester } from "./git-diff/useDiffFileContentsRequester";
 import { SecondaryPanelFilePreview } from "./ThreadStorageFilePreview";
+import type { FilePreviewDiffSlot } from "./FilePreview";
+// bb-fork(file-diff): diff mode for workspace file tabs.
+import { FileDiffToggle } from "./file-diff/FileDiffToggle.fork";
+import { FileDiffView } from "./file-diff/FileDiffView.fork";
+import { useFileDiff } from "./file-diff/useFileDiff.fork";
 import {
   buildMarkdownFileImageRouting,
   buildMarkdownLeaseImageRouting,
@@ -327,6 +332,16 @@ export function WorkspaceFilePreviewTabContent({
   statusLabel,
   threadId,
 }: WorkspaceFilePreviewTabContentProps) {
+  // bb-fork(file-diff): per-tab diff mode for Git-backed workspace files.
+  const [isDiffActive, setIsDiffActive] = useState(false);
+  useEffect(() => setIsDiffActive(false), [activePath]);
+  const fileDiffController = useFileDiff({
+    enabled: isDiffActive,
+    environmentId,
+    path: activePath,
+  });
+  const canShowFileDiff =
+    fileDiffController.availability.status !== "unavailable";
   const environmentQuery = useEnvironment(environmentId ?? null, {
     enabled:
       environmentId !== null &&
@@ -377,11 +392,32 @@ export function WorkspaceFilePreviewTabContent({
     threadId,
   ]);
 
+  // bb-fork(file-diff): only text files have a diff worth showing.
+  const fileDiff: FilePreviewDiffSlot | null =
+    canShowFileDiff && workspaceFilePreviewQuery.data?.kind === "text"
+      ? {
+          content: isDiffActive ? (
+            <FileDiffView
+              controller={fileDiffController}
+              onSelectionAddToChat={onSelectionAddToChat}
+            />
+          ) : null,
+          isActive: isDiffActive,
+          toggle: (
+            <FileDiffToggle
+              isActive={isDiffActive}
+              onToggle={() => setIsDiffActive((active) => !active)}
+            />
+          ),
+        }
+      : null;
+
   return (
     <SecondaryPanelFilePreview
       {...filePreviewQueryProps(workspaceFilePreviewQuery)}
       activePath={activePath}
       copyPath={copyPath}
+      fileDiff={fileDiff}
       htmlPreviewUrl={
         threadId && source?.kind === "working-tree"
           ? buildThreadWorktreeRawContentUrl(threadId, activePath)

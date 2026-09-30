@@ -11,10 +11,12 @@ import type {
   EnvironmentActionResponse,
   UpdateEnvironmentRequest,
 } from "@bb/server-contract";
+import type { EnvironmentUpdateArgs } from "@bb/sdk/browser";
 import { sdk } from "@/lib/sdk";
 import type { RequestEnvironmentActionMutationRequest } from "./mutation-request-types";
 import { invalidateEnvironmentActionQueries } from "../cache-owners/environment-cache-effects";
 import {
+  applyEnvironmentUpdateResult,
   beginEnvironmentNameUpdateTransaction,
   completeEnvironmentNameUpdateTransaction,
   rollbackEnvironmentNameUpdateTransaction,
@@ -108,22 +110,21 @@ export function useUpdateEnvironment() {
       showErrorToast: false,
     },
     mutationFn: ({ id, ...request }: UpdateEnvironmentMutationRequest) => {
-      if (request.name !== undefined) {
-        return sdk.environments.update({
-          environmentId: id,
-          name: request.name,
-          ...(request.mergeBaseBranch !== undefined
-            ? { mergeBaseBranch: request.mergeBaseBranch }
-            : {}),
-        });
-      }
+      const args: EnvironmentUpdateArgs = { environmentId: id };
       if (request.mergeBaseBranch !== undefined) {
-        return sdk.environments.update({
-          environmentId: id,
-          mergeBaseBranch: request.mergeBaseBranch,
-        });
+        args.mergeBaseBranch = request.mergeBaseBranch;
       }
-      throw new Error("Environment update requires at least one field");
+      if (request.name !== undefined) {
+        args.name = request.name;
+      }
+      // bb-fork(thread-start-ref): the chosen start commit reaches the panels.
+      if (request.startRef !== undefined) {
+        args.startRef = request.startRef;
+      }
+      if (Object.keys(args).length === 1) {
+        throw new Error("Environment update requires at least one field");
+      }
+      return sdk.environments.update(args);
     },
     onMutate: ({
       id,
@@ -139,12 +140,16 @@ export function useUpdateEnvironment() {
     onError: (_error, _variables, transaction) => {
       rollbackEnvironmentNameUpdateTransaction({ queryClient, transaction });
     },
-    onSuccess: (environment: Environment, _variables, transaction) => {
+    onSuccess: (environment: Environment, variables, transaction) => {
       completeEnvironmentNameUpdateTransaction({
         environment,
         queryClient,
         transaction,
       });
+      // bb-fork(thread-start-ref): seed the picked start commit at once.
+      if (variables.startRef !== undefined) {
+        applyEnvironmentUpdateResult({ environment, queryClient });
+      }
     },
   });
 }

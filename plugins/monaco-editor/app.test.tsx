@@ -250,3 +250,184 @@ it("drops the preview when another file is opened from the tree", async () => {
   );
   await waitFor(() => expect(slot.queryByText("# Title")).toBeNull());
 });
+
+// bb-fork(file-diff): diff mode for the open file.
+const diffPatch = [
+  "diff --git a/target.ts b/target.ts",
+  "--- a/target.ts",
+  "+++ b/target.ts",
+  "@@ -1,1 +1,1 @@",
+  "-old",
+  "+new",
+  "",
+].join("\n");
+
+function readDiffSelection(input: unknown): string | null {
+  if (typeof input !== "object" || input === null) return null;
+  const selection = (input as { selection?: unknown }).selection;
+  return typeof selection === "string" ? selection : null;
+}
+
+function mountDiff(
+  respond: (selection: string | null) => unknown = (selection) => ({
+    contents: { new: "new side", old: "old side" },
+    outcome: "available",
+    options: [
+      { label: "All changes", value: "all" },
+      { label: "Uncommitted changes", value: "uncommitted" },
+      ...(selection === "thread_start_ref"
+        ? []
+        : [
+            {
+              label: "Since thread start (abc1234)",
+              value: "thread_start_ref",
+            },
+          ]),
+    ],
+    patch: diffPatch,
+    selection: selection ?? "all",
+    truncated: false,
+  }),
+) {
+  const diff = vi.fn((input: unknown) => respond(readDiffSelection(input)));
+  const slot = renderSlot(registration, base, {
+    rpc: {
+      assets: () => ({ baseUrl: "/assets", expiresAtMs: 99999 }),
+      read: () => file,
+      diff,
+    },
+  });
+  return { diff, slot };
+}
+
+it("shows the change diff in split view and can switch to stacked", async () => {
+  const { diff, slot } = mountDiff();
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  fireEvent.click(await slot.findByRole("button", { name: "Show changes" }));
+
+  const rendered = await slot.findByTestId("bb-diff");
+  expect(rendered.getAttribute("data-view")).toBe("split");
+  expect(rendered.getAttribute("data-has-full-file-contents")).toBe("true");
+  expect(rendered.getAttribute("data-expand-unchanged")).toBe("true");
+  expect(rendered.textContent).toContain("+new");
+  expect(diff).toHaveBeenCalledWith({
+    path: "target.ts",
+    selection: null,
+    source: base.source,
+  });
+
+  fireEvent.click(slot.getByRole("button", { name: "Unified" }));
+  await waitFor(() =>
+    expect(slot.getByTestId("bb-diff").getAttribute("data-view")).toBe(
+      "unified",
+    ),
+  );
+});
+
+it("loads the diff for a picked base without recreating the editor", async () => {
+  const { diff, slot } = mountDiff();
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  fireEvent.click(await slot.findByRole("button", { name: "Show changes" }));
+  await slot.findByTestId("bb-diff");
+
+  fireEvent.change(slot.getByRole("combobox", { name: "Diff base" }), {
+    target: { value: "uncommitted" },
+  });
+
+  await waitFor(() =>
+    expect(diff).toHaveBeenLastCalledWith({
+      path: "target.ts",
+      selection: "uncommitted",
+      source: base.source,
+    }),
+  );
+  expect(create).toHaveBeenCalledOnce();
+  expect(editor.dispose).not.toHaveBeenCalled();
+});
+
+it("switches the comparison to the thread start commit", async () => {
+  const { diff, slot } = mountDiff();
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  fireEvent.click(await slot.findByRole("button", { name: "Show changes" }));
+  await slot.findByTestId("bb-diff");
+
+  fireEvent.change(slot.getByRole("combobox", { name: "Diff base" }), {
+    target: { value: "thread_start_ref" },
+  });
+
+  await waitFor(() =>
+    expect(diff).toHaveBeenLastCalledWith({
+      path: "target.ts",
+      selection: "thread_start_ref",
+      source: base.source,
+    }),
+  );
+  expect(slot.getByRole("combobox", { name: "Diff base" })).toBeTruthy();
+});
+
+it("returns to the editor when the diff is hidden", async () => {
+  const { slot } = mountDiff();
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  fireEvent.click(await slot.findByRole("button", { name: "Show changes" }));
+  await slot.findByTestId("bb-diff");
+
+  fireEvent.click(slot.getByRole("button", { name: "Hide changes" }));
+
+  await waitFor(() => expect(slot.queryByTestId("bb-diff")).toBeNull());
+  expect(slot.queryByRole("combobox", { name: "Diff base" })).toBeNull();
+});
+
+it("explains a workspace without a diff instead of rendering one", async () => {
+  const { slot } = mountDiff(() => ({
+    outcome: "unavailable",
+    message: "This workspace is not a Git repository.",
+  }));
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  fireEvent.click(await slot.findByRole("button", { name: "Show changes" }));
+
+  expect(
+    await slot.findByText("This workspace is not a Git repository."),
+  ).toBeTruthy();
+  expect(slot.queryByTestId("bb-diff")).toBeNull();
+});
+
+it("flags a truncated diff patch", async () => {
+  const { slot } = mountDiff((selection) => ({
+    contents: null,
+    outcome: "available",
+    options: [{ label: "All changes", value: "all" }],
+    patch: diffPatch,
+    selection: selection ?? "all",
+    truncated: true,
+  }));
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  fireEvent.click(await slot.findByRole("button", { name: "Show changes" }));
+
+  expect(
+    await slot.findByText("This diff was truncated for display."),
+  ).toBeTruthy();
+});
+
+it("offers no diff switch for files outside a workspace", async () => {
+  const slot = renderSlot(
+    registration,
+    {
+      ...base,
+      source: {
+        kind: "host",
+        environmentId: "env_1",
+        projectId: null,
+        threadId: null,
+      },
+    },
+    {
+      rpc: {
+        assets: () => ({ baseUrl: "/assets", expiresAtMs: 99999 }),
+        read: () => file,
+      },
+    },
+  );
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+
+  expect(slot.queryByRole("button", { name: "Show changes" })).toBeNull();
+});

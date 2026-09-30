@@ -3,6 +3,12 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+// bb-fork(file-diff): workspace diff of the open file.
+import {
+  fileDiffResultSchema,
+  fileDiffSelectionSchema,
+  resolveFileDiff,
+} from "./lib/file-diff.server.fork.js";
 
 const MAX_EDITABLE_BYTES = 8 * 1024 * 1024;
 
@@ -71,6 +77,11 @@ export const rpcContract = defineRpcContract({
         currentSha256: z.string().nullable(),
       }),
     ]),
+  },
+  // bb-fork(file-diff): the file's diff against the workspace Git state.
+  diff: {
+    input: fileSchema.extend({ selection: fileDiffSelectionSchema }).strict(),
+    output: fileDiffResultSchema,
   },
 });
 
@@ -285,5 +296,15 @@ export default async function plugin(bb: BbPluginApi) {
         ? { outcome: "written" as const, sha256: result.sha256 }
         : { outcome: "conflict" as const, currentSha256: result.currentSha256 };
     },
+
+    // bb-fork(file-diff): only workspace files have Git state to diff against.
+    diff: ({ path: filePath, source, selection }) =>
+      resolveFileDiff({
+        environmentId:
+          source.kind === "workspace" ? source.environmentId : null,
+        path: filePath,
+        plugin: bb,
+        selection,
+      }),
   });
 }

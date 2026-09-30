@@ -155,6 +155,7 @@ describe("DiffHost", () => {
         view="split"
         overflow="wrap"
         showLineNumbers={false}
+        expandUnchanged
         onSelectionAddToChat={() => {}}
       />,
     );
@@ -166,6 +167,7 @@ describe("DiffHost", () => {
     expect(props?.view).toBe("split");
     expect(props?.overflow).toBe("wrap");
     expect(props?.showLineNumbers).toBe(false);
+    expect(props?.experimental_expandUnchanged).toBe(true);
     expect(props?.experimental_fullFileContents).toBe(FULL_FILE_CONTENTS);
     expect(Object.keys(props ?? {})).not.toContain("onSelectionAddToChat");
     expect(Object.keys(props ?? {})).not.toContain("file");

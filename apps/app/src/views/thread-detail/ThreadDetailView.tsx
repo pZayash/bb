@@ -127,6 +127,10 @@ import {
   selectWorkspaceChangedFilesSection,
   type WorkspaceChangedFileSelection,
 } from "@/components/workspace/workspace-change-summary";
+// bb-fork(thread-start-ref): the start-commit view lists both sides of the range.
+import { buildThreadStartChangedFilesSection } from "@/components/workspace/thread-start-changes.fork";
+// bb-fork(thread-start-ref): pick the commit the thread compares from.
+import { StartCommitPicker } from "@/components/workspace/StartCommitPicker.fork";
 import { getThreadDisplayTitle } from "@/lib/thread-title";
 import { hasThreadProvisioningFailure } from "@/lib/thread-provisioning-failure";
 import {
@@ -1262,6 +1266,18 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     setThreadSecondaryPanel,
     threadId,
   });
+
+  // bb-fork(thread-start-ref): compare the thread against the commit it started from.
+  const threadStartRef = environment?.startRef ?? null;
+  const [isSinceThreadStart, setIsSinceThreadStart] = useState(false);
+  const isComputedSinceThreadStart =
+    isSinceThreadStart && threadStartRef !== null;
+  const compareRef = isComputedSinceThreadStart
+    ? threadStartRef
+    : requestedMergeBaseBranch;
+  useEffect(() => {
+    setIsSinceThreadStart(false);
+  }, [thread?.environmentId, thread?.id]);
   const {
     closePanel: closeWorkspacePanel,
     openCommitDiff: openGitDiffCommitDestination,
@@ -1772,7 +1788,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
   );
   const workStatusQuery = useEnvironmentWorkStatus(
     thread?.environmentId,
-    requestedMergeBaseBranch,
+    compareRef,
     {
       enabled: canUseGitUi && environment !== undefined,
     },
@@ -1881,8 +1897,12 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
   );
   const workspaceBranch = workspaceStatus?.branch;
   const workspaceChangedFilesSection = useMemo(
-    () => selectWorkspaceChangedFilesSection(workspaceStatus),
-    [workspaceStatus],
+    () =>
+      // bb-fork(thread-start-ref): the start-commit view lists both sides of the range.
+      isComputedSinceThreadStart
+        ? buildThreadStartChangedFilesSection(workspaceStatus)
+        : selectWorkspaceChangedFilesSection(workspaceStatus),
+    [isComputedSinceThreadStart, workspaceStatus],
   );
   const workingTreeChangedFilesSection = useMemo(() => {
     if (
@@ -2040,6 +2060,14 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     updateEnvironment,
     workspaceStatus,
   });
+  // bb-fork(thread-start-ref): picking a merge-base branch leaves the start-commit view.
+  const handleBannerMergeBaseBranchChange = useCallback(
+    (branch: string) => {
+      setIsSinceThreadStart(false);
+      handleMergeBaseBranchChange(branch);
+    },
+    [handleMergeBaseBranchChange],
+  );
   const gitActions = useThreadGitActions({
     environment,
     requestEnvironmentAction,
@@ -2608,6 +2636,21 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
       workspaceStatusPending={
         canUseGitUi && (environmentQuery.isLoading || workStatusQuery.isLoading)
       }
+      threadStartControl={
+        canUseGitUi && environment !== undefined ? (
+          <StartCommitPicker
+            environmentId={environment.id}
+            isActive={isComputedSinceThreadStart}
+            isSaving={updateEnvironment.isPending}
+            onSelect={(ref) => {
+              setIsSinceThreadStart(true);
+              updateEnvironment.mutate({ id: environment.id, startRef: ref });
+            }}
+            onToggle={() => setIsSinceThreadStart((active) => !active)}
+            startRef={threadStartRef}
+          />
+        ) : null
+      }
       contextBannerMergeBase={
         canUseGitUi && showMergeBase && promptBannerMergeBaseBranch
           ? {
@@ -2616,7 +2659,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
               options: mergeBaseBranchOptions,
               remoteOptions: mergeBaseRemoteBranchOptions,
               optionsLoading: isLoadingMergeBaseBranchOptions,
-              onChange: handleMergeBaseBranchChange,
+              onChange: handleBannerMergeBaseBranchChange,
               onPickerOpenChange: handleMergeBasePickerOpenChange,
               onSearchQueryChange: setMergeBaseBranchSearchQuery,
             }
@@ -3026,7 +3069,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
               onSelectionAddToChat: handleSelectionAddToChat,
               pendingGitDiffCommitSha,
               pendingGitDiffScrollPath,
-              requestedMergeBaseBranch,
+              requestedMergeBaseBranch: compareRef,
               onPanelFocus: touchFixedPanelTabsState,
             }}
             timeline={{

@@ -2557,13 +2557,15 @@ files, thread-storage files, and project files that use the primary host.
 
 ## `experimental_SourceCode` / `experimental_Diff` (`@get-bb/plugin-sdk/app`)
 
-**Kept experimental (2026-08-22).** one consumer (the github plugin's `Diff`); items 2–4 (multi-file input, language override, worker pool at the component) all change the prop surface.
+**Kept experimental (2026-08-22).** one consumer (the github plugin's `Diff`); items 2–4 (multi-file input, language override, worker pool at the component) all change the prop surface. `experimental_expandUnchanged` was added 2026-09-29 (item 8) and is backward compatible: an omitted flag means the collapsed render.
 
 **What it does.** Two host-owned renderers for supplied code content.
 `experimental_SourceCode` takes source text plus a path and owns syntax
 highlighting, gutters, wrapping, highlighted-line presentation, and the live BB
-code theme. `experimental_Diff` takes a single-file patch plus a path and
-optional `experimental_fullFileContents` for both text sides, and owns patch normalization
+code theme. `experimental_Diff` takes a single-file patch plus a path,
+optional `experimental_fullFileContents` for both text sides, and
+`experimental_expandUnchanged` to render those sides whole instead of only the
+patch's hunks, and owns patch normalization
 (a patch without a `diff --git` header is completed from `path`, which is what
 makes GitHub's REST patches and bare `@@` hunks render), context enrichment,
 syntax highlighting, unified/split presentation, gutters, and the same live
@@ -2609,6 +2611,17 @@ behavior deliberately stay with the caller.
    replacement always receives the caller-resolved field as an object or
    `null`, and owns patch-consistency validation if it uses those contents for
    expansion. BB's original validates only when its lazy renderer mounts.
+8. **Resolved (Sep 2026): whole-file rendering is an explicit flag, not a
+   side effect of supplying contents.** `experimental_expandUnchanged` asks BB
+   to render every unchanged region instead of collapsing it between hunks, so
+   both complete sides read as one document with the changes marked. BB
+   implements it by rebuilding the diff from `experimental_fullFileContents`
+   with full context, so it is ignored without contents and degrades to the
+   collapsed render when either side exceeds the source render budget (5,000
+   lines or 512 KB). `PluginDiffRendererProps.experimental_expandUnchanged`
+   carries the resolved value to replacements. The flag exists because the
+   collapsed render is right for the environment diff panel and the timeline,
+   so the host cannot infer intent from the presence of contents.
 
 ## `app.slots.experimental_sourceCodeRenderer` / `app.slots.experimental_diffRenderer` (`@get-bb/plugin-sdk/app`)
 

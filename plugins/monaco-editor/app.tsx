@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   definePluginApp,
+  experimental_Diff,
   experimental_useCodeTheme,
   Markdown,
   useRpc,
@@ -25,6 +26,13 @@ import { applyCodeTheme, editorBackground } from "./lib/monaco-theme.js";
 import { cn } from "@/lib/utils";
 import { FileToolbar, type SaveIndicator } from "./components/FileToolbar.js";
 import { FileTreePanel } from "./components/FileTreePanel.js";
+// bb-fork(file-diff): unified/split diff of the open file against Git.
+import {
+  FileDiffControls,
+  type FileDiffViewMode,
+} from "./components/FileDiffControls.fork.js";
+import { FileDiffBody } from "./components/FileDiffBody.fork.js";
+import { useFileDiff } from "./lib/file-diff.fork.js";
 // bb-fork(md-preview): rendered Markdown preview next to the editor.
 import { MarkdownPreviewToggle } from "./components/MarkdownPreviewToggle.fork.js";
 import {
@@ -131,6 +139,18 @@ function MonacoFileOpener({
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
 
+  // bb-fork(file-diff): diff mode state for the open file.
+  const [isDiffActive, setIsDiffActive] = useState(false);
+  const [diffSelection, setDiffSelection] = useState<string | null>(null);
+  const [diffViewMode, setDiffViewMode] = useState<FileDiffViewMode>("split");
+  const fileDiff = useFileDiff({
+    enabled: isDiffActive,
+    path: activePath,
+    rpc,
+    selection: diffSelection,
+    source,
+  });
+
   const setSaveState = useCallback((next: SaveState) => {
     saveStateRef.current = next;
     setSaveStateValue(next);
@@ -139,6 +159,12 @@ function MonacoFileOpener({
   // bb-fork(md-preview): a newly selected file always opens in the editor.
   useEffect(() => {
     setViewMode("source");
+  }, [activePath]);
+
+  // bb-fork(file-diff): a newly selected file always opens in the editor.
+  useEffect(() => {
+    setIsDiffActive(false);
+    setDiffSelection(null);
   }, [activePath]);
 
   const writeEditorContent = useCallback(
@@ -383,7 +409,8 @@ function MonacoFileOpener({
         : undefined,
     [canPreview, fileIdentity, source],
   );
-  const isPreviewVisible = canPreview && viewMode === "preview";
+  const isPreviewVisible =
+    canPreview && viewMode === "preview" && !isDiffActive;
   const handleViewModeChange = useCallback((next: MarkdownPreviewViewMode) => {
     if (next === "preview") {
       setPreviewContent(editorRef.current?.getValue() ?? "");
@@ -423,6 +450,27 @@ function MonacoFileOpener({
             />
           ) : undefined
         }
+        diffControls={
+          source.kind === "workspace" ? (
+            <FileDiffControls
+              isActive={isDiffActive}
+              onSelectionChange={setDiffSelection}
+              onToggle={() => setIsDiffActive((active) => !active)}
+              onViewModeChange={setDiffViewMode}
+              options={
+                fileDiff.status === "ready" || fileDiff.status === "loading"
+                  ? fileDiff.options
+                  : []
+              }
+              selection={
+                diffSelection ??
+                (fileDiff.status === "ready" ? fileDiff.selection : null)
+              }
+              state={fileDiff}
+              viewMode={diffViewMode}
+            />
+          ) : undefined
+        }
       />
       <Notice
         onDiscardCancel={() => setPendingDiscard(false)}
@@ -445,8 +493,18 @@ function MonacoFileOpener({
       />
       <div
         ref={containerRef}
-        className={cn("min-h-0 flex-1", isPreviewVisible && "hidden")}
+        className={cn(
+          "min-h-0 flex-1",
+          (isPreviewVisible || isDiffActive) && "hidden",
+        )}
       />
+      {isDiffActive ? (
+        <FileDiffBody
+          path={activePath}
+          state={fileDiff}
+          viewMode={diffViewMode}
+        />
+      ) : null}
       {isPreviewVisible ? (
         <div
           className="@container/page min-h-0 flex-1 overflow-y-auto bg-background"

@@ -13,7 +13,10 @@ import type {
   EnvironmentStatusResponse,
   WorkspacePathListResponse,
 } from "@bb/server-contract";
-import type { EnvironmentDiffArgs } from "@bb/sdk/browser";
+import type {
+  EnvironmentCommitsResult,
+  EnvironmentDiffArgs,
+} from "@bb/sdk/browser";
 import {
   buildFilePreview,
   normalizeFilePreviewMimeType,
@@ -41,6 +44,7 @@ import {
   resolveEnvironmentWorkStatusPlaceholder,
 } from "./query-placeholders";
 import { requireEnabledQueryArg, type QueryOptions } from "./query-helpers";
+import { environmentCommitsQueryKey } from "./query-keys";
 import {
   EXPENSIVE_MANUAL_QUERY_POLICY,
   HEAVY_PAYLOAD_QUERY_POLICY,
@@ -134,6 +138,30 @@ export function useEnvironmentWorkStatus(
             environmentId,
           )
         : undefined,
+  });
+}
+
+// bb-fork(thread-start-ref): recent commits for the start-commit picker.
+export function useEnvironmentCommits(
+  environmentId: string | null | undefined,
+  options?: QueryOptions,
+) {
+  const enabled = (options?.enabled ?? true) && Boolean(environmentId);
+  useEnvironmentDetailRealtimeSubscription(environmentId, { enabled });
+
+  return useQuery<EnvironmentCommitsResult>({
+    queryKey: environmentCommitsQueryKey(environmentId),
+    queryFn: ({ signal }) =>
+      sdk.environments.commits({
+        environmentId: requireEnvironmentId(
+          environmentId,
+          "useEnvironmentCommits",
+        ),
+        signal,
+      }),
+    enabled,
+    ...REALTIME_OWNED_NO_FOCUS_QUERY_POLICY,
+    staleTime: 5_000,
   });
 }
 

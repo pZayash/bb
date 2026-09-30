@@ -1,6 +1,7 @@
 import { SourceLoadingSkeleton } from "@/components/code/code-loading-skeletons";
 import {
   type CSSProperties,
+  type ReactNode,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -96,6 +97,15 @@ interface FilePreviewProps {
   isRefreshing?: boolean;
   markdownLinkRouting?: MarkdownLinkRouting;
   statusLabel?: WorkspaceFilePreviewStatusLabel | null;
+  // bb-fork(file-diff): optional diff surface shown in place of the file body.
+  fileDiff?: FilePreviewDiffSlot | null;
+}
+
+// bb-fork(file-diff): kept generic so the preview stays unaware of diff data.
+export interface FilePreviewDiffSlot {
+  content: ReactNode;
+  isActive: boolean;
+  toggle: ReactNode;
 }
 
 interface FilePreviewBodyProps {
@@ -124,6 +134,8 @@ interface FilePreviewHeaderProps {
   onRefresh?: () => void;
   isRefreshing: boolean;
   statusLabel: WorkspaceFilePreviewStatusLabel | null;
+  // bb-fork(file-diff): diff toggle rendered beside the other header controls.
+  diffToggle: ReactNode | null;
   toggleKind: FilePreviewToggleKind | null;
   showLineOverflowToggle: boolean;
   lineOverflowMode: CodeOverflowMode;
@@ -440,7 +452,10 @@ export function FilePreview({
   isRefreshing = false,
   markdownLinkRouting,
   statusLabel = null,
+  fileDiff = null,
 }: FilePreviewProps) {
+  // bb-fork(file-diff): the diff replaces the file body while it is active.
+  const isDiffActive = fileDiff?.isActive === true;
   const toggleKind = getFilePreviewToggleKind(state);
   const filePreviewLineRange = getFilePreviewLineRange(state);
   const rawContents = getRawFilePreviewContents(state);
@@ -488,7 +503,7 @@ export function FilePreview({
   const bodyViewMode: FilePreviewViewMode =
     toggleKind === null ? "preview" : viewMode;
   const usesCodeLayout = usesCodeViewLayout(state, bodyViewMode);
-  const showLineOverflowToggle = usesCodeLayout;
+  const showLineOverflowToggle = usesCodeLayout && !isDiffActive;
   const usesMarkdownPreviewLayout =
     state.kind === "ready" &&
     state.textPreviewKind === "markdown" &&
@@ -498,7 +513,7 @@ export function FilePreview({
     state.textPreviewKind === "csv" &&
     bodyViewMode === "preview";
   const usesFullHeightLayout =
-    usesIframeLayout || usesCsvPreviewLayout || usesCodeLayout;
+    usesIframeLayout || usesCsvPreviewLayout || usesCodeLayout || isDiffActive;
   const usesContentHeightLayout = usesMarkdownPreviewLayout;
 
   return (
@@ -523,6 +538,7 @@ export function FilePreview({
           onRefresh={onRefresh}
           isRefreshing={isRefreshing}
           statusLabel={statusLabel}
+          diffToggle={fileDiff?.toggle ?? null}
           toggleKind={toggleKind}
           showLineOverflowToggle={showLineOverflowToggle}
           lineOverflowMode={lineOverflowMode}
@@ -531,14 +547,18 @@ export function FilePreview({
           onViewModeChange={setViewMode}
         />
       ) : null}
-      <FilePreviewBody
-        state={state}
-        path={path}
-        lineOverflowMode={lineOverflowMode}
-        viewMode={bodyViewMode}
-        markdownLinkRouting={markdownLinkRouting}
-        onSelectionAddToChat={onSelectionAddToChat}
-      />
+      {isDiffActive ? (
+        fileDiff?.content
+      ) : (
+        <FilePreviewBody
+          state={state}
+          path={path}
+          lineOverflowMode={lineOverflowMode}
+          viewMode={bodyViewMode}
+          markdownLinkRouting={markdownLinkRouting}
+          onSelectionAddToChat={onSelectionAddToChat}
+        />
+      )}
     </div>
   );
 }
@@ -634,6 +654,7 @@ function FilePreviewHeader({
   onRefresh,
   isRefreshing,
   statusLabel,
+  diffToggle,
   toggleKind,
   showLineOverflowToggle,
   lineOverflowMode,
@@ -642,7 +663,8 @@ function FilePreviewHeader({
   onViewModeChange,
 }: FilePreviewHeaderProps) {
   const openShortcut = useAppCommandShortcut("workspace.openPreferred");
-  const showHeaderControls = showLineOverflowToggle || toggleKind !== null;
+  const showHeaderControls =
+    showLineOverflowToggle || toggleKind !== null || diffToggle !== null;
   const copyFileContentsLabel = getFileContentsCopyLabel(toggleKind);
 
   return (
@@ -771,6 +793,7 @@ function FilePreviewHeader({
         </div>
         {showHeaderControls ? (
           <div className="ml-auto flex shrink-0 items-center gap-1">
+            {diffToggle}
             <FilePreviewLineWrapButton
               showLineOverflowToggle={showLineOverflowToggle}
               lineOverflowMode={lineOverflowMode}

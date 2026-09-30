@@ -120,7 +120,7 @@ routing?, allowProviderChange?, align?, disabled?, className? }`, where `routing
   null). bb owns syntax highlighting, gutters, and the live code theme.
 - `experimental_Diff` — bb's diff viewer. Props:
   `{ patch, path, view?, overflow?, showLineNumbers?, experimental_fullFileContents?,
-className? }` —
+experimental_expandUnchanged?, className? }` —
   `patch` is a unified patch for exactly ONE file and `view` is `"unified"`
   (default) or `"split"`. bb normalizes the patch, so a GitHub REST patch or
   a bare `@@` hunk works without synthesizing a `diff --git` header
@@ -129,7 +129,11 @@ className? }` —
   `{ old: { path, content }, new: { path, content } }`; when supplied and
   consistent with the patch, bb enables expand-context controls between
   hunks. The caller owns loading those complete UTF-8 sides and omits the prop
-  while it has only the patch. Reference: `plugins/github/app.tsx`.
+  while it has only the patch. `experimental_expandUnchanged` renders those
+  sides whole — every unchanged region instead of the collapsed hunks — and is
+  ignored without `experimental_fullFileContents`; very large sides or an
+  invalid patch fall back to the collapsed render. Reference:
+  `plugins/github/app.tsx`.
 
   Alias both on import — JSX reads a lowercase-initial name as an intrinsic
   element:
@@ -307,7 +311,6 @@ serviceTier?, executionInputSources, environment, input }`. Hand it to
   `docs/api_to_audit.md` is audited. Give it real width — the control row
   does not fit in a ~420px column.
 
-
 ## Shared app and provider icons
 
 Use `app.experimental_icons.register({ name, component })` during
@@ -338,10 +341,15 @@ string), and `strings.iconTint` without fetching. An id-only record resolves a
 frontend registration or fallback. For example:
 
 ```tsx
-<ProviderIcon providerKind="agent" provider={provider} fallback="Bot" className="size-4" />
+<ProviderIcon
+  providerKind="agent"
+  provider={provider}
+  fallback="Bot"
+  className="size-4"
+/>
 ```
 
- Resolution is the matching kind/id `app.slots.experimental_providerIcon` override,
+Resolution is the matching kind/id `app.slots.experimental_providerIcon` override,
 then a legacy unscoped override, then
 declared logo mask, then glyph through the shared app registry, then fallback.
 Invalid tints are ignored. Overrides update and remount per plugin generation;

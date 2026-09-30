@@ -78,6 +78,8 @@ export interface ContextBannerMergeBaseConfig {
 export interface ThreadPromptGitSection {
   changedFiles: WorkspaceChangedFilesSection;
   mergeBase: ContextBannerMergeBaseConfig | null;
+  // bb-fork(thread-start-ref): the start-commit control, built by the thread view.
+  threadStartControl?: ReactNode;
   onPromptBannerFileClick: (selection: WorkspaceChangedFileSelection) => void;
 }
 
@@ -159,6 +161,11 @@ const KIND_PREFIX: Record<WorkspaceChangedFilesSection["kind"], string> = {
   untracked: "Untracked",
   committed: "Committed",
 };
+
+// bb-fork(thread-start-ref): the section label wins so a start-commit range can name itself.
+function changedFilesRowPrefix(section: WorkspaceChangedFilesSection): string {
+  return section.label.length > 0 ? section.label : KIND_PREFIX[section.kind];
+}
 
 const ARCHIVED_THREAD_STATUS_LABEL = "Thread is archived";
 const ENVIRONMENT_GONE_STATUS_COPY: Record<
@@ -920,7 +927,7 @@ export function ThreadPromptContextBanner({
     : null;
   const gitSummaryText = gitTally ? formatChangeSummary(gitTally) : "";
   const gitSummaryPrefix = showGit
-    ? KIND_PREFIX[gitSection.changedFiles.kind]
+    ? changedFilesRowPrefix(gitSection.changedFiles)
     : "";
   const gitSummary: ReactNode =
     showGit && gitTally ? (
@@ -961,6 +968,14 @@ export function ThreadPromptContextBanner({
           muted
           popoverAlign="end"
         />
+      </BannerActionSlot>
+    ) : null;
+
+  // bb-fork(thread-start-ref): the start-commit control rides in the git row.
+  const threadStartAction =
+    showGit && gitSection.threadStartControl && hasSingleVisibleSegment ? (
+      <BannerActionSlot hideInCompact>
+        {gitSection.threadStartControl}
       </BannerActionSlot>
     ) : null;
 
@@ -1046,6 +1061,7 @@ export function ThreadPromptContextBanner({
             />
           ) : null}
           {pullRequestAction}
+          {threadStartAction}
           {segmentAction}
         </div>
         {showParentThread && parentThreadSection && !isParentThreadOnly ? (

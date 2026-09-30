@@ -8,7 +8,11 @@ Edit a file in bb instead of only reading it. It applies to every place where bb
 - A file tree that you toggle from the file bar. Filter by path, expand directories, and open another file. Right-click a row to copy its absolute path, relative path, or filename.
 - Command palette actions for fold, unfold, sort selected lines, and copy the path of the current file.
 - Colors that follow your bb theme, including light and dark switches and custom palettes.
-- A Source/Preview switch in the file bar for Markdown files (`md`, `markdown`, `mdx`) that renders the document with bb's Markdown renderer. <!-- bb-fork(md-preview): source/preview switch -->
+- A Source/Preview switch in the file bar for Markdown files (`md`, `markdown`, `mdx`) that renders the document with bb's Markdown renderer.
+- A Diff switch in the file bar: it shows the whole file, both sides, against the workspace's Git state — split or stacked — with a base picker for all changes since the merge base, committed changes, uncommitted changes, one commit, or the commit the thread started from.
+
+[//]: # (bb-fork(md-preview): the Source/Preview switch above.)
+[//]: # (bb-fork(file-diff): the Diff switch above. PLUGIN_OVERVIEW.md rejects raw HTML, so fork markers use link-reference definitions here.)
 
 ## How it works
 
