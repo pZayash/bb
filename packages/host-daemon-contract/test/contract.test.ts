@@ -496,6 +496,7 @@ const ONLINE_RPC_RESPONSE_RESULT_FIXTURES: OnlineRpcResponseResultFixtures = {
   "workspace.diff": WORKSPACE_UNAVAILABLE_RESULT,
   "workspace.diffFiles": WORKSPACE_UNAVAILABLE_RESULT,
   "workspace.diffPatch": WORKSPACE_UNAVAILABLE_RESULT,
+  "workspace.commits": WORKSPACE_UNAVAILABLE_RESULT,
   "workspace.pull_request": {
     outcome: "available",
     pullRequest: {
@@ -605,6 +606,19 @@ const WORKSPACE_DIFF_FILES_AVAILABLE_RESULT: JsonObject = {
   truncated: false,
 };
 
+const WORKSPACE_COMMITS_AVAILABLE_RESULT: JsonObject = {
+  outcome: "available",
+  commits: [
+    {
+      sha: "abc1234567890",
+      shortSha: "abc1234",
+      subject: "Commit the work",
+      authorName: "BB Tests",
+      authoredAt: 1790682398124,
+    },
+  ],
+};
+
 const WORKSPACE_DIFF_PATCH_AVAILABLE_RESULT: JsonObject = {
   outcome: "available",
   patches: [
@@ -649,6 +663,11 @@ const ADDITIONAL_ONLINE_RPC_RESPONSE_ROUND_TRIP_CASES: OnlineRpcResponseRoundTri
       name: "workspace.diffPatch available result",
       commandType: "workspace.diffPatch",
       result: WORKSPACE_DIFF_PATCH_AVAILABLE_RESULT,
+    },
+    {
+      name: "workspace.commits available result",
+      commandType: "workspace.commits",
+      result: WORKSPACE_COMMITS_AVAILABLE_RESULT,
     },
     {
       name: "workspace.pull_request no-PR result",
@@ -1161,7 +1180,7 @@ const CONTRIBUTED_ENV = [
 
 describe("host-daemon command schemas", () => {
   it("uses the current host-daemon protocol version", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(220);
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(221);
     expect(HOST_ARTIFACT_MAX_BYTES).toBe(256 * 1024 * 1024);
   });
 

@@ -118,6 +118,8 @@ export const environmentSchema = z.object({
   baseBranch: z.string().nullable(),
   defaultBranch: z.string().nullable(),
   mergeBaseBranch: z.string().nullable(),
+  // bb-fork(thread-start-ref): commit HEAD pointed at when the workspace was provisioned.
+  startRef: z.string().nullable(),
   status: environmentStatusSchema,
   environmentProviderId: z.string().nullable(),
   lifecycle: environmentLifecycleSchema,

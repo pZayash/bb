@@ -25,6 +25,8 @@ import {
   gitHostPullRequestSchema,
   clientTurnRequestIdSchema,
   gitBranchNameSchema,
+  // bb-fork(thread-start-ref): recent-commit listing for the start-commit picker.
+  workspaceCommitSummarySchema,
   jsonObjectSchema,
   jsonValueSchema,
   providerNativeRootSetSchema,
@@ -985,6 +987,12 @@ const workspaceDiffPatchCommandSchema = hostDaemonWorkspaceTargetSchema.extend({
   maxBytesPerFile: z.number().int().positive(),
 });
 
+// bb-fork(thread-start-ref): the newest commits of the checked-out branch.
+const workspaceCommitsCommandSchema = hostDaemonWorkspaceTargetSchema.extend({
+  type: z.literal("workspace.commits"),
+  maxCount: z.number().int().positive(),
+});
+
 const workspacePullRequestCommandSchema =
   hostDaemonWorkspaceTargetSchema.extend({
     type: z.literal("workspace.pull_request"),
@@ -1099,6 +1107,27 @@ const workspaceDiffResultSchema = z.discriminatedUnion("outcome", [
       failure: workspaceResolutionFailureSchema,
     })
     .strict(),
+]);
+
+// bb-fork(thread-start-ref): result for workspace.commits.
+const workspaceCommitsResultSchema = z.discriminatedUnion("outcome", [
+  z
+    .object({
+      outcome: z.literal("available"),
+      commits: z.array(workspaceCommitSummarySchema),
+    })
+    .strict(),
+  z
+    .object({
+      outcome: z.literal("unavailable"),
+      failure: workspaceResolutionFailureSchema,
+    })
+    .strict(),
+  z.object({
+    outcome: z.literal("not_applicable"),
+    reason: z.string().min(1),
+    message: z.string().min(1),
+  }),
 ]);
 
 const workspaceDiffFilesResultSchema = z.discriminatedUnion("outcome", [
@@ -1956,6 +1985,16 @@ export const hostDaemonCommandRegistry = {
     type: "workspace.diffPatch",
     schema: workspaceDiffPatchCommandSchema,
     resultSchema: workspaceDiffPatchResultSchema,
+    transport: "onlineRpc",
+    retryable: true,
+    flushEventsBeforeResult: false,
+    envLane: "read",
+  }),
+  // bb-fork(thread-start-ref): list recent commits for the start-commit picker.
+  "workspace.commits": defineHostDaemonCommandDescriptor({
+    type: "workspace.commits",
+    schema: workspaceCommitsCommandSchema,
+    resultSchema: workspaceCommitsResultSchema,
     transport: "onlineRpc",
     retryable: true,
     flushEventsBeforeResult: false,

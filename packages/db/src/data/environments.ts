@@ -241,6 +241,8 @@ interface EnvironmentMetadataUpdateColumns {
   mergeBaseBranch?: string | null;
   name?: string | null;
   path?: string | null;
+  // bb-fork(thread-start-ref): written once, by the first workspace status read.
+  startRef?: string | null;
 }
 
 interface EnvironmentMetadataChangeArgs {
@@ -252,6 +254,8 @@ interface EnvironmentMetadataChangeArgs {
 export interface UpdateEnvironmentMetadataInput {
   mergeBaseBranch?: string | null;
   name?: string | null;
+  // bb-fork(thread-start-ref): the user can pin the comparison base.
+  startRef?: string | null;
 }
 
 export interface RecordEnvironmentCurrentBranchInput {
@@ -304,6 +308,7 @@ function buildEnvironmentMetadataUpdateSet(
   if ("branchName" in input) set.branchName = input.branchName;
   if ("defaultBranch" in input) set.defaultBranch = input.defaultBranch;
   if ("mergeBaseBranch" in input) set.mergeBaseBranch = input.mergeBaseBranch;
+  if ("startRef" in input) set.startRef = input.startRef;
   if ("name" in input) set.name = input.name;
   return set;
 }
@@ -325,6 +330,9 @@ function environmentMetadataChanged(
       args.updated.defaultBranch !== args.existing.defaultBranch) ||
     ("mergeBaseBranch" in args.metadata &&
       args.updated.mergeBaseBranch !== args.existing.mergeBaseBranch) ||
+    // bb-fork(thread-start-ref): a pinned start commit is metadata other clients follow.
+    ("startRef" in args.metadata &&
+      args.updated.startRef !== args.existing.startRef) ||
     ("name" in args.metadata && args.updated.name !== args.existing.name)
   );
 }
@@ -405,6 +413,33 @@ export function recordProvisionedEnvironmentWorkspace(
       ? { mergeBaseBranch: input.mergeBaseBranch }
       : {}),
   });
+}
+
+// bb-fork(thread-start-ref): pin the commit a workspace started from, exactly once.
+export function recordEnvironmentStartRefOnce(
+  db: EnvironmentWriteConnection,
+  notifier: DbNotifier,
+  id: string,
+  startRef: string | null,
+): EnvironmentRow | null {
+  if (startRef === null) {
+    return null;
+  }
+  const existing = getEnvironment(db, id);
+  if (!existing || existing.startRef !== null) {
+    return null;
+  }
+  const updated = db
+    .update(environments)
+    .set({ startRef, updatedAt: Date.now() })
+    .where(eq(environments.id, id))
+    .returning()
+    .get();
+  if (!updated) {
+    return null;
+  }
+  notifier.notifyEnvironment(id, ["metadata-changed"]);
+  return updated;
 }
 
 export type ApplyEnvironmentLifecycleEventNoopReason =

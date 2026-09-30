@@ -768,6 +768,8 @@ function rewindEnvironmentProvisioningMigration(db: DbConnection): void {
         "claim_path",
         "status_message",
         "pending_log",
+        // bb-fork(thread-start-ref): 0134 adds this column, so a rewind drops it again.
+        "start_ref",
       ].includes(column.name) ||
       column.name === "replaced_environment_id"
     )
@@ -983,6 +985,8 @@ function rewindEnvironmentProvidersMigration(db: DbConnection): void {
     "teardown_status",
     "teardown_message",
     "resource",
+    // bb-fork(thread-start-ref): 0134 adds this column, so a rewind drops it again.
+    "start_ref",
   ];
   for (const column of lifecycleColumns) {
     const columns = db.$client

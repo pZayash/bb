@@ -64,6 +64,7 @@ import {
   type WorkspaceCommandTarget,
 } from "../services/environments/workspace-command-target.js";
 import {
+  callEnvironmentCommits,
   callEnvironmentWorkspaceStatus,
   callEnvironmentWorkspaceStatusForWork,
 } from "../services/environments/workspace-status.js";
@@ -406,6 +407,40 @@ export function registerEnvironmentRoutes(app: Hono, deps: AppDeps): void {
     return context.json({
       outcome: "available",
       workspace: result.workspaceStatus,
+    });
+  });
+
+  // bb-fork(thread-start-ref): recent commits for the start-commit picker.
+  get(routes.commits, async (context) => {
+    const environment = requireReadyEnvironment(
+      deps.db,
+      context.req.param("id"),
+    );
+    if (!environment.isGitRepo) {
+      return context.json({
+        outcome: "not_applicable",
+        reason: "non_git_environment",
+        message: "Commits are not available for non-git environments",
+      });
+    }
+    const target = requireWorkspaceCommandTarget(environment);
+    const result = await callEnvironmentCommits(deps, { environment, target });
+    if (result.outcome === "not_applicable") {
+      return context.json({
+        outcome: "not_applicable" as const,
+        reason: "non_git_environment" as const,
+        message: result.message,
+      });
+    }
+    if (result.outcome === "unavailable") {
+      return context.json({
+        outcome: "unavailable",
+        failure: result.failure,
+      });
+    }
+    return context.json({
+      outcome: "available",
+      commits: result.commits,
     });
   });
 

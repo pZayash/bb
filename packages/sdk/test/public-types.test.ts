@@ -249,6 +249,7 @@ type ExpectedEnvironmentsKey =
   | "listProviders"
   | "diff"
   | "diffBranches"
+  | "commits"
   | "diffFile"
   | "diffFiles"
   | "diffPatch"

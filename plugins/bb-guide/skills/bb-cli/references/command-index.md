@@ -232,6 +232,7 @@ move and downloads the new server's bb-app package for its service.
 - `bb environment get`
 - `bb environment status`
 - `bb environment branches`
+- `bb environment commits`
 - `bb environment paths`
 - `bb environment diff`
 - `bb environment diff-files`

@@ -1,4 +1,8 @@
-import type { ProvisioningTranscriptEntry, WorkspaceStatus } from "@bb/domain";
+import type {
+  ProvisioningTranscriptEntry,
+  WorkspaceCommitSummary,
+  WorkspaceStatus,
+} from "@bb/domain";
 import { pathExists } from "@bb/process-utils";
 import type {
   CommitOptions,
@@ -9,6 +13,7 @@ import type {
   DiffFilesResult,
   DiffPatchArgs,
   DiffPatchEntry,
+  ListCommitsArgs,
   PullRequestActionOptions,
   StatusOptions,
 } from "./workspace.js";
@@ -71,6 +76,8 @@ export interface HostWorkspace {
   getDiff(options?: DiffOptions): Promise<DiffResult>;
   diffFiles(args: DiffFilesArgs): Promise<DiffFilesResult>;
   diffPatch(args: DiffPatchArgs): Promise<DiffPatchEntry[]>;
+  // bb-fork(thread-start-ref): newest commits of the checked-out branch.
+  listCommits(args: ListCommitsArgs): Promise<WorkspaceCommitSummary[]>;
   getPullRequest(
     options?: GitHostCliOptions,
   ): Promise<GitHostPullRequestLookup>;
@@ -153,6 +160,11 @@ class ProvisionedHostWorkspace implements HostWorkspace {
 
   diffFiles(args: DiffFilesArgs): Promise<DiffFilesResult> {
     return this.ws.diffFiles(args);
+  }
+
+  // bb-fork(thread-start-ref): newest commits of the checked-out branch.
+  listCommits(args: ListCommitsArgs): Promise<WorkspaceCommitSummary[]> {
+    return this.ws.listCommits(args);
   }
 
   diffPatch(args: DiffPatchArgs): Promise<DiffPatchEntry[]> {

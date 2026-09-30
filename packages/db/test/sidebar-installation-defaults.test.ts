@@ -79,6 +79,8 @@ describe.each(["project", "thread", "preference"] as const)(
           const threads = db.$client.prepare("SELECT * FROM threads").all();
           db.$client.exec("DROP TABLE ui_preference_defaults");
           db.$client.exec("ALTER TABLE threads DROP COLUMN draft");
+          // bb-fork(thread-start-ref): replaying 0134 re-adds this column.
+          db.$client.exec("ALTER TABLE environments DROP COLUMN start_ref");
           db.$client
             .prepare("DELETE FROM __drizzle_migrations WHERE created_at >= ?")
             .run(SIDEBAR_INSTALLATION_DEFAULTS_MIGRATION_TIMESTAMP);

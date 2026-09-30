@@ -61,6 +61,28 @@ export interface StatusOptions {
 
 export type DiffResult = ThreadGitDiffResponse;
 
+// bb-fork(thread-start-ref): args for the recent-commit listing.
+export interface ListCommitsArgs {
+  maxCount: number;
+}
+
+function parseCommitSummaryLines(stdout: string): WorkspaceCommitSummary[] {
+  return stdout
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [sha, shortSha, subject, authorName, authoredAt] =
+        line.split("\u001f");
+      return {
+        sha,
+        shortSha,
+        subject,
+        authorName: authorName ?? "",
+        authoredAt: Number.parseInt(authoredAt ?? "0", 10) * 1000,
+      };
+    });
+}
+
 export interface CommitOptions {
   message: string;
   noVerify: boolean;
@@ -977,6 +999,24 @@ export class Workspace {
     };
   }
 
+  // bb-fork(thread-start-ref): the newest commits of the checked-out branch.
+  async listCommits(args: ListCommitsArgs): Promise<WorkspaceCommitSummary[]> {
+    await ensureGitRepo(this.path, this.gitProcessOptions);
+    assertPositiveInteger(args.maxCount, "maxCount");
+    const log = await this.runGit(
+      [
+        "log",
+        "-n",
+        String(args.maxCount),
+        "--format=%H%x1f%h%x1f%s%x1f%an%x1f%at",
+        "HEAD",
+      ],
+      { cwd: this.path, allowFailure: true },
+    );
+
+    return parseCommitSummaryLines(log.stdout);
+  }
+
   private async readPatchUniqueCommitSummaries(
     mergeBaseBranch: string,
     timeoutMs?: number,
@@ -993,20 +1033,7 @@ export class Workspace {
       { cwd: this.path, allowFailure: true, timeoutMs },
     );
 
-    return log.stdout
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => {
-        const [sha, shortSha, subject, authorName, authoredAt] =
-          line.split("\u001f");
-        return {
-          sha,
-          shortSha,
-          subject,
-          authorName: authorName ?? "",
-          authoredAt: Number.parseInt(authoredAt ?? "0", 10) * 1000,
-        };
-      });
+    return parseCommitSummaryLines(log.stdout);
   }
 
   private async readMergeBaseStatus(

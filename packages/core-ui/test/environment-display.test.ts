@@ -51,6 +51,7 @@ function makeEnvironment(overrides?: Partial<Environment>): Environment {
     branchName: null,
     defaultBranch: null,
     mergeBaseBranch: null,
+    startRef: null,
     status: "ready",
     environmentProviderId: null,
     environmentProviderSelection: null,

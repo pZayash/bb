@@ -74,6 +74,8 @@ it("moves Drafts plugin holds into thread drafts and leaves other queued rows", 
     );
 
     db.$client.exec("ALTER TABLE threads DROP COLUMN draft");
+    // bb-fork(thread-start-ref): replaying 0134 re-adds this column.
+    db.$client.exec("ALTER TABLE environments DROP COLUMN start_ref");
     db.$client
       .prepare("DELETE FROM __drizzle_migrations WHERE created_at >= ?")
       .run(THREAD_DRAFTS_MIGRATION_TIMESTAMP);

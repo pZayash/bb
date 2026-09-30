@@ -25,6 +25,28 @@ manual reassignment asks to replace the current binding or cancel. Audit
 cross-platform conflicts and plugin lifecycle before extending the context
 model or default binding policy.
 
+## `bb.sdk.environments.commits` (and `startRef` on `environments.update`)
+
+**Added 2026-09-29 (fork).** The Windows fork adds a thread start-commit
+baseline: `bb.sdk.environments.commits({ environmentId })` lists the newest
+commits of an environment's checked-out branch (50 at most) through the
+`workspace.commits` host-daemon command, and
+`bb.sdk.environments.update({ environmentId, startRef })` pins or clears the
+commit a thread compares from (`Environment.startRef`, recorded once from the
+first workspace read, then user-editable). Both are reachable from plugins
+through `bb.sdk`, and from `bb environment commits` /
+`bb environment update --start-ref|--clear-start-ref`.
+
+`workspace.commits` is a fork-only wire command, so the fork carries two
+protocol deltas and `HOST_DAEMON_PROTOCOL_VERSION` is upstream + 2
+(`scripts/windows/merge-upstream.ps1` adds 2).
+
+Before this lands upstream, decide whether the baseline belongs on the
+environment or the thread (a shared environment currently anchors every thread
+bound to it at the same commit), whether `startRef` should keep the automatic
+value alongside a manual override instead of being overwritten, and whether the
+commit listing belongs on `workspace.status` rather than its own command.
+
 ## Discoverable RPC
 
 `bb.rpc.register` accepts optional `experimental_discoverable` and `experimental_description` options. Method definitions accept `experimental_description`. Discoverable registration exports wire schemas through Standard JSON Schema; validation-only schemas remain usable without publication. Descriptions are published separately and absent descriptions become null. Discovery advertises methods without changing RPC authorization or dispatch.

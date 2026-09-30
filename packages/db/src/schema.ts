@@ -528,6 +528,8 @@ export const environments = sqliteTable(
     baseBranch: text("base_branch"),
     defaultBranch: text("default_branch"),
     mergeBaseBranch: text("merge_base_branch"),
+    // bb-fork(thread-start-ref): commit HEAD pointed at when this workspace was provisioned.
+    startRef: text("start_ref"),
     environmentProviderId: text("environment_provider_id"),
     environmentProviderPluginId: text("environment_provider_plugin_id"),
     providerOwnsPath: integer("provider_owns_path", { mode: "boolean" })

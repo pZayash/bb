@@ -69,6 +69,7 @@ it("reconciles the pre-merge 0131 muted-at migration with upstream's renumbered 
 
     db.$client.exec(`
       ALTER TABLE threads DROP COLUMN draft;
+      ALTER TABLE environments DROP COLUMN start_ref;
       DROP INDEX IF EXISTS environments_provider_lifecycle_idx;
     `);
     db.$client

@@ -122,6 +122,7 @@ import type {
   EnvironmentPathsQuery,
   EnvironmentPullRequestResponse,
   EnvironmentStatusQuery,
+  EnvironmentCommitsResponse,
   EnvironmentStatusResponse,
   HostDirectoryListing,
   HostDirectoryQuery,
@@ -1135,6 +1136,13 @@ export const publicApiRoutes = {
         environmentStatusQuerySchema,
       ),
       response: jsonResponse<EnvironmentStatusResponse>(),
+    }),
+    // bb-fork(thread-start-ref): recent commits for the start-commit picker.
+    commits: defineRoute({
+      path: "/environments/:id/commits",
+      method: "get",
+      request: noRequest<PathId>(),
+      response: jsonResponse<EnvironmentCommitsResponse>(),
     }),
     pullRequest: defineRoute({
       path: "/environments/:id/pull-request",

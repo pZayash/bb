@@ -93,7 +93,7 @@ const workspaceFileStatusSchema = z.object({
 });
 export type WorkspaceFileStatus = z.infer<typeof workspaceFileStatusSchema>;
 
-const workspaceCommitSummarySchema = z.object({
+export const workspaceCommitSummarySchema = z.object({
   sha: z.string(),
   shortSha: z.string(),
   subject: z.string(),

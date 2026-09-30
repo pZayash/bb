@@ -44,6 +44,7 @@ export function makeEnvironment(
     baseBranch: "main",
     defaultBranch: "main",
     mergeBaseBranch: null,
+    startRef: null,
     status: "ready",
     environmentProviderId: "git-worktree",
     environmentProviderSelection: {

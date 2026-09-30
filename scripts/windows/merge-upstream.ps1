@@ -29,8 +29,9 @@ function Remove-ConflictMarkers {
 }
 
 function Set-ForkProtocolVersion {
-  # The fork carries a wire delta (hostPlatformSchema gains "windows"), so the
-  # protocol version is upstream's version + 1 after every merge.
+  # The fork carries two wire deltas (hostPlatformSchema gains "windows", and
+  # workspace.commits exists only in the fork), so the protocol version is
+  # upstream's version + 2 after every merge.
   $protocolPath = "packages/host-daemon-contract/src/protocol.ts"
   $contractTestPath = "packages/host-daemon-contract/test/contract.test.ts"
   $upstreamSource = & git show "${Upstream}/${Branch}:$protocolPath"
@@ -41,8 +42,8 @@ function Set-ForkProtocolVersion {
   if (-not $match.Success) {
     throw "could not find HOST_DAEMON_PROTOCOL_VERSION in ${Upstream}/${Branch}:$protocolPath"
   }
-  $resolved = [int]$match.Groups[1].Value + 1
-  Write-Host "Resolving protocol version to $resolved (upstream $($match.Groups[1].Value) + 1)"
+  $resolved = [int]$match.Groups[1].Value + 2
+  Write-Host "Resolving protocol version to $resolved (upstream $($match.Groups[1].Value) + 2)"
 
   foreach ($path in @($protocolPath, $contractTestPath)) {
     if (-not (Test-Path $path)) { continue }

@@ -98,6 +98,8 @@ function toEnvironmentResponseWithHostLifecycle(
     baseBranch: row.baseBranch,
     defaultBranch: row.defaultBranch,
     mergeBaseBranch: row.mergeBaseBranch,
+    // bb-fork(thread-start-ref): the provisioning snapshot, null for older or unprovisioned workspaces.
+    startRef: row.startRef,
     status: row.status,
     environmentProviderId: row.environmentProviderId,
     lifecycle: {

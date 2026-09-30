@@ -141,6 +141,7 @@ export function makeEnvironment(overrides: MakeEnvironmentArgs): Environment {
     defaultBranch: "main",
     baseBranch: null,
     mergeBaseBranch: null,
+    startRef: null,
     environmentProviderId: null,
     environmentProviderSelection: null,
     environmentProviderInstanceKey: null,

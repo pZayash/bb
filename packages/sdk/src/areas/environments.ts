@@ -14,6 +14,7 @@ import {
 import type {
   CommitActionResponse,
   EnvironmentArchiveThreadsResponse,
+  EnvironmentCommitsResponse,
   EnvironmentDiffBranchesQuery,
   EnvironmentDiffBranchesResponse,
   EnvironmentDiffFileQuery,
@@ -55,23 +56,24 @@ type EnvironmentNameUpdateValue = Exclude<
   undefined
 >;
 
-interface EnvironmentMergeBaseBranchUpdate {
-  mergeBaseBranch: EnvironmentMergeBaseBranchUpdateValue;
-  name?: EnvironmentNameUpdateValue;
-}
+// bb-fork(thread-start-ref): pin the commit a thread compares from.
+type EnvironmentStartRefUpdateValue = Exclude<
+  UpdateEnvironmentRequest["startRef"],
+  undefined
+>;
 
-interface EnvironmentNameUpdate {
-  mergeBaseBranch?: EnvironmentMergeBaseBranchUpdateValue;
-  name: EnvironmentNameUpdateValue;
-}
-
-type EnvironmentUpdateFields =
-  | EnvironmentMergeBaseBranchUpdate
-  | EnvironmentNameUpdate;
-
-export type EnvironmentUpdateArgs = EnvironmentUpdateFields & {
+/**
+ * Every field is optional and at least one must be present; the server rejects
+ * an empty update. The previous one-field union shapes forced a combinatorial
+ * builder in the CLI for every new field.
+ */
+export interface EnvironmentUpdateArgs {
   environmentId: string;
-};
+  mergeBaseBranch?: EnvironmentMergeBaseBranchUpdateValue;
+  name?: EnvironmentNameUpdateValue;
+  // bb-fork(thread-start-ref): pin the commit a thread compares from.
+  startRef?: EnvironmentStartRefUpdateValue;
+}
 
 export interface EnvironmentStatusArgs extends EnvironmentStatusQuery {
   environmentId: string;
@@ -97,6 +99,12 @@ export interface EnvironmentCommitArgs {
   environmentId: string;
 }
 
+// bb-fork(thread-start-ref): recent commits for the start-commit picker.
+export interface EnvironmentCommitsArgs {
+  environmentId: string;
+  signal?: AbortSignal;
+}
+
 export interface EnvironmentPullRequestMergeArgs {
   environmentId: string;
   method: PullRequestMergeMethod;
@@ -114,6 +122,7 @@ export interface EnvironmentPathsArgs extends EnvironmentPathsQuery {
 
 export type EnvironmentArchiveThreadsResult = EnvironmentArchiveThreadsResponse;
 export type EnvironmentCommitResult = CommitActionResponse;
+export type EnvironmentCommitsResult = EnvironmentCommitsResponse;
 export type EnvironmentDiffResult = EnvironmentDiffResponse;
 export type EnvironmentDiffBranchesResult = EnvironmentDiffBranchesResponse;
 export type EnvironmentDiffFileResult = EnvironmentDiffFileResponse;
@@ -159,6 +168,8 @@ export interface EnvironmentsArea {
     args: EnvironmentActionArgs,
   ): Promise<EnvironmentArchiveThreadsResult>;
   commit(args: EnvironmentCommitArgs): Promise<EnvironmentCommitResult>;
+  // bb-fork(thread-start-ref): recent commits for the start-commit picker.
+  commits(args: EnvironmentCommitsArgs): Promise<EnvironmentCommitsResult>;
   diff(args: EnvironmentDiffArgs): Promise<EnvironmentDiffResult>;
   diffBranches(
     args: EnvironmentDiffBranchesArgs,
@@ -198,6 +209,10 @@ function environmentUpdateJson(
   }
   if (args.name !== undefined) {
     request.name = args.name;
+  }
+  // bb-fork(thread-start-ref): pin the commit a thread compares from.
+  if (args.startRef !== undefined) {
+    request.startRef = args.startRef;
   }
   return updateEnvironmentRequestSchema.parse(request);
 }
@@ -303,6 +318,15 @@ export function createEnvironmentsArea(
             param: { id: input.environmentId },
             query: environmentDiffQuery(input),
           },
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+    },
+    // bb-fork(thread-start-ref): recent commits for the start-commit picker.
+    async commits(input) {
+      return transport.readJson(
+        transport.api.v1.environments[":id"].commits.$get(
+          { param: { id: input.environmentId } },
           ...signalRequestArgs(input.signal),
         ),
       );

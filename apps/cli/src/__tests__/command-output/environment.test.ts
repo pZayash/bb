@@ -542,6 +542,114 @@ describe("bb environment command output", () => {
     ]);
   });
 
+  // bb-fork(thread-start-ref): choose the commit a thread compares from.
+  it("bb environment update sets the start commit", async () => {
+    const environment = fixtures.makeEnvironment({
+      id: "env-update-start",
+      projectId: "proj-1",
+      hostId: "host-1",
+      startRef: "abc1234567890",
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    const patch = vi.fn(async () => environment);
+    stubServerApi({ "v1.environments.:id.$patch": patch });
+
+    await runCommand(
+      [
+        "environment",
+        "update",
+        "env-update-start",
+        "--start-ref",
+        "abc1234567890",
+      ],
+      register,
+    );
+
+    expect(patch).toHaveBeenCalledWith({
+      param: { id: "env-update-start" },
+      json: { startRef: "abc1234567890" },
+    });
+    expect(collectLogLines(vi.mocked(console.log))).toContain(
+      "Start commit: abc1234567890",
+    );
+  });
+
+  it("bb environment update clears the start commit", async () => {
+    const environment = fixtures.makeEnvironment({
+      id: "env-update-start-clear",
+      projectId: "proj-1",
+      hostId: "host-1",
+      startRef: null,
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    const patch = vi.fn(async () => environment);
+    stubServerApi({ "v1.environments.:id.$patch": patch });
+
+    await runCommand(
+      ["environment", "update", "env-update-start-clear", "--clear-start-ref"],
+      register,
+    );
+
+    expect(patch).toHaveBeenCalledWith({
+      param: { id: "env-update-start-clear" },
+      json: { startRef: null },
+    });
+    expect(collectLogLines(vi.mocked(console.log))).toContain(
+      "Start commit cleared",
+    );
+  });
+
+  it("bb environment update rejects --start-ref with --clear-start-ref", async () => {
+    const patch = vi.fn();
+    stubServerApi({ "v1.environments.:id.$patch": patch });
+
+    await expect(
+      runCommand(
+        [
+          "environment",
+          "update",
+          "env-update-start-conflict",
+          "--start-ref",
+          "abc1234",
+          "--clear-start-ref",
+        ],
+        register,
+      ),
+    ).rejects.toThrow("process.exit:1");
+
+    expect(vi.mocked(console.error)).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Cannot combine --start-ref with --clear-start-ref.",
+      ),
+    );
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("bb environment commits lists recent commits", async () => {
+    const get = vi.fn(async () => ({
+      outcome: "available",
+      commits: [
+        {
+          sha: "abc1234567890",
+          shortSha: "abc1234",
+          subject: "Commit the work",
+          authorName: "BB",
+          authoredAt: 1,
+        },
+      ],
+    }));
+    stubServerApi({ "v1.environments.:id.commits.$get": get });
+
+    await runCommand(["environment", "commits", "env-commits"], register);
+
+    expect(get).toHaveBeenCalledWith({ param: { id: "env-commits" } });
+    expect(collectLogLines(vi.mocked(console.log))).toEqual([
+      "abc1234 Commit the work",
+    ]);
+  });
+
   it("bb environment paths targets the environment and path kinds", async () => {
     const response = {
       paths: [

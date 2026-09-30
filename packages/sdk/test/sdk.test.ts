@@ -37,6 +37,7 @@ function makeEnvironment(overrides: EnvironmentOverrides = {}): Environment {
     branchName: null,
     defaultBranch: null,
     mergeBaseBranch: null,
+    startRef: null,
     status: "ready",
     environmentProviderId: null,
     environmentProviderSelection: null,
@@ -1203,7 +1204,7 @@ describe("@bb/sdk", () => {
     });
 
     await expect(
-      // @ts-expect-error Environment update requires at least one update field.
+      // The server rejects an update that names no field.
       sdk.environments.update({ environmentId: "env_update" }),
     ).rejects.toThrow("At least one field must be provided");
     expect(queue.requests).toEqual([]);

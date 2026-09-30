@@ -104,6 +104,7 @@ function restoreContext(
         baseBranch: "main",
         defaultBranch: "main",
         mergeBaseBranch: "main",
+        startRef: null,
         status: "destroyed",
         environmentProviderId: GIT_WORKTREE_ENVIRONMENT_PROVIDER_ID,
         lifecycle: {

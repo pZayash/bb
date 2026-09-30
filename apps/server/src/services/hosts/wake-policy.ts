@@ -72,6 +72,8 @@ const hostCommandWakePolicy = {
   "provider.installation.run": "work",
   "provider.usage": "work",
   "workspace.status": "work",
+  // bb-fork(thread-start-ref): reading recent commits is a read, but it still needs the host.
+  "workspace.commits": "work",
   "workspace.diff": "work",
   "workspace.diffFiles": "work",
   "workspace.diffPatch": "work",

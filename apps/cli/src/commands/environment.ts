@@ -84,9 +84,17 @@ interface EnvironmentDiffPatchCommandOptions extends EnvironmentDiffCommandOptio
 interface EnvironmentUpdateCommandOptions {
   clearMergeBaseBranch?: boolean;
   clearName?: boolean;
+  // bb-fork(thread-start-ref): pin the commit a thread compares from.
+  clearStartRef?: boolean;
   json?: boolean;
   mergeBaseBranch?: string;
   name?: string;
+  startRef?: string;
+}
+
+interface EnvironmentCommitsCommandOptions {
+  json?: boolean;
+  limit?: string;
 }
 
 interface EnvironmentPullRequestCommandOptions {
@@ -291,38 +299,29 @@ function buildEnvironmentUpdateArgs({
   id,
   opts,
 }: BuildEnvironmentUpdateArgsInput): EnvironmentUpdateArgs {
+  const args: EnvironmentUpdateArgs = { environmentId: id };
   if (opts.clearMergeBaseBranch === true) {
-    if (opts.clearName === true) {
-      return { environmentId: id, mergeBaseBranch: null, name: null };
-    }
-    if (opts.name !== undefined) {
-      return { environmentId: id, mergeBaseBranch: null, name: opts.name };
-    }
-    return { environmentId: id, mergeBaseBranch: null };
+    args.mergeBaseBranch = null;
+  } else if (opts.mergeBaseBranch !== undefined) {
+    args.mergeBaseBranch = opts.mergeBaseBranch;
   }
-
-  if (opts.mergeBaseBranch !== undefined) {
-    const mergeBaseBranch = opts.mergeBaseBranch;
-    if (opts.clearName === true) {
-      return { environmentId: id, mergeBaseBranch, name: null };
-    }
-    if (opts.name !== undefined) {
-      return { environmentId: id, mergeBaseBranch, name: opts.name };
-    }
-    return { environmentId: id, mergeBaseBranch };
-  }
-
   if (opts.clearName === true) {
-    return { environmentId: id, name: null };
+    args.name = null;
+  } else if (opts.name !== undefined) {
+    args.name = opts.name;
   }
-
-  if (opts.name !== undefined) {
-    return { environmentId: id, name: opts.name };
+  // bb-fork(thread-start-ref): pin the commit a thread compares from.
+  if (opts.clearStartRef === true) {
+    args.startRef = null;
+  } else if (opts.startRef !== undefined) {
+    args.startRef = opts.startRef;
   }
-
-  throw new Error(
-    "No changes requested. Provide --merge-base-branch, --clear-merge-base-branch, --name, or --clear-name.",
-  );
+  if (Object.keys(args).length === 1) {
+    throw new Error(
+      "No changes requested. Provide --merge-base-branch, --clear-merge-base-branch, --name, --clear-name, --start-ref, or --clear-start-ref.",
+    );
+  }
+  return args;
 }
 
 export function registerEnvironmentCommands(
@@ -758,6 +757,9 @@ export function registerEnvironmentCommands(
     .option("--clear-merge-base-branch", "Clear the merge-base branch override")
     .option("--name <name>", "Set the environment display name")
     .option("--clear-name", "Clear the environment display name")
+    // bb-fork(thread-start-ref): pin the commit a thread compares from.
+    .option("--start-ref <sha>", "Set the comparison start commit")
+    .option("--clear-start-ref", "Clear the comparison start commit")
     .option("--json", "Print machine-readable JSON output")
     .action(
       action(async (id: string, opts: EnvironmentUpdateCommandOptions) => {
@@ -765,6 +767,8 @@ export function registerEnvironmentCommands(
         const hasClearMergeBaseBranch = opts.clearMergeBaseBranch === true;
         const hasName = opts.name !== undefined;
         const hasClearName = opts.clearName === true;
+        const hasStartRef = opts.startRef !== undefined;
+        const hasClearStartRef = opts.clearStartRef === true;
 
         if (hasMergeBaseBranch && hasClearMergeBaseBranch) {
           throw new Error(
@@ -774,6 +778,10 @@ export function registerEnvironmentCommands(
         if (hasName && hasClearName) {
           throw new Error("Cannot combine --name with --clear-name.");
         }
+        // bb-fork(thread-start-ref): pin the commit a thread compares from.
+        if (hasStartRef && hasClearStartRef) {
+          throw new Error("Cannot combine --start-ref with --clear-start-ref.");
+        }
         if (opts.name !== undefined && opts.name.trim().length === 0) {
           throw new Error("Environment name cannot be empty.");
         }
@@ -781,10 +789,12 @@ export function registerEnvironmentCommands(
           !hasMergeBaseBranch &&
           !hasClearMergeBaseBranch &&
           !hasName &&
-          !hasClearName
+          !hasClearName &&
+          !hasStartRef &&
+          !hasClearStartRef
         ) {
           throw new Error(
-            "No changes requested. Provide --merge-base-branch, --clear-merge-base-branch, --name, or --clear-name.",
+            "No changes requested. Provide --merge-base-branch, --clear-merge-base-branch, --name, --clear-name, --start-ref, or --clear-start-ref.",
           );
         }
 
@@ -807,6 +817,40 @@ export function registerEnvironmentCommands(
             environment.name ? `Name: ${environment.name}` : "Name cleared",
           );
         }
+        // bb-fork(thread-start-ref): pin the commit a thread compares from.
+        if (hasStartRef || hasClearStartRef) {
+          console.log(
+            environment.startRef
+              ? `Start commit: ${environment.startRef}`
+              : "Start commit cleared",
+          );
+        }
+      }),
+    );
+
+  // bb-fork(thread-start-ref): recent commits for the start-commit picker.
+  environment
+    .command("commits <id>")
+    .description("List recent commits in an environment")
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(async (id: string, opts: EnvironmentCommitsCommandOptions) => {
+        const result = await createCliBbSdk(getUrl()).environments.commits({
+          environmentId: id,
+        });
+        if (outputJson(opts, result)) return;
+        if (result.outcome === "not_applicable") {
+          console.log(result.message);
+          return;
+        }
+        if (result.outcome === "unavailable") {
+          console.log(`Commits unavailable: ${result.failure.message}`);
+          return;
+        }
+        for (const commit of result.commits) {
+          console.log(`${commit.shortSha} ${commit.subject}`);
+        }
+        if (result.commits.length === 0) console.log("(none)");
       }),
     );
 

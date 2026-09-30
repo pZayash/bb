@@ -221,6 +221,9 @@ export function createFakeWorkspace(pathname: string) {
     async diffPatch() {
       return [];
     },
+    async listCommits() {
+      return [];
+    },
     async getPullRequest(options) {
       state.pullRequestLookupShellPath = options?.shellPath;
       if (state.pullRequestLookupError !== null) {

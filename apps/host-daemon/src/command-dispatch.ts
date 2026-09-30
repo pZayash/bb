@@ -415,6 +415,8 @@ async function readAvailableWorkspace<TAvailable extends object>(
     | "workspace.diff"
     | "workspace.diffFiles"
     | "workspace.diffPatch"
+    // bb-fork(thread-start-ref): commit listing for the start-commit picker.
+    | "workspace.commits"
   >,
   options: CommandDispatchOptions,
   read: (workspace: HostWorkspace) => Promise<TAvailable>,
@@ -717,6 +719,11 @@ const onlineRpcHandlers: OnlineRpcHandlerMap = {
         maxFiles: command.maxFiles,
       }),
     ),
+  // bb-fork(thread-start-ref): list the newest commits of the checked-out branch.
+  "workspace.commits": (command, options) =>
+    readAvailableWorkspace(command, options, async (workspace) => ({
+      commits: await workspace.listCommits({ maxCount: command.maxCount }),
+    })),
   "workspace.diffPatch": (command, options) =>
     readAvailableWorkspace(command, options, async (workspace) => ({
       patches: await workspace.diffPatch({
