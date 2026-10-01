@@ -38,10 +38,11 @@ interface HostOrphanQueue {
 const runningHostIds = new Set<string>();
 const orphanQueueByHostId = new Map<string, HostOrphanQueue>();
 
+// bb-fork(log-noise): the idle-skip note is trace-only.
 export function runThreadStorageOrphanSweep(deps: LoggedWorkSessionDeps): void {
   const activity = getDatabaseMaintenanceActivity(deps.db);
   if (!isDatabaseMaintenanceIdle(activity)) {
-    deps.logger.debug(
+    deps.logger.trace?.(
       { activity },
       "Thread storage orphan cleanup skipped while app work is active",
     );

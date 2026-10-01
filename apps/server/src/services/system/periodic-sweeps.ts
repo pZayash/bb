@@ -134,7 +134,8 @@ async function runPeriodicSweepJob(
 ): Promise<void> {
   const state = getPeriodicSweepJobState(job);
   if (state.running) {
-    deps.logger.debug(
+    // bb-fork(log-noise): already-running skips are trace-only.
+    deps.logger.trace?.(
       { sweepJob: job.name, sweepJobCategory: job.category },
       "Periodic sweep job skipped while already running",
     );
@@ -212,7 +213,8 @@ export function runDatabaseMaintenanceSweep(
         stats: freelistStats,
       })
     ) {
-      deps.logger.debug(
+      // bb-fork(log-noise): below-threshold vacuum skips are trace-only.
+      deps.logger.trace?.(
         { freelistStats },
         "Incremental database vacuum skipped below freelist threshold",
       );

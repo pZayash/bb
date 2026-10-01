@@ -27,7 +27,7 @@ interface EnsureCachedNodeArtifactArgs {
   fileName: string;
   legacyFileNames?: readonly string[];
   fetchArtifact: FetchNodeArtifact;
-  logger: Pick<HostDaemonLogger, "debug" | "warn">;
+  logger: Pick<HostDaemonLogger, "debug" | "trace" | "warn">;
 }
 
 const pendingPulls = new Map<string, Promise<string>>();
@@ -76,7 +76,8 @@ async function ensureCachedNodeArtifactUnlocked(
   const directory = join(args.cacheDir, args.digest);
   const artifactPath = join(directory, args.fileName);
   if (await isVerifiedCachedArtifact(artifactPath, args)) {
-    args.logger.debug(
+    // bb-fork(log-noise): cache-hit detail is trace-only.
+    args.logger.trace?.(
       { cacheDir: args.cacheDir, digest: args.digest },
       "Using cached host artifact",
     );

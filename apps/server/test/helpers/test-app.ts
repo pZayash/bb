@@ -104,6 +104,7 @@ function createTestLogger() {
     debug(): void {},
     error(): void {},
     info(): void {},
+    trace(): void {},
     warn(): void {},
   };
 }

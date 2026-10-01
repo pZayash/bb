@@ -691,6 +691,7 @@ describe("PluginHostManager", () => {
     const logger = {
       debug: vi.fn(),
       info: vi.fn(),
+      trace: vi.fn(),
       warn: vi.fn(),
     };
     const manager = await createManager({
@@ -706,7 +707,7 @@ describe("PluginHostManager", () => {
 
     expect(Reflect.get(Object(restarted.output), "pid")).not.toBe(firstPid);
     expect(onWorkerExit).not.toHaveBeenCalled();
-    expect(logger.debug).toHaveBeenCalledWith(
+    expect(logger.trace).toHaveBeenCalledWith(
       expect.objectContaining({ digest: expect.any(String) }),
       "Using cached host artifact",
     );

@@ -20,7 +20,10 @@ import type { AiServiceRegistry } from "./services/ai/ai-service-registry.js";
 import type { PluginHostArtifactRegistry } from "./services/plugins/plugin-host-artifact-registry.js";
 import type { ProviderNativeRootsCache } from "./services/providers/native-roots.js";
 
-export type ServerLogger = Pick<Logger, "debug" | "error" | "info" | "warn">;
+// bb-fork(log-noise): high-frequency periodic detail is logged at optional trace.
+export type ServerLogger = Pick<Logger, "debug" | "error" | "info" | "warn"> & {
+  trace?: Logger["trace"];
+};
 
 export interface ServerRuntimeConfig {
   appVersion: string;
