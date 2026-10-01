@@ -12,6 +12,7 @@ const editor = vi.hoisted(() => ({
   getModel: vi.fn(() => ({
     getLineCount: () => 160,
     getLineMaxColumn: () => 42,
+    isDisposed: () => false,
     dispose: vi.fn(),
   })),
   onDidFocusEditorWidget: vi.fn(),
@@ -179,6 +180,20 @@ it("does not create or navigate a disposed loading editor", async () => {
   await act(async () => resolveRead(file));
   expect(create).not.toHaveBeenCalled();
   expect(editor.setSelection).not.toHaveBeenCalled();
+});
+
+it("disposes the editor before its model when the opener unmounts", async () => {
+  const slot = mount(range(80));
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  slot.lifecycle.unmount();
+  const model = editor.getModel.mock.results.at(-1)?.value as {
+    dispose: ReturnType<typeof vi.fn>;
+  };
+  expect(editor.dispose).toHaveBeenCalledOnce();
+  expect(model.dispose).toHaveBeenCalledOnce();
+  expect(editor.dispose.mock.invocationCallOrder[0]).toBeLessThan(
+    model.dispose.mock.invocationCallOrder[0]!,
+  );
 });
 
 it("does not apply a stale target cleared during loading", async () => {

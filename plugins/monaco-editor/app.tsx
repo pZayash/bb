@@ -385,10 +385,13 @@ function MonacoFileOpener({
 
     return () => {
       disposed = true;
-      if (editorRef.current) forgetEditor(editorRef.current);
-      editorRef.current?.getModel()?.dispose();
-      editorRef.current?.dispose();
+      const editor = editorRef.current;
       editorRef.current = null;
+      if (editor === null) return;
+      forgetEditor(editor);
+      const model = editor.getModel();
+      editor.dispose();
+      if (model !== null && !model.isDisposed()) model.dispose();
     };
   }, [activePath, rpc, setSaveState, source]);
 
