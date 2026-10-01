@@ -176,4 +176,11 @@ describe("threadDraftKey", () => {
     expect(threadDraftKey([])).toBe("");
     expect(threadDraftKey(null)).toBe("");
   });
+
+  it("returns an empty key for a missing or malformed server draft", () => {
+    expect(threadDraftKey(undefined)).toBe("");
+    expect(
+      threadDraftKey([null, { type: "nope" }] as unknown as PromptInput[]),
+    ).toBe("");
+  });
 });

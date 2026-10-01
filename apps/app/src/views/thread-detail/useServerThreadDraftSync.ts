@@ -36,8 +36,10 @@ function sortedJsonValue(value: unknown): unknown {
   );
 }
 
-export function threadDraftKey(input: readonly PromptInput[] | null): string {
-  if (input === null) return "";
+export function threadDraftKey(
+  input: readonly PromptInput[] | null | undefined,
+): string {
+  if (!Array.isArray(input)) return "";
   const canonical = promptDraftToInput(promptInputToDraft(input));
   return canonical.length === 0
     ? ""
@@ -81,7 +83,7 @@ export function useServerThreadDraftSync({
     if (!localMatchesPrevious || localKeyRef.current === serverKey) return;
     const next = serverDraftRef.current;
     setLocalDraftRef.current(
-      next === null ? emptyPromptDraftState() : promptInputToDraft(next),
+      next == null ? emptyPromptDraftState() : promptInputToDraft(next),
     );
   }, [localKeyRef, serverDraftRef, serverKey, setLocalDraftRef, threadId]);
 
