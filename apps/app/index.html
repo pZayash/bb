@@ -98,6 +98,30 @@
         if (darkTheme) document.documentElement.classList.add("dark");
       })();
     </script>
+    <!-- bb-fork(log-noise): Chromium and WebKit report a benign
+         "ResizeObserver loop completed with undelivered notifications" as an
+         unhandled window error. Vite's forwardConsole (on by default for
+         agent-run dev servers) turns every one into a server log line, so this
+         listener stops the event before Vite sees it and keeps the browser's
+         own console warning. -->
+    <script>
+      (function () {
+        if ("%MODE%" !== "development") return;
+        window.addEventListener(
+          "error",
+          function (event) {
+            var message = String(
+              (event &&
+                (event.message || (event.error && event.error.message))) ||
+                "",
+            );
+            if (message.indexOf("ResizeObserver loop completed") === -1) return;
+            event.stopImmediatePropagation();
+          },
+          true,
+        );
+      })();
+    </script>
   </head>
   <body class="bb-app-shell">
     <div id="root"></div>
