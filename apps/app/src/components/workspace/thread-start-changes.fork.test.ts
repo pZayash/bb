@@ -3,6 +3,7 @@ import { makeEnvironment } from "@bb/test-helpers/domain-fixtures";
 import type { WorkspaceStatus } from "@bb/domain";
 import {
   buildThreadStartChangedFilesSection,
+  emptyThreadStartChangedFilesSection,
   THREAD_START_CHANGES_LABEL,
 } from "./thread-start-changes.fork";
 
@@ -77,5 +78,17 @@ describe("buildThreadStartChangedFilesSection", () => {
   it("reports nothing when the workspace matches the start commit", () => {
     expect(buildThreadStartChangedFilesSection(status({}))).toBeNull();
     expect(buildThreadStartChangedFilesSection(undefined)).toBeNull();
+  });
+
+  it("keeps an empty start-commit section under the view's label", () => {
+    expect(emptyThreadStartChangedFilesSection(true)).toMatchObject({
+      label: THREAD_START_CHANGES_LABEL,
+      files: [],
+      mergeBaseRef: null,
+      stats: { insertions: 0, deletions: 0, files: [] },
+    });
+    expect(emptyThreadStartChangedFilesSection(false).label).toBe(
+      "All changes",
+    );
   });
 });

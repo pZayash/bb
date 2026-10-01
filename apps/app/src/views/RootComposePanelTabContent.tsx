@@ -438,6 +438,7 @@ function RootComposeFilePreviewTabContent({
           <LazyWorkspaceFilePreviewTabContent
             activePath={tab.path}
             copyPath={copyPath}
+            diffIntent={tab.diffIntent ?? null}
             environmentId={tab.environmentId}
             isPanelOpen={isPanelOpen}
             lineRange={tab.lineRange}

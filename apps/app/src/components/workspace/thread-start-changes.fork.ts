@@ -4,6 +4,19 @@ import type { WorkspaceChangedFilesSection } from "./workspace-change-summary";
 
 export const THREAD_START_CHANGES_LABEL = "Since thread start";
 
+// bb-fork(thread-start-ref): the changed-files card stays reachable with no changes.
+export function emptyThreadStartChangedFilesSection(
+  isSinceThreadStart: boolean,
+): WorkspaceChangedFilesSection {
+  return {
+    files: [],
+    kind: "committed",
+    label: isSinceThreadStart ? THREAD_START_CHANGES_LABEL : "All changes",
+    mergeBaseRef: null,
+    stats: { deletions: 0, files: [], insertions: 0, lineStatsComplete: true },
+  };
+}
+
 export function buildThreadStartChangedFilesSection(
   workspaceStatus: WorkspaceStatus | undefined,
 ): WorkspaceChangedFilesSection | null {

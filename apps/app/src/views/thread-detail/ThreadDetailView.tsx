@@ -130,8 +130,11 @@ import {
 // bb-fork(thread-start-ref): the start-commit view lists both sides of the range.
 import {
   buildThreadStartChangedFilesSection,
+  emptyThreadStartChangedFilesSection,
   THREAD_START_CHANGES_LABEL,
 } from "@/components/workspace/thread-start-changes.fork";
+// bb-fork(thread-start-view): the chosen comparison survives switching threads.
+import { useThreadStartCommitView } from "@/lib/thread-start-view.fork";
 // bb-fork(thread-start-ref): pick the commit the thread compares from.
 import { StartCommitPicker } from "@/components/workspace/StartCommitPicker.fork";
 import { getThreadDisplayTitle } from "@/lib/thread-title";
@@ -1272,15 +1275,15 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
 
   // bb-fork(thread-start-ref): compare the thread against the commit it started from.
   const threadStartRef = environment?.startRef ?? null;
-  const [isSinceThreadStart, setIsSinceThreadStart] = useState(false);
+  // bb-fork(thread-start-view): the chosen view survives switching threads.
+  const [isSinceThreadStart, setIsSinceThreadStart] = useThreadStartCommitView(
+    environment?.id,
+  );
   const isComputedSinceThreadStart =
     isSinceThreadStart && threadStartRef !== null;
   const compareRef = isComputedSinceThreadStart
     ? threadStartRef
     : requestedMergeBaseBranch;
-  useEffect(() => {
-    setIsSinceThreadStart(false);
-  }, [thread?.environmentId, thread?.id]);
   const {
     closePanel: closeWorkspacePanel,
     openCommitDiff: openGitDiffCommitDestination,
@@ -1941,6 +1944,13 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     }
     return workspaceChangedFilesSection;
   }, [workspaceChangedFilesSection]);
+  // bb-fork(thread-start-ref): the empty card keeps the start-commit control reachable.
+  const bannerChangedFilesSection = useMemo(
+    () =>
+      workspaceChangedFilesSection ??
+      emptyThreadStartChangedFilesSection(isComputedSinceThreadStart),
+    [isComputedSinceThreadStart, workspaceChangedFilesSection],
+  );
   const { isLocalDaemonHost } = useHostDaemon();
   const threadEnvironmentIsLocal = environment
     ? isLocalDaemonHost(environment.hostId)
@@ -2094,7 +2104,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
       setIsSinceThreadStart(false);
       handleMergeBaseBranchChange(branch);
     },
-    [handleMergeBaseBranchChange],
+    [handleMergeBaseBranchChange, setIsSinceThreadStart],
   );
   const gitActions = useThreadGitActions({
     environment,
@@ -2660,7 +2670,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
       projectId={projectId}
       resolveMentionLink={resolveMentionLink}
       workspaceChangedFilesSection={
-        canUseGitUi ? workspaceChangedFilesSection : null
+        canUseGitUi ? bannerChangedFilesSection : null
       }
       workspaceStatusPending={
         canUseGitUi && (environmentQuery.isLoading || workStatusQuery.isLoading)
@@ -2675,7 +2685,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
               setIsSinceThreadStart(true);
               updateEnvironment.mutate({ id: environment.id, startRef: ref });
             }}
-            onToggle={() => setIsSinceThreadStart((active) => !active)}
+            onToggle={() => setIsSinceThreadStart(!isSinceThreadStart)}
             startRef={threadStartRef}
           />
         ) : null
@@ -2788,6 +2798,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
           <LazyWorkspaceFilePreviewTabContent
             activePath={tab.path}
             copyPath={copyPath}
+            diffIntent={tab.diffIntent ?? null}
             environmentId={tab.environmentId}
             isPanelOpen={isSecondaryPanelOpen}
             lineRange={tab.lineRange}
