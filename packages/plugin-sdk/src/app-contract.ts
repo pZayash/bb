@@ -520,12 +520,18 @@ export type CodeOverflowMode = "scroll" | "wrap";
 export type DiffViewMode = "unified" | "split";
 
 /**
- * A file open request that wants the file's diff view, in this mode. The
- * `requestId` is new for every request so a host can hand a fresh object to a
- * file opener that reopens an already-open file.
+ * A file open request that wants the file's diff view, in this mode against
+ * this comparison. The `requestId` is new for every request so a host can hand
+ * a fresh object to a file opener that reopens an already-open file.
  */
 export interface ExperimentalFileDiffIntent {
   requestId: string;
+  /**
+   * Comparison the request asked for: `thread_start` compares against the
+   * commit the thread started from, `merge_base` against the branch's merge
+   * base. Older hosts omit it; treat an absent value as `merge_base`.
+   */
+  base?: "merge_base" | "thread_start";
   view: DiffViewMode;
 }
 

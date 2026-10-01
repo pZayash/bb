@@ -33,6 +33,8 @@ import {
 } from "./components/FileDiffControls.fork.js";
 import { FileDiffBody } from "./components/FileDiffBody.fork.js";
 import { useFileDiff } from "./lib/file-diff.fork.js";
+// bb-fork(file-diff-base): the open request can pin the editor's diff base.
+import { THREAD_START_SELECTION } from "./lib/file-diff-selection.fork.js";
 // bb-fork(md-preview): rendered Markdown preview next to the editor.
 import { MarkdownPreviewToggle } from "./components/MarkdownPreviewToggle.fork.js";
 import {
@@ -177,6 +179,12 @@ function MonacoFileOpener({
   useEffect(() => {
     if (experimental_diffIntent == null) return;
     setDiffViewMode(experimental_diffIntent.view);
+    // bb-fork(file-diff-base): the request's comparison decides the base until the user does.
+    setDiffSelection(
+      experimental_diffIntent.base === "thread_start"
+        ? THREAD_START_SELECTION
+        : null,
+    );
     setIsDiffActive(true);
   }, [experimental_diffIntent]);
 

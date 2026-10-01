@@ -341,7 +341,7 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "Receive the file path and source: workspace paths are relative to the environment, thread-storage paths to the storage root, and host paths are absolute; project workspace sources can carry experimental_hostId",
           "Render Original to delegate an individual file to bb's built-in preview",
           "Reveal linked lines with experimental_lineRange, including repeated targets in an already open editor",
-          "Open a file straight into its diff with experimental_diffIntent, which bb's changed-files list sends with the view it asked for",
+          "Open a file straight into its diff with experimental_diffIntent, which bb's changed-files list sends with the view and comparison it asked for",
         ],
         apiSymbols: [
           "PluginFileOpenerRegistration",

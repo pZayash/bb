@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeEnvironment } from "@bb/test-helpers/domain-fixtures";
 import { createQueryClientTestHarness } from "@/test/queryClientTestHarness";
@@ -72,11 +72,21 @@ vi.mock("@/lib/sdk", () => ({
 
 const { wrapper } = createQueryClientTestHarness();
 
-function Probe() {
+function Probe({
+  intentKey,
+  sinceThreadStartIntent = false,
+  path,
+}: {
+  intentKey?: string | null;
+  sinceThreadStartIntent?: boolean;
+  path?: string;
+}) {
   const controller = useFileDiff({
     enabled: true,
     environmentId: "env_1",
-    path: "src/file.ts",
+    intentKey,
+    path: path ?? "src/file.ts",
+    sinceThreadStartIntent,
   });
   return (
     <div>
@@ -134,6 +144,18 @@ describe("useFileDiff comparison ref", () => {
     expect(optionValues()).toContain("thread_start_ref");
   });
 
+  it("starts on the thread start commit when the open request asked for it", async () => {
+    render(<Probe path="src/other.ts" sinceThreadStartIntent />, { wrapper });
+
+    await screen.findByText(/Changes since thread start/);
+    expect(environmentQueries.statusRefs).toContain("abc1234567890");
+    expect(screen.getByTestId("selection").textContent).toBe("all");
+    expect(sdkCalls.diffPatchTargets.at(-1)).toEqual({
+      mergeBaseBranch: "abc1234567890",
+      type: "all",
+    });
+  });
+
   it("diffs everything since the thread start commit once picked", async () => {
     render(<Probe />, { wrapper });
     await screen.findByText(/Since thread start/);
@@ -150,6 +172,21 @@ describe("useFileDiff comparison ref", () => {
       mergeBaseBranch: "abc1234567890",
       type: "all",
     });
+  });
+
+  it("re-applies a new open request's base after the user picked one", async () => {
+    const { rerender } = render(<Probe intentKey="req_1" />, { wrapper });
+    await screen.findByText(/Since thread start/);
+    act(() => {
+      screen.getByRole("button", { name: "since start" }).click();
+    });
+    expect(environmentQueries.statusRefs.at(-1)).toBe("abc1234567890");
+
+    rerender(<Probe intentKey="req_2" />);
+
+    await waitFor(() =>
+      expect(environmentQueries.statusRefs.at(-1)).toBe("main"),
+    );
   });
 
   it("returns to the merge base when asked", async () => {

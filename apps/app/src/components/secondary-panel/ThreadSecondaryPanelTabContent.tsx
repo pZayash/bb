@@ -351,7 +351,9 @@ export function WorkspaceFilePreviewTabContent({
   const fileDiffController = useFileDiff({
     enabled: isDiffActive,
     environmentId,
+    intentKey: diffRequestId,
     path: activePath,
+    sinceThreadStartIntent: diffIntent?.base === "thread_start",
   });
   const canShowFileDiff =
     fileDiffController.availability.status !== "unavailable";

@@ -76,11 +76,13 @@ virtualizer's geometry).
 ## `PluginFileOpenerProps.experimental_diffIntent`
 
 **Added 2026-09-30 (fork).** A file open can ask for the file's diff: bb's
-changed-files list opens a file straight into its diff in Split view. The host
-passes `{ requestId, view }` (`ExperimentalFileDiffIntent`) to the plugin file
-opener, with a new object per request — including a repeat request for the same
-file and view — and `null` when the open was a plain one. An opener applies a
-non-null intent (activate the diff in `view`) and ignores `null`.
+changed-files list opens a file straight into its diff in Split view, against
+the comparison that list used. The host passes `{ requestId, base, view }`
+(`ExperimentalFileDiffIntent`) to the plugin file opener, with a new object per
+request — including a repeat request for the same file and view — and `null`
+when the open was a plain one. An opener applies a non-null intent (activate the
+diff in `view` against `base`, absent meaning the merge base) and ignores
+`null`.
 
 Before stabilizing, audit which view wins when the user picks one in the plugin
 after a request, whether the intent should keep a per-request identity at all

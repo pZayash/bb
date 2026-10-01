@@ -25,6 +25,8 @@ const threadTabLineRangeSchema = z
 const threadTabFileDiffIntentSchema = z
   .object({
     requestId: z.string().min(1).max(THREAD_TAB_PATH_MAX_LENGTH),
+    // bb-fork(file-diff-base): optional so an older client's tab stays valid.
+    base: z.enum(["merge_base", "thread_start"]).optional(),
     view: z.enum(["unified", "split"]),
   })
   .strict();

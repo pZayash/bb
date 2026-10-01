@@ -354,7 +354,11 @@ function FileOpenerTabContent({
     const intent = owner.tab.diffIntent;
     return intent == null
       ? null
-      : { requestId: intent.requestId, view: intent.view };
+      : {
+          base: intent.base,
+          requestId: intent.requestId,
+          view: intent.view,
+        };
   }, [owner]);
   if (file === null || owner === undefined || original === undefined) {
     return <UnavailableFileOpenerTab />;

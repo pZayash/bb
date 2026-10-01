@@ -1,6 +1,14 @@
 // bb-fork(file-diff): workspace Git diff of the open file, for the editor's diff mode.
 import { z } from "zod";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+// bb-fork(file-diff-base): selection values shared with the editor UI.
+import {
+  ALL_SELECTION,
+  COMMITTED_SELECTION,
+  MERGE_BASE_SELECTION_SWITCH,
+  THREAD_START_SELECTION,
+  UNCOMMITTED_SELECTION,
+} from "./file-diff-selection.fork.js";
 
 export const fileDiffSelectionSchema = z.string().min(1).nullable();
 
@@ -31,12 +39,6 @@ export type FileDiffContents = z.infer<typeof fileDiffContentsSchema>;
 export type FileDiffOption = z.infer<typeof fileDiffOptionSchema>;
 export type FileDiffResult = z.infer<typeof fileDiffResultSchema>;
 
-const ALL_SELECTION = "all";
-// bb-fork(thread-start-ref): picker entries that switch the comparison ref.
-const THREAD_START_SELECTION = "thread_start_ref";
-const MERGE_BASE_SELECTION_SWITCH = "merge_base_ref";
-const COMMITTED_SELECTION = "branch_committed";
-const UNCOMMITTED_SELECTION = "uncommitted";
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{4,40}$/iu;
 
 type EnvironmentsSdk = BbPluginApi["sdk"]["environments"];

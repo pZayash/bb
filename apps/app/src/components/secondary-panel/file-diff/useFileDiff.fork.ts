@@ -45,6 +45,9 @@ interface UseFileDiffArgs {
   enabled: boolean;
   environmentId: string | null | undefined;
   path: string;
+  // bb-fork(file-diff-base): an open request can ask for the thread-start base.
+  intentKey?: string | null;
+  sinceThreadStartIntent?: boolean;
 }
 
 export interface FileDiffController {
@@ -117,7 +120,9 @@ function buildFileDiffOptions({
 export function useFileDiff({
   enabled,
   environmentId,
+  intentKey = null,
   path,
+  sinceThreadStartIntent = false,
 }: UseFileDiffArgs): FileDiffController {
   const environmentQuery = useEnvironment(environmentId);
   const environment = environmentQuery.data;
@@ -150,8 +155,19 @@ export function useFileDiff({
   }, [environment, environmentId, environmentQuery.isError]);
 
   const [selection, setSelection] = useState<GitDiffSelectionValue>(null);
-  const [isSinceThreadStart, setIsSinceThreadStart] = useState(false);
+  const [sinceThreadStartChoice, setSinceThreadStartChoice] = useState<
+    boolean | null
+  >(null);
+  // bb-fork(file-diff-base): a new open request decides the base until the user does.
+  const [appliedIntentKey, setAppliedIntentKey] = useState(intentKey);
+  if (appliedIntentKey !== intentKey) {
+    setAppliedIntentKey(intentKey);
+    setSinceThreadStartChoice(null);
+    setSelection(null);
+  }
   const startRef = environment?.startRef ?? null;
+  const isSinceThreadStart =
+    sinceThreadStartChoice ?? sinceThreadStartIntent;
   const compareRef =
     isSinceThreadStart && startRef !== null ? startRef : mergeBaseBranch;
   const selectionValue =
@@ -202,12 +218,12 @@ export function useFileDiff({
 
   const handleSelectionChange = useCallback((value: string) => {
     if (value === FILE_DIFF_THREAD_START_VALUE) {
-      setIsSinceThreadStart(true);
+      setSinceThreadStartChoice(true);
       setSelection(null);
       return;
     }
     if (value === FILE_DIFF_MERGE_BASE_VALUE) {
-      setIsSinceThreadStart(false);
+      setSinceThreadStartChoice(false);
       setSelection(null);
       return;
     }

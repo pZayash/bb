@@ -267,11 +267,14 @@ projectId, experimental_hostId? }` (nullable fields). The optional host ID
   and on subsequent requests without replacing the editor model; null means
   no requested navigation.
   `experimental_diffIntent` is a nullable `ExperimentalFileDiffIntent`
-  (`{ requestId, view: "unified" | "split" }`, also fork-added) set when the
+  (`{ requestId, base?: "merge_base" | "thread_start", view: "unified" | "split" }`,
+  also fork-added) set when the
   open asked for the file's diff — bb's changed-files list opens a file
-  straight into its diff. BB supplies a new object per request, including a
+  straight into its diff, against `base` (absent meaning the merge base). BB
+  supplies a new object per request, including a
   repeat request for the same file and view, so observe object identity,
-  apply a non-null intent (activate the diff in `view`), and ignore null
+  apply a non-null intent (activate the diff in `view` against `base`), and
+  ignore null
   rather than treating it as "close the diff". Older hosts may omit it.
   `Original` is BB's preview bound to this file; render it to
   delegate conditionally without re-entering plugin replacement resolution.

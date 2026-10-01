@@ -385,6 +385,42 @@ it("switches the comparison to the thread start commit", async () => {
   expect(slot.getByRole("combobox", { name: "Diff base" })).toBeTruthy();
 });
 
+it("starts on the comparison the host asked for", async () => {
+  const { diff, slot } = mountDiff(
+    (selection) => ({
+      contents: { new: "new side", old: "old side" },
+      outcome: "available",
+      options: [
+        { label: "All changes", value: "all" },
+        { label: "Since thread start (abc1234)", value: "thread_start_ref" },
+      ],
+      patch: diffPatch,
+      selection: selection ?? "all",
+      truncated: false,
+    }),
+    {
+      experimental_diffIntent: {
+        base: "thread_start",
+        requestId: "req_1",
+        view: "split",
+      },
+    },
+  );
+
+  await waitFor(() =>
+    expect(diff).toHaveBeenCalledWith({
+      path: "target.ts",
+      selection: "thread_start_ref",
+      source: base.source,
+    }),
+  );
+  await slot.findByTestId("bb-diff");
+  expect(
+    (slot.getByRole("combobox", { name: "Diff base" }) as HTMLSelectElement)
+      .value,
+  ).toBe("thread_start_ref");
+});
+
 it("returns to the editor when the diff is hidden", async () => {
   const { slot } = mountDiff();
   await waitFor(() => expect(create).toHaveBeenCalledOnce());

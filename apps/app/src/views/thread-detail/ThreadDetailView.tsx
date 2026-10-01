@@ -128,7 +128,10 @@ import {
   type WorkspaceChangedFileSelection,
 } from "@/components/workspace/workspace-change-summary";
 // bb-fork(thread-start-ref): the start-commit view lists both sides of the range.
-import { buildThreadStartChangedFilesSection } from "@/components/workspace/thread-start-changes.fork";
+import {
+  buildThreadStartChangedFilesSection,
+  THREAD_START_CHANGES_LABEL,
+} from "@/components/workspace/thread-start-changes.fork";
 // bb-fork(thread-start-ref): pick the commit the thread compares from.
 import { StartCommitPicker } from "@/components/workspace/StartCommitPicker.fork";
 import { getThreadDisplayTitle } from "@/lib/thread-title";
@@ -1791,7 +1794,14 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     (selection: WorkspaceChangedFileSelection) => {
       const openTarget = resolveWorkspaceChangedFileOpenTarget(selection);
       openWorkspaceFile({
-        diffIntent: { requestId: nanoid(), view: "split" },
+        diffIntent: {
+          base:
+            selection.section.label === THREAD_START_CHANGES_LABEL
+              ? "thread_start"
+              : "merge_base",
+          requestId: nanoid(),
+          view: "split",
+        },
         lineRange: null,
         path: selection.file.path,
         source:

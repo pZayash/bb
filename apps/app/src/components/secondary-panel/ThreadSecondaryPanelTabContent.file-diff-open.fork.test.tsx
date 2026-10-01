@@ -35,7 +35,12 @@ vi.mock("@/lib/sdk", () => ({
 
 vi.mock("@/hooks/queries/environment-queries", () => ({
   useEnvironment: () => ({
-    data: { isGitRepo: true, path: "/workspace", projectId: "proj_preview" },
+    data: {
+      isGitRepo: true,
+      path: "/workspace",
+      projectId: "proj_preview",
+      startRef: "abc1234567890",
+    },
     isError: false,
   }),
   useEnvironmentDiffFiles: vi.fn(),
@@ -64,6 +69,7 @@ const { wrapper } = createQueryClientTestHarness();
 
 function renderPreview(
   diffIntent: {
+    base?: "merge_base" | "thread_start";
     requestId: string;
     view: "unified" | "split";
   } | null,
@@ -129,5 +135,17 @@ describe("workspace file preview diff intent", () => {
         .getByRole("button", { name: "Unified" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
+  });
+
+  it("compares since the thread start commit when the list asked for it", () => {
+    renderPreview({
+      base: "thread_start",
+      requestId: "req_start",
+      view: "split",
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Diff base" }).textContent,
+    ).toContain("Changes since thread start");
   });
 });

@@ -58,6 +58,8 @@ const workspaceFilePreviewStatusLabelSchema: z.ZodType<WorkspaceFilePreviewStatu
 const filePreviewDiffIntentSchema: z.ZodType<FilePreviewDiffIntent> = z
   .object({
     requestId: z.string().min(1),
+    // bb-fork(file-diff-base): optional so a tab written before it stays valid.
+    base: z.enum(["merge_base", "thread_start"]).optional(),
     view: z.enum(["unified", "split"]),
   })
   .strict();
