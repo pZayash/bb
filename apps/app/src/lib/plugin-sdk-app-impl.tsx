@@ -3,6 +3,12 @@ import { Icon } from "@bb/shared-ui/icon";
 import { useCallback, useMemo } from "react";
 import type { MarkdownProps, PluginSdkApp } from "@get-bb/plugin-sdk";
 import { PluginDiff } from "@/components/plugin/PluginDiff";
+// bb-fork(diff-rail): host diff change map for plugin-embedded diffs.
+import {
+  DiffChangeRail,
+  DiffChangeRailToggle,
+} from "@/components/code/DiffChangeRail.fork";
+import { DiffChangeNav } from "@/components/code/DiffChangeNav.fork";
 import { PluginBranchPicker } from "@/components/plugin/PluginBranchPicker";
 import {
   usePluginBranches,
@@ -92,6 +98,9 @@ export const pluginSdkAppImplementation = installDeprecatedAliases(
     experimental_useCheckoutState: usePluginCheckoutState,
     experimental_SourceCode: PluginSourceCode,
     experimental_Diff: PluginDiff,
+    experimental_DiffChangeRail: DiffChangeRail,
+    experimental_DiffChangeRailToggle: DiffChangeRailToggle,
+    experimental_DiffChangeNav: DiffChangeNav,
     experimental_useSidebarThreads: useSidebarThreads,
     experimental_useSidebarThreadActions: useSidebarThreadActions,
     experimental_useSidebarThreadPullRequest: useSidebarThreadPullRequest,

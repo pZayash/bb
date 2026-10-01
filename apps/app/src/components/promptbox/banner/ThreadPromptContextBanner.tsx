@@ -81,6 +81,10 @@ export interface ThreadPromptGitSection {
   // bb-fork(thread-start-ref): the start-commit control, built by the thread view.
   threadStartControl?: ReactNode;
   onPromptBannerFileClick: (selection: WorkspaceChangedFileSelection) => void;
+  // bb-fork(file-diff-open): open the file straight in its split diff.
+  onPromptBannerFileDiffClick?: (
+    selection: WorkspaceChangedFileSelection,
+  ) => void;
 }
 
 export interface ThreadPromptParentThreadSection {
@@ -1085,6 +1089,15 @@ export function ThreadPromptContextBanner({
                   file,
                   section: gitSection.changedFiles,
                 })
+              }
+              onOpenDiffClick={
+                gitSection.onPromptBannerFileDiffClick === undefined
+                  ? undefined
+                  : (file) =>
+                      gitSection.onPromptBannerFileDiffClick?.({
+                        file,
+                        section: gitSection.changedFiles,
+                      })
               }
             />
           </AnimatedBody>

@@ -1786,6 +1786,24 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     },
     [openSecondaryPanelDiffFile, openWorkspaceFile],
   );
+  // bb-fork(file-diff-open): the changed-files list opens the split diff directly.
+  const handleChangedFileDiffClick = useCallback(
+    (selection: WorkspaceChangedFileSelection) => {
+      const openTarget = resolveWorkspaceChangedFileOpenTarget(selection);
+      openWorkspaceFile({
+        diffIntent: { requestId: nanoid(), view: "split" },
+        lineRange: null,
+        path: selection.file.path,
+        source:
+          openTarget.kind === "preview"
+            ? openTarget.source
+            : { kind: "working-tree" },
+        statusLabel:
+          openTarget.kind === "preview" ? openTarget.statusLabel : null,
+      });
+    },
+    [openWorkspaceFile],
+  );
   const workStatusQuery = useEnvironmentWorkStatus(
     thread?.environmentId,
     compareRef,
@@ -2628,6 +2646,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
       onPullRequestReady={handlePullRequestReady}
       pullRequestMergeMethod={pullRequestMergeMethod}
       onChangedFileClick={handleChangedFileClick}
+      onChangedFileDiffClick={handleChangedFileDiffClick}
       projectId={projectId}
       resolveMentionLink={resolveMentionLink}
       workspaceChangedFilesSection={

@@ -925,6 +925,7 @@ export function PluginPanelRightPanelHost({
           return tab.environmentId === null ? null : (
             <LazyWorkspaceFilePreviewTabContent
               activePath={tab.path}
+              diffIntent={tab.diffIntent ?? null}
               environmentId={tab.environmentId}
               isPanelOpen={isOpen}
               lineRange={tab.lineRange}

@@ -202,6 +202,8 @@ interface ThreadDetailPromptAreaProps {
   queuedMessageCount: number;
   serverDraft: PromptInput[] | null;
   onChangedFileClick: (selection: WorkspaceChangedFileSelection) => void;
+  // bb-fork(file-diff-open): open the file straight in its split diff.
+  onChangedFileDiffClick?: (selection: WorkspaceChangedFileSelection) => void;
   projectId: string;
   resolveMentionLink: PromptMentionLinkResolver;
   workspaceChangedFilesSection: WorkspaceChangedFilesSection | null;
@@ -419,6 +421,7 @@ export function ThreadDetailPromptArea({
   queuedMessageCount,
   serverDraft,
   onChangedFileClick,
+  onChangedFileDiffClick,
   projectId,
   resolveMentionLink,
   workspaceChangedFilesSection,
@@ -2064,6 +2067,10 @@ export function ThreadDetailPromptArea({
                   onPromptBannerFileClick: canUseGitUi
                     ? onChangedFileClick
                     : ignorePromptBannerFileClick,
+                  onPromptBannerFileDiffClick:
+                    canUseGitUi && onChangedFileDiffClick !== undefined
+                      ? onChangedFileDiffClick
+                      : undefined,
                 }
               : null
           }
@@ -2116,6 +2123,7 @@ export function ThreadDetailPromptArea({
       handleDeleteQueuedMessage,
       beginEditQueuedMessage,
       onChangedFileClick,
+      onChangedFileDiffClick,
       handleReorderQueuedMessage,
       handleSendQueuedMessage,
       handleSetQueuedMessageGroupBoundary,

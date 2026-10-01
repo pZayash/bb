@@ -93,6 +93,8 @@ import {
   type PluginMachineProviderInputsRegistration,
   type ThreadChatProps,
   type DiffProps,
+  type DiffChangeControlsProps,
+  type DiffChangeRailToggleProps,
   type SourceCodeProps,
   type JsonValue,
 } from "@get-bb/plugin-sdk";
@@ -883,6 +885,30 @@ function TestDiff({
   );
 }
 
+/**
+ * Stand-in for the host-owned change map: renders the scrolling element's
+ * presence so a plugin can assert it wired the rail to the right container.
+ */
+function TestDiffChangeRail({ className }: DiffChangeControlsProps) {
+  return <div data-testid="bb-diff-change-rail" className={className} />;
+}
+
+/** Stand-in for the host-owned change stepper. */
+function TestDiffChangeNav({ className }: DiffChangeControlsProps) {
+  return <div data-testid="bb-diff-change-nav" className={className} />;
+}
+
+/** Stand-in for the host-owned change map toggle. */
+function TestDiffChangeRailToggle({ className }: DiffChangeRailToggleProps) {
+  return (
+    <button
+      type="button"
+      aria-label="change map toggle"
+      className={className}
+    />
+  );
+}
+
 const testPluginSdkApp = {
   definePluginApp,
   useRpc<
@@ -1025,6 +1051,9 @@ const testPluginSdkApp = {
   },
   experimental_SourceCode: TestSourceCode,
   experimental_Diff: TestDiff,
+  experimental_DiffChangeRail: TestDiffChangeRail,
+  experimental_DiffChangeRailToggle: TestDiffChangeRailToggle,
+  experimental_DiffChangeNav: TestDiffChangeNav,
   experimental_useSidebarThreads(): PluginSidebarThreadsState {
     return useSlotEnv("experimental_useSidebarThreads").sidebarThreads;
   },

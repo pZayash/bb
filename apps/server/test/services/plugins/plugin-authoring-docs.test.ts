@@ -369,6 +369,8 @@ const FRONTEND_SLOT_PROP_FIELDS = {
   fileOpener: [
     "path",
     "source",
+    // bb-fork(file-diff-open): the open request can ask for the diff view.
+    "experimental_diffIntent",
     "experimental_lineRange",
     "Original",
     "experimental_Original",

@@ -86,6 +86,7 @@ function MonacoFileOpener({
   path,
   source,
   Original,
+  experimental_diffIntent,
   experimental_lineRange,
 }: PluginFileOpenerProps) {
   const rpc = useRpc<typeof rpcContract>();
@@ -140,7 +141,12 @@ function MonacoFileOpener({
   viewModeRef.current = viewMode;
 
   // bb-fork(file-diff): diff mode state for the open file.
-  const [isDiffActive, setIsDiffActive] = useState(false);
+  const [isDiffActive, setIsDiffActive] = useState(
+    experimental_diffIntent != null,
+  );
+  // bb-fork(diff-rail): the diff's scroller backs its change map and navigation.
+  const [diffScrollElement, setDiffScrollElement] =
+    useState<HTMLDivElement | null>(null);
   const [diffSelection, setDiffSelection] = useState<string | null>(null);
   const [diffViewMode, setDiffViewMode] = useState<FileDiffViewMode>("split");
   const fileDiff = useFileDiff({
@@ -166,6 +172,13 @@ function MonacoFileOpener({
     setIsDiffActive(false);
     setDiffSelection(null);
   }, [activePath]);
+
+  // bb-fork(file-diff-open): apply the requested diff view; a null intent changes nothing.
+  useEffect(() => {
+    if (experimental_diffIntent == null) return;
+    setDiffViewMode(experimental_diffIntent.view);
+    setIsDiffActive(true);
+  }, [experimental_diffIntent]);
 
   const writeEditorContent = useCallback(
     async (expectedSha256: string | null) => {
@@ -466,6 +479,7 @@ function MonacoFileOpener({
                 diffSelection ??
                 (fileDiff.status === "ready" ? fileDiff.selection : null)
               }
+              scrollElement={diffScrollElement}
               state={fileDiff}
               viewMode={diffViewMode}
             />
@@ -500,7 +514,9 @@ function MonacoFileOpener({
       />
       {isDiffActive ? (
         <FileDiffBody
+          onScrollElementChange={setDiffScrollElement}
           path={activePath}
+          scrollElement={diffScrollElement}
           state={fileDiff}
           viewMode={diffViewMode}
         />

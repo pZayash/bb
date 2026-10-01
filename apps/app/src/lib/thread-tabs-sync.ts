@@ -41,6 +41,27 @@ type PersistedThreadFixedPanelTab = Exclude<
   { kind: "plugin-page-fixed" }
 >;
 
+// bb-fork(file-diff-open): the diff intent is client-local: synced tabs drop it, comparisons ignore it.
+function withoutDiffIntent(
+  tab: PersistedThreadFixedPanelTab,
+): PersistedThreadFixedPanelTab {
+  if (tab.kind === "workspace-file-preview") {
+    if (tab.diffIntent == null) return tab;
+    const { diffIntent: _diffIntent, ...rest } = tab;
+    return rest;
+  }
+  if (tab.kind !== "plugin-panel") return tab;
+  const owner = tab.fileOpenerOwner;
+  if (
+    owner?.kind !== "workspace-file-preview" ||
+    owner.tab.diffIntent == null
+  ) {
+    return tab;
+  }
+  const { diffIntent: _ownerDiffIntent, ...ownerTab } = owner.tab;
+  return { ...tab, fileOpenerOwner: { ...owner, tab: ownerTab } };
+}
+
 function persistedThreadTabs(
   tabs: readonly (FixedPanelTab | ThreadTab)[],
 ): readonly PersistedThreadFixedPanelTab[] {
@@ -54,8 +75,8 @@ export function areThreadTabListsEquivalent(
   left: readonly (FixedPanelTab | ThreadTab)[],
   right: readonly (FixedPanelTab | ThreadTab)[],
 ): boolean {
-  const leftTabs = persistedThreadTabs(left);
-  const rightTabs = persistedThreadTabs(right);
+  const leftTabs = persistedThreadTabs(left).map(withoutDiffIntent);
+  const rightTabs = persistedThreadTabs(right).map(withoutDiffIntent);
   return (
     leftTabs.length === rightTabs.length &&
     leftTabs.every((tab, index) => {
@@ -212,7 +233,7 @@ async function persistThreadTabs({
   }
   const response = await sdk.threads.tabs.update({
     expectedRevision: current.revision,
-    tabs: threadTabsSchema.parse(tabsToPersist),
+    tabs: threadTabsSchema.parse(tabsToPersist.map(withoutDiffIntent)),
     threadId,
   });
   setCachedThreadTabs(queryClient, threadId, response);
@@ -230,7 +251,7 @@ async function migrateLocalThreadTabs({
   const tabsToPersist = persistedThreadTabs(tabs);
   const response = await sdk.threads.tabs.update({
     expectedRevision: 0,
-    tabs: threadTabsSchema.parse(tabsToPersist),
+    tabs: threadTabsSchema.parse(tabsToPersist.map(withoutDiffIntent)),
     threadId,
   });
   setCachedThreadTabs(queryClient, threadId, response);

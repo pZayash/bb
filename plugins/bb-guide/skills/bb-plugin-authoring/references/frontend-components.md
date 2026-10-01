@@ -149,6 +149,48 @@ experimental_expandUnchanged?, className? }` —
   not, so code there renders unhighlighted rather than broken.
   Experimental: see `docs/api_to_audit.md`.
 
+- `experimental_DiffChangeRail` — bb's change map for a diff: a narrow strip
+  marking the diff's changed regions that doubles as its scroll control
+  (click or drag to jump; arrows, Page Up/Down, Home, and End when focused).
+  Props are `DiffChangeControlsProps`:
+  `{ scrollElement: HTMLElement | null, className? }`, where `scrollElement` is
+  the element that scrolls the diff. Render it as a flex-row sibling of that
+  scroller, never inside it, because the rail must not move with the content:
+
+  ```tsx
+  import {
+    experimental_Diff as Diff,
+    experimental_DiffChangeRail as DiffChangeRail,
+  } from "@get-bb/plugin-sdk/app";
+
+  <div className="flex min-h-0 flex-1">
+    <div ref={scrollerRef} className="min-h-0 flex-1 overflow-auto">
+      <Diff patch={file.patch} path={file.path} />
+    </div>
+    <DiffChangeRail scrollElement={scrollElement} />
+  </div>;
+  ```
+
+  The rail paints nothing when the diff has no changed lines or does not
+  scroll, and obeys the app-wide change map preference. The caller keeps its
+  own scroll container: bb neither adds scrolling nor restyles it.
+  Experimental: see `docs/api_to_audit.md`.
+
+- `experimental_DiffChangeNav` — bb's change stepper for a diff the plugin
+  renders: previous/next change buttons with an `n/total` counter, taking the
+  same `DiffChangeControlsProps` as the change rail. Put it in the plugin's diff
+  toolbar and pass the scroller the diff lives in. The buttons disable
+  themselves at the first and last change, and the control scrolls the diff to
+  its first change as soon as the diff's rows render, so an opened diff does not
+  start above the change; pass `jumpToFirstChange: false` to leave it where the
+  caller put it. It describes bb's renderer, so a plugin that replaces
+  `experimental_diffRenderer` gets no change positions.
+  Experimental: see `docs/api_to_audit.md`.
+- `experimental_DiffChangeRailToggle` — the host's change map switch, so a
+  plugin toolbar offers the same control bb's diff toolbars do. Props are
+  `DiffChangeRailToggleProps`: `{ className? }`. It flips the shared preference
+  for every change map in bb, including bb's own, and remembers the choice.
+  Experimental: see `docs/api_to_audit.md`.
 - `Markdown` — bb's chat-message markdown renderer (same typography,
   spacing, and code styling as timeline messages). Props:
   `{ content, className? }`. Use it wherever plugin UI quotes or previews

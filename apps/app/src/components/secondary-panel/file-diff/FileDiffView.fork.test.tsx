@@ -137,6 +137,34 @@ describe("FileDiffView", () => {
     expect(diff.getAttribute("data-expand-unchanged")).toBe("true");
   });
 
+  it("lets an open request pick the view mode until the user overrides it", async () => {
+    window.localStorage.setItem(GIT_DIFF_DISPLAY_MODE_STORAGE_KEY, "unified");
+    const onRequestedViewModeUsed = vi.fn();
+    const { rerender } = render(
+      <FileDiffView
+        controller={controller()}
+        onRequestedViewModeUsed={onRequestedViewModeUsed}
+        requestedViewMode="split"
+      />,
+    );
+    revealDiffBodies();
+
+    expect(
+      (await screen.findByTestId("bb-diff")).getAttribute("data-view"),
+    ).toBe("split");
+
+    fireEvent.click(screen.getByRole("button", { name: "Unified" }));
+    expect(onRequestedViewModeUsed).toHaveBeenCalled();
+    rerender(
+      <FileDiffView
+        controller={controller()}
+        onRequestedViewModeUsed={onRequestedViewModeUsed}
+        requestedViewMode={null}
+      />,
+    );
+    expect(bbDiff.lastProps?.view).toBe("unified");
+  });
+
   it("switches the renderer to the unified style on demand", async () => {
     window.localStorage.setItem(GIT_DIFF_DISPLAY_MODE_STORAGE_KEY, "split");
     render(<FileDiffView controller={controller()} />);
@@ -165,6 +193,24 @@ describe("FileDiffView", () => {
     );
 
     expect(onSelectionChange).toHaveBeenCalledWith("uncommitted");
+  });
+
+  it("offers the change map toggle beside the diff", async () => {
+    const { container } = render(<FileDiffView controller={controller()} />);
+    revealDiffBodies();
+    await screen.findByTestId("bb-diff");
+
+    const toggle = screen.getByRole("button", { name: "Hide change map" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector("[data-file-diff-body]")).not.toBeNull();
+
+    fireEvent.click(toggle);
+    expect(
+      screen.getByRole("button", { name: "Show change map" }),
+    ).not.toBeNull();
+    expect(window.localStorage.getItem("bb.thread.gitDiff.changeRail")).toBe(
+      "false",
+    );
   });
 
   it("flags a truncated patch", async () => {

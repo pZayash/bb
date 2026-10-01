@@ -19,6 +19,15 @@ const threadTabLineRangeSchema = z
   })
   .strict()
   .refine((range) => range.startLineNumber <= range.endLineNumber);
+// bb-fork(file-diff-open): the local diff intent a client may model on a tab.
+// Clients never send it, but the type carries it so client code can keep it on
+// the owner tab it reopens from.
+const threadTabFileDiffIntentSchema = z
+  .object({
+    requestId: z.string().min(1).max(THREAD_TAB_PATH_MAX_LENGTH),
+    view: z.enum(["unified", "split"]),
+  })
+  .strict();
 const threadTabEnvironmentFileSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("working-tree") }).strict(),
   z.object({ kind: z.literal("head") }).strict(),
@@ -39,6 +48,7 @@ export const threadTabFileOpenerOwnerSchema = z.discriminatedUnion("kind", [
       tab: z
         .object({
           lineRange: threadTabLineRangeSchema.nullable(),
+          diffIntent: threadTabFileDiffIntentSchema.nullable().optional(),
           path: threadTabPathSchema,
           source: threadTabEnvironmentFileSourceSchema,
           statusLabel: z.literal("deleted").nullable(),
@@ -105,6 +115,7 @@ export const threadTabSchema = z.discriminatedUnion("kind", [
       id: threadTabIdSchema,
       kind: z.literal("workspace-file-preview"),
       lineRange: threadTabLineRangeSchema.nullable(),
+      diffIntent: threadTabFileDiffIntentSchema.nullable().optional(),
       path: threadTabPathSchema,
       projectId: z.string().min(1).nullable(),
       source: threadTabEnvironmentFileSourceSchema,

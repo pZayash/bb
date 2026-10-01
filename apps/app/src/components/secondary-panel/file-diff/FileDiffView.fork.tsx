@@ -1,5 +1,5 @@
 // bb-fork(file-diff): unified/split diff of one workspace file inside its tab.
-import { useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useResizeObserver } from "usehooks-ts";
 import { Button } from "@bb/shared-ui/button";
 import {
@@ -15,6 +15,12 @@ import {
 import { Icon } from "@bb/shared-ui/icon";
 import { cn } from "@bb/shared-ui/lib/utils";
 import { DiffLoadingSkeleton } from "@/components/code/code-loading-skeletons";
+// bb-fork(diff-rail): change map and change navigation beside the file diff.
+import { DiffChangeNav } from "@/components/code/DiffChangeNav.fork";
+import {
+  DiffChangeRail,
+  DiffChangeRailToggle,
+} from "@/components/code/DiffChangeRail.fork";
 import type { DiffPresentation } from "@/components/code/code-rendering";
 import {
   GitDiffCardBody,
@@ -47,11 +53,16 @@ const FILE_DIFF_VIEW_MODE_BUTTON_CLASS =
 interface FileDiffViewProps {
   controller: FileDiffController;
   onSelectionAddToChat?: (text: string) => void;
+  // bb-fork(file-diff-open): a view mode an open request asked for.
+  requestedViewMode?: GitDiffDisplayMode | null;
+  onRequestedViewModeUsed?: () => void;
 }
 
 export function FileDiffView({
   controller,
   onSelectionAddToChat,
+  requestedViewMode = null,
+  onRequestedViewModeUsed,
 }: FileDiffViewProps) {
   const rootRef = useRef<HTMLDivElement>(null!);
   const { width = 0 } = useResizeObserver({
@@ -63,18 +74,31 @@ export function FileDiffView({
   const [lineOverflowMode, setLineOverflowMode] =
     useGitDiffLineOverflowModePreference();
   const displayMode: GitDiffDisplayMode =
+    requestedViewMode ??
     displayModePreference ??
     (width >= FILE_DIFF_SPLIT_VIEW_MIN_WIDTH_PX ? "split" : "unified");
+  const handleDisplayModeChange = useCallback(
+    (mode: GitDiffDisplayMode) => {
+      onRequestedViewModeUsed?.();
+      setDisplayModePreference(mode);
+    },
+    [onRequestedViewModeUsed, setDisplayModePreference],
+  );
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(
+    null,
+  );
 
   return (
     <div ref={rootRef} className="flex min-h-0 flex-1 flex-col">
       <FileDiffToolbar
         displayMode={displayMode}
         lineOverflowMode={lineOverflowMode}
-        onDisplayModeChange={setDisplayModePreference}
+        onDisplayModeChange={handleDisplayModeChange}
         onLineOverflowModeChange={setLineOverflowMode}
+        onScrollElementChange={setScrollElement}
         onSelectionChange={controller.onSelectionChange}
         options={controller.options}
+        scrollElement={scrollElement}
         selectionValue={controller.selectionValue}
       />
       <FileDiffBody
@@ -82,7 +106,9 @@ export function FileDiffView({
         displayMode={displayMode}
         lineOverflowMode={lineOverflowMode}
         onRequestFileContents={controller.onRequestFileContents}
+        onScrollElementChange={setScrollElement}
         onSelectionAddToChat={onSelectionAddToChat}
+        scrollElement={scrollElement}
       />
     </div>
   );
@@ -93,13 +119,17 @@ function FileDiffBody({
   displayMode,
   lineOverflowMode,
   onRequestFileContents,
+  onScrollElementChange,
   onSelectionAddToChat,
+  scrollElement,
 }: {
   bodyState: FileDiffController["bodyState"];
   displayMode: GitDiffDisplayMode;
   lineOverflowMode: CodeOverflowMode;
   onRequestFileContents: RequestDiffFileContents | undefined;
+  onScrollElementChange: (element: HTMLDivElement | null) => void;
   onSelectionAddToChat?: (text: string) => void;
+  scrollElement: HTMLDivElement | null;
 }) {
   if (bodyState.status === "loading") {
     return <DiffLoadingSkeleton />;
@@ -116,18 +146,61 @@ function FileDiffBody({
     );
   }
   return (
+    <FileDiffReadyPanel
+      displayMode={displayMode}
+      fileDiff={bodyState.fileDiff}
+      lineOverflowMode={lineOverflowMode}
+      onRequestFileContents={onRequestFileContents}
+      onScrollElementChange={onScrollElementChange}
+      onSelectionAddToChat={onSelectionAddToChat}
+      patchText={bodyState.truncated ? undefined : bodyState.patchText}
+      scrollElement={scrollElement}
+      truncated={bodyState.truncated}
+    />
+  );
+}
+
+function FileDiffReadyPanel({
+  displayMode,
+  fileDiff,
+  lineOverflowMode,
+  onRequestFileContents,
+  onScrollElementChange,
+  onSelectionAddToChat,
+  patchText,
+  scrollElement,
+  truncated,
+}: {
+  displayMode: GitDiffDisplayMode;
+  fileDiff: ParsedGitDiffFile;
+  lineOverflowMode: CodeOverflowMode;
+  onRequestFileContents: RequestDiffFileContents | undefined;
+  onScrollElementChange: (element: HTMLDivElement | null) => void;
+  onSelectionAddToChat?: (text: string) => void;
+  patchText: string | undefined;
+  scrollElement: HTMLDivElement | null;
+  truncated: boolean;
+}) {
+  return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-auto" data-file-diff-body="">
-        <FileDiffReadyBody
-          displayMode={displayMode}
-          fileDiff={bodyState.fileDiff}
-          lineOverflowMode={lineOverflowMode}
-          onRequestFileContents={onRequestFileContents}
-          onSelectionAddToChat={onSelectionAddToChat}
-          patchText={bodyState.truncated ? undefined : bodyState.patchText}
-        />
+      <div className="flex min-h-0 flex-1">
+        <div
+          ref={onScrollElementChange}
+          className="min-h-0 flex-1 overflow-auto"
+          data-file-diff-body=""
+        >
+          <FileDiffReadyBody
+            displayMode={displayMode}
+            fileDiff={fileDiff}
+            lineOverflowMode={lineOverflowMode}
+            onRequestFileContents={onRequestFileContents}
+            onSelectionAddToChat={onSelectionAddToChat}
+            patchText={patchText}
+          />
+        </div>
+        <DiffChangeRail scrollElement={scrollElement} />
       </div>
-      {bodyState.truncated ? (
+      {truncated ? (
         <div
           role="status"
           className="border-t border-border px-4 py-2 text-xs text-muted-foreground"
@@ -182,16 +255,20 @@ function FileDiffToolbar({
   lineOverflowMode,
   onDisplayModeChange,
   onLineOverflowModeChange,
+  onScrollElementChange,
   onSelectionChange,
   options,
+  scrollElement,
   selectionValue,
 }: {
   displayMode: GitDiffDisplayMode;
   lineOverflowMode: CodeOverflowMode;
   onDisplayModeChange: (mode: GitDiffDisplayMode) => void;
   onLineOverflowModeChange: (mode: CodeOverflowMode) => void;
+  onScrollElementChange: (element: HTMLDivElement | null) => void;
   onSelectionChange: (value: string) => void;
   options: readonly GitDiffSelectionOption[];
+  scrollElement: HTMLDivElement | null;
   selectionValue: string;
 }) {
   const selectedOption = options.find(
@@ -244,6 +321,8 @@ function FileDiffToolbar({
         </DropdownMenuContent>
       </DropdownMenu>
       <div className="ml-auto flex shrink-0 items-center gap-1">
+        <DiffChangeNav scrollElement={scrollElement} />
+        <DiffChangeRailToggle />
         <Button
           type="button"
           variant="ghost"

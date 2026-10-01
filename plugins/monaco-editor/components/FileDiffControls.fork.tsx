@@ -1,8 +1,15 @@
 // bb-fork(file-diff): toolbar controls for the editor's diff mode.
+import {
+  experimental_DiffChangeNav,
+  experimental_DiffChangeRailToggle,
+} from "@get-bb/plugin-sdk/app";
 import { cn } from "@/lib/utils";
 import type { FileDiffOption, FileDiffState } from "../lib/file-diff.fork.js";
 
 export type FileDiffViewMode = "split" | "unified";
+
+const HostDiffChangeNav = experimental_DiffChangeNav;
+const HostDiffChangeRailToggle = experimental_DiffChangeRailToggle;
 
 interface FileDiffControlsProps {
   isActive: boolean;
@@ -10,6 +17,7 @@ interface FileDiffControlsProps {
   onToggle: () => void;
   onViewModeChange: (mode: FileDiffViewMode) => void;
   options: readonly FileDiffOption[];
+  scrollElement: HTMLDivElement | null;
   selection: string | null;
   state: FileDiffState;
   viewMode: FileDiffViewMode;
@@ -21,6 +29,7 @@ export function FileDiffControls({
   onToggle,
   onViewModeChange,
   options,
+  scrollElement,
   selection,
   state,
   viewMode,
@@ -69,6 +78,12 @@ export function FileDiffControls({
             </ModeButton>
           </div>
         </>
+      ) : null}
+      {isActive ? <HostDiffChangeNav scrollElement={scrollElement} /> : null}
+      {isActive ? (
+        <HostDiffChangeRailToggle
+          className={cn("size-6 shrink-0 text-muted-foreground")}
+        />
       ) : null}
       <button
         type="button"

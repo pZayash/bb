@@ -26,6 +26,7 @@ import {
 import type {
   EnvironmentFilePreviewSource,
   FilePreview,
+  FilePreviewDiffIntent,
   FilePreviewLineRange,
   WorkspaceFilePreviewStatusLabel,
 } from "@bb/client-core";
@@ -41,6 +42,7 @@ import type { FilePreviewDiffSlot } from "./FilePreview";
 import { FileDiffToggle } from "./file-diff/FileDiffToggle.fork";
 import { FileDiffView } from "./file-diff/FileDiffView.fork";
 import { useFileDiff } from "./file-diff/useFileDiff.fork";
+import type { GitDiffDisplayMode } from "./GitDiffToolbar";
 import {
   buildMarkdownFileImageRouting,
   buildMarkdownLeaseImageRouting,
@@ -69,6 +71,8 @@ interface WorkspaceFilePreviewTabContentProps {
   copyPath?: string | null;
   environmentId?: string | null;
   lineRange: FilePreviewLineRange | null;
+  // bb-fork(file-diff-open): set when the open request asked for the diff view.
+  diffIntent?: FilePreviewDiffIntent | null;
   markdownLinkRouting?: MarkdownLinkRouting;
   onSelectionAddToChat?: (text: string) => void;
   onOpenInEditor?: (path: string) => void;
@@ -322,6 +326,7 @@ export function GitDiffTabContent({
 export function WorkspaceFilePreviewTabContent({
   activePath,
   copyPath = null,
+  diffIntent = null,
   environmentId,
   isPanelOpen,
   lineRange,
@@ -333,8 +338,16 @@ export function WorkspaceFilePreviewTabContent({
   threadId,
 }: WorkspaceFilePreviewTabContentProps) {
   // bb-fork(file-diff): per-tab diff mode for Git-backed workspace files.
-  const [isDiffActive, setIsDiffActive] = useState(false);
-  useEffect(() => setIsDiffActive(false), [activePath]);
+  const [isDiffActive, setIsDiffActive] = useState(diffIntent != null);
+  // bb-fork(file-diff-open): the requested view wins until the user picks one.
+  const [requestedViewMode, setRequestedViewMode] =
+    useState<GitDiffDisplayMode | null>(diffIntent?.view ?? null);
+  const diffRequestId = diffIntent?.requestId ?? null;
+  useEffect(() => {
+    setIsDiffActive(diffRequestId !== null);
+    setRequestedViewMode(diffIntent?.view ?? null);
+    // oxlint-disable-next-line react/exhaustive-deps
+  }, [activePath, diffRequestId]);
   const fileDiffController = useFileDiff({
     enabled: isDiffActive,
     environmentId,
@@ -399,14 +412,19 @@ export function WorkspaceFilePreviewTabContent({
           content: isDiffActive ? (
             <FileDiffView
               controller={fileDiffController}
+              onRequestedViewModeUsed={() => setRequestedViewMode(null)}
               onSelectionAddToChat={onSelectionAddToChat}
+              requestedViewMode={requestedViewMode}
             />
           ) : null,
           isActive: isDiffActive,
           toggle: (
             <FileDiffToggle
               isActive={isDiffActive}
-              onToggle={() => setIsDiffActive((active) => !active)}
+              onToggle={() => {
+                setRequestedViewMode(null);
+                setIsDiffActive((active) => !active);
+              }}
             />
           ),
         }

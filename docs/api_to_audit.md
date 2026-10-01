@@ -47,6 +47,48 @@ bound to it at the same commit), whether `startRef` should keep the automatic
 value alongside a manual override instead of being overwritten, and whether the
 commit listing belongs on `workspace.status` rather than its own command.
 
+## Diff change controls: `experimental_DiffChangeRail` and `experimental_DiffChangeNav`
+
+**Added 2026-09-30 (fork).** A plugin embedding `experimental_Diff` can put
+bb's change map beside it — `experimental_DiffChangeRail` — put the change
+stepper in its diff toolbar — `experimental_DiffChangeNav`, previous/next
+change buttons with an `n/total` counter — and offer the shared switch with
+`experimental_DiffChangeRailToggle` (`{ className? }`). The rail and the
+stepper share one props type, `DiffChangeControlsProps`
+(`{ scrollElement, className? }`): the caller passes the element that scrolls
+the diff and owns the layout, rendering the rail as a flex-row sibling of that
+scroller. The toggle reads and writes bb's stored change map preference, so a
+plugin's toggle also hides bb's own rails. Both the rail and the stepper derive
+their positions from the passed scroller's rendered `[data-line]` rows, so they
+describe bb's renderer rather than a `experimental_diffRenderer` replacement.
+
+The stepper scrolls the diff to its first change when the rows first render, so
+an opened diff does not start above the change; `jumpToFirstChange` opts out.
+
+Before stabilizing, audit whether the preference belongs in the plugin-facing
+contract, whether these controls should take a ref instead of an element, how
+they behave under a replacement diff renderer, a virtualized scroller, or nested
+scroll containers, and whether opening on the first change is the right default
+for diffs a user asked to see from the top. The controls model one scrolling
+diff; a multi-file scroller builds its own marks (bb's Diff panel does, from the
+virtualizer's geometry).
+
+## `PluginFileOpenerProps.experimental_diffIntent`
+
+**Added 2026-09-30 (fork).** A file open can ask for the file's diff: bb's
+changed-files list opens a file straight into its diff in Split view. The host
+passes `{ requestId, view }` (`ExperimentalFileDiffIntent`) to the plugin file
+opener, with a new object per request — including a repeat request for the same
+file and view — and `null` when the open was a plain one. An opener applies a
+non-null intent (activate the diff in `view`) and ignores `null`.
+
+Before stabilizing, audit which view wins when the user picks one in the plugin
+after a request, whether the intent should keep a per-request identity at all
+(it exists so a repeat open re-applies), and whether this belongs on the open
+request rather than on the opener props. The intent rides on the workspace file
+tab state (`diffIntent`) and is stripped from stored tabs, so a restored tab
+opens in the editor as before.
+
 ## Discoverable RPC
 
 `bb.rpc.register` accepts optional `experimental_discoverable` and `experimental_description` options. Method definitions accept `experimental_description`. Discoverable registration exports wire schemas through Standard JSON Schema; validation-only schemas remain usable without publication. Descriptions are published separately and absent descriptions become null. Discovery advertises methods without changing RPC authorization or dispatch.

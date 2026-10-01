@@ -17,6 +17,8 @@ import { Icon } from "@bb/shared-ui/icon";
 import { usePointerCoarse } from "@bb/shared-ui/hooks/use-pointer-coarse";
 import { Input } from "@bb/shared-ui/input";
 import { DiffStatsTally } from "@/components/ui/diff-stats-tally.js";
+// bb-fork(diff-rail): change map switch for the changed-files panel.
+import { DiffChangeRailToggle } from "@/components/code/DiffChangeRail.fork";
 import {
   formatChangeSummary,
   renderChangeSummary,
@@ -355,6 +357,9 @@ export function GitDiffToolbar({
                 <Icon name="ChevronsUp" />
               )}
             </Button>
+            <DiffChangeRailToggle
+              className={COARSE_POINTER_COMPACT_ICON_BUTTON_CLASS}
+            />
             <Button
               type="button"
               variant="ghost"

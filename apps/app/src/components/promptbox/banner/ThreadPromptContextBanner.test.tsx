@@ -74,7 +74,9 @@ function makeGitSection(
 afterEach(cleanup);
 
 // bb-fork(thread-start-ref): the git row hosts the start-commit control.
-function renderGitRow(threadStartControl: ThreadPromptGitSection["threadStartControl"]) {
+function renderGitRow(
+  threadStartControl: ThreadPromptGitSection["threadStartControl"],
+) {
   return render(
     <ThreadPromptContextBanner
       gitSection={makeGitSection("committed", null, threadStartControl)}

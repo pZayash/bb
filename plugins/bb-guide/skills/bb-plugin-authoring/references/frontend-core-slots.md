@@ -245,7 +245,7 @@ target? })`. Inside the fixed-tab component,
   one under Settings → Appearance → Header, and the default is bb's controls
   only. Content is clipped to the row. Experimental: see
   `docs/api_to_audit.md`.
-- `fileOpener` → `{ path: string, source, experimental_lineRange?, Original }` — register as a viewer/editor
+- `fileOpener` → `{ path: string, source, experimental_diffIntent?, experimental_lineRange?, Original }` — register as a viewer/editor
   for file extensions: `{ id, title, extensions: ["md"], component }`.
   Matching files use the first applicable opener in deterministic slot order
   by default. Users can pin BB's preview or a specific opener per extension
@@ -266,6 +266,13 @@ projectId, experimental_hostId? }` (nullable fields). The optional host ID
   identical range in the active tab. Apply the latest target after loading
   and on subsequent requests without replacing the editor model; null means
   no requested navigation.
+  `experimental_diffIntent` is a nullable `ExperimentalFileDiffIntent`
+  (`{ requestId, view: "unified" | "split" }`, also fork-added) set when the
+  open asked for the file's diff — bb's changed-files list opens a file
+  straight into its diff. BB supplies a new object per request, including a
+  repeat request for the same file and view, so observe object identity,
+  apply a non-null intent (activate the diff in `view`), and ignore null
+  rather than treating it as "close the diff". Older hosts may omit it.
   `Original` is BB's preview bound to this file; render it to
   delegate conditionally without re-entering plugin replacement resolution.
   Applies only to live file content — git-ref snapshots and deleted files

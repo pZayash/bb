@@ -288,15 +288,20 @@ function mountDiff(
     selection: selection ?? "all",
     truncated: false,
   }),
+  extra: Partial<PluginFileOpenerProps> = {},
 ) {
   const diff = vi.fn((input: unknown) => respond(readDiffSelection(input)));
-  const slot = renderSlot(registration, base, {
-    rpc: {
-      assets: () => ({ baseUrl: "/assets", expiresAtMs: 99999 }),
-      read: () => file,
-      diff,
+  const slot = renderSlot(
+    registration,
+    { ...base, ...extra },
+    {
+      rpc: {
+        assets: () => ({ baseUrl: "/assets", expiresAtMs: 99999 }),
+        read: () => file,
+        diff,
+      },
     },
-  });
+  );
   return { diff, slot };
 }
 
@@ -430,4 +435,44 @@ it("offers no diff switch for files outside a workspace", async () => {
   await waitFor(() => expect(create).toHaveBeenCalledOnce());
 
   expect(slot.queryByRole("button", { name: "Show changes" })).toBeNull();
+});
+
+// bb-fork(file-diff-open): the host can open a file straight into its diff.
+it("opens the diff in the view the host asked for", async () => {
+  const { slot } = mountDiff(undefined, {
+    experimental_diffIntent: { requestId: "req_1", view: "split" },
+  });
+
+  await waitFor(() =>
+    expect(slot.queryByRole("button", { name: "Hide changes" })).not.toBeNull(),
+  );
+  expect(
+    slot.getByRole("button", { name: "Split" }).getAttribute("aria-pressed"),
+  ).toBe("true");
+});
+
+it("reapplies a repeat request after the user picked another view", async () => {
+  const { slot } = mountDiff(undefined, {
+    experimental_diffIntent: { requestId: "req_1", view: "split" },
+  });
+  await waitFor(() =>
+    expect(slot.queryByRole("button", { name: "Hide changes" })).not.toBeNull(),
+  );
+
+  fireEvent.click(slot.getByRole("button", { name: "Unified" }));
+  expect(
+    slot.getByRole("button", { name: "Unified" }).getAttribute("aria-pressed"),
+  ).toBe("true");
+
+  slot.lifecycle.rerender(
+    <Component
+      {...base}
+      experimental_diffIntent={{ requestId: "req_2", view: "split" }}
+    />,
+  );
+  await waitFor(() =>
+    expect(
+      slot.getByRole("button", { name: "Split" }).getAttribute("aria-pressed"),
+    ).toBe("true"),
+  );
 });

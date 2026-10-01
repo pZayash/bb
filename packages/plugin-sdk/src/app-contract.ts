@@ -487,6 +487,17 @@ export interface PluginFileOpenerProps {
     endLineNumber: number;
   } | null;
   /**
+   * Diff view an open request asked for (bb's changed-files list can open a
+   * file straight into its diff), or null when the open was a plain one. BB
+   * supplies a new object for each request, including a repeat request for the
+   * same file and view: observe object identity, apply a non-null intent, and
+   * ignore null rather than treating it as "close the diff". Older hosts may
+   * omit this prop.
+   *
+   * @experimental Audit repeat-open and view-mode ownership before stabilizing.
+   */
+  experimental_diffIntent?: ExperimentalFileDiffIntent | null;
+  /**
    * BB's file preview, bound to this file. Render it to delegate conditionally
    * without re-entering plugin replacement resolution.
    *
@@ -507,6 +518,16 @@ export type CodeOverflowMode = "scroll" | "wrap";
 
 /** How a diff presents its two sides. */
 export type DiffViewMode = "unified" | "split";
+
+/**
+ * A file open request that wants the file's diff view, in this mode. The
+ * `requestId` is new for every request so a host can hand a fresh object to a
+ * file opener that reopens an already-open file.
+ */
+export interface ExperimentalFileDiffIntent {
+  requestId: string;
+  view: DiffViewMode;
+}
 
 /** A 1-based, inclusive line range. */
 export interface SourceCodeLineRange {
@@ -589,6 +610,34 @@ export interface DiffProps {
    */
   experimental_expandUnchanged?: boolean;
   /** Applied to the renderer's root element. */
+  className?: string;
+}
+
+/**
+ * Props of the host-owned diff change controls: the change rail
+ * (`experimental_DiffChangeRail`) and the change stepper
+ * (`experimental_DiffChangeNav`). The caller owns the layout and passes the
+ * element that scrolls the diff it renders; both controls describe that diff.
+ *
+ * The rail draws the change map beside the diff and hides itself when the diff
+ * has no changed lines or does not scroll, or when the change map is switched
+ * off. The stepper renders previous/next change buttons with a counter, disables
+ * them at the ends, and scrolls to the first change when the diff's rows first
+ * appear, so an opened diff does not start above the change.
+ */
+export interface DiffChangeControlsProps {
+  /** The element that scrolls the diff the control describes. */
+  scrollElement: HTMLElement | null;
+  /** Applied to the control's root element. */
+  className?: string;
+}
+
+/**
+ * Props of the host-owned `experimental_DiffChangeRailToggle` component.
+ * Toggling it hides or shows every change map in bb, not only the caller's.
+ */
+export interface DiffChangeRailToggleProps {
+  /** Applied to the toggle button. */
   className?: string;
 }
 
@@ -3407,5 +3456,25 @@ export interface PluginSdkApp {
    * docs/api_to_audit.md.
    */
   experimental_Diff: ComponentType<DiffProps>;
+  /**
+   * The host-owned diff change map (see {@link DiffChangeRailProps}). Marks the
+   * changed regions of a scrolling diff and doubles as its scroll control, so a
+   * long diff can be navigated without hunting for the next hunk. Experimental:
+   * see docs/api_to_audit.md.
+   */
+  experimental_DiffChangeRail: ComponentType<DiffChangeControlsProps>;
+  /**
+   * The host-owned change stepper (see {@link DiffChangeControlsProps}).
+   * Renders previous/next change buttons and a counter for a diff the caller
+   * renders, and jumps to the first change when the diff's rows arrive.
+   * Experimental: see docs/api_to_audit.md.
+   */
+  experimental_DiffChangeNav: ComponentType<DiffChangeControlsProps>;
+  /**
+   * The host-owned change map toggle (see {@link DiffChangeRailToggleProps}).
+   * Renders the same control BB's own diff toolbars use and shares the stored
+   * preference with them. Experimental: see docs/api_to_audit.md.
+   */
+  experimental_DiffChangeRailToggle: ComponentType<DiffChangeRailToggleProps>;
   useComposerView(): ComposerView;
 }

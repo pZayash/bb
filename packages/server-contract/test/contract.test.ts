@@ -439,6 +439,8 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
     fields: [
       "updateEnvironmentRequestSchema.mergeBaseBranch",
       "updateEnvironmentRequestSchema.name",
+      // bb-fork(thread-start-ref): the start-commit baseline is PATCHed the same way.
+      "updateEnvironmentRequestSchema.startRef",
     ],
   },
   {

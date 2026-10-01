@@ -142,6 +142,16 @@ export const experimental_SourceCode = runtimeComponent(
   "experimental_SourceCode",
 );
 export const experimental_Diff = runtimeComponent("experimental_Diff");
+// The diff change map and its toggle (experimental — see docs/api_to_audit.md).
+export const experimental_DiffChangeRail = runtimeComponent(
+  "experimental_DiffChangeRail",
+);
+export const experimental_DiffChangeRailToggle = runtimeComponent(
+  "experimental_DiffChangeRailToggle",
+);
+export const experimental_DiffChangeNav = runtimeComponent(
+  "experimental_DiffChangeNav",
+);
 export const useRpc = runtimeFunction("useRpc");
 export const useRealtime = runtimeFunction("useRealtime");
 export const useRealtimeConnectionState = runtimeFunction(
