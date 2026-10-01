@@ -10,6 +10,8 @@ export {
 export { buildPluginHost } from "./build-plugin-host.js";
 export { resolveBundledNpmCli, resolveBundledNpxCli } from "./npm-cli.js";
 export * from "./plugin-dev-loop.js";
+// bb-fork(windows): reject unattributed watch events that did not change a source file.
+export * from "./plugin-source-freshness.fork.js";
 export {
   PLUGIN_TOOLCHAIN_PINS,
   resolvePluginBuildToolchain,

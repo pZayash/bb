@@ -43,6 +43,7 @@ import {
   buildPluginApp,
   buildPluginHost,
   createPluginDevLoop,
+  hasPluginSourceChanges,
 } from "@bb/plugin-build";
 import { getPluginBuildToolchain } from "./build-toolchain.js";
 import {
@@ -1406,6 +1407,16 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
             pluginId: row.id,
             // bb-fork(windows): never hot-reload a plugin whose form is open.
             deferReload: () => pluginDevReloadDeferralReason(deps.db, row.id),
+            hasSourceChanges: () =>
+              hasPluginSourceChanges({
+                rootDir: bundled.rootDir,
+                artifactRelativePaths: [
+                  "dist/app.js",
+                  "dist/host.js",
+                  "dist/server.js",
+                ],
+              }),
+            notifyChanged: notifyPluginsChanged,
             targets: async () => {
               const manifest = await readPluginManifest(bundled.rootDir);
               const hasApp = manifest.appEntry !== undefined;
@@ -1424,14 +1435,12 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
                   await getPluginBuildToolchain(deps),
                 );
                 setDevBuildProblem(row.id, "frontend", null);
-                notifyPluginsChanged();
               } catch (error) {
                 setDevBuildProblem(
                   row.id,
                   "frontend",
                   error instanceof Error ? error.message : String(error),
                 );
-                notifyPluginsChanged();
                 throw error;
               }
             },
@@ -1443,14 +1452,12 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
                   await getPluginBuildToolchain(deps),
                 );
                 setDevBuildProblem(row.id, "host", null);
-                notifyPluginsChanged();
               } catch (error) {
                 setDevBuildProblem(
                   row.id,
                   "host",
                   error instanceof Error ? error.message : String(error),
                 );
-                notifyPluginsChanged();
                 throw error;
               }
             },
@@ -1462,7 +1469,6 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
                 return loadOne(current);
               });
               await syncCliSkill();
-              notifyPluginsChanged();
               if (problem !== null) throw new Error(problem);
             },
             log: (message) => logger.info(`plugin ${row.id}: ${message}`),
