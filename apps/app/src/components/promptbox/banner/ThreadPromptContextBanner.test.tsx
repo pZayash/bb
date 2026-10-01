@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { ThreadPullRequest } from "@bb/domain";
@@ -92,6 +98,41 @@ function renderGitRow(
   );
 }
 
+// bb-fork(changed-files-filter): the changed-files list filters by path mask.
+function makeChangedFiles(paths: readonly string[]) {
+  return paths.map((path) => ({
+    path,
+    status: "M" as const,
+    insertions: 1,
+    deletions: 0,
+  }));
+}
+
+function renderExpandedGitBody(paths: readonly string[]) {
+  const section = makeGitSection();
+  const files = makeChangedFiles(paths);
+  return render(
+    <ThreadPromptContextBanner
+      gitSection={{
+        ...section,
+        changedFiles: {
+          ...section.changedFiles,
+          files,
+          stats: { ...section.changedFiles.stats, files },
+        },
+      }}
+      gitSectionPending={false}
+      archivedSection={null}
+      environmentGoneSection={null}
+      parentThreadSection={null}
+      childThreadsSection={null}
+      pullRequestSection={null}
+      expandedSection="git"
+      onToggleSection={noop}
+    />,
+  );
+}
+
 describe("ThreadPromptContextBanner", () => {
   it("renders the supplied start-commit control in the changed-files row", () => {
     renderGitRow(<button type="button">Since start</button>);
@@ -103,6 +144,32 @@ describe("ThreadPromptContextBanner", () => {
     renderGitRow(null);
 
     expect(screen.queryByRole("button", { name: "Since start" })).toBeNull();
+  });
+
+  it("filters the changed-files body by path mask", async () => {
+    const mdFiles = ["README.md", "docs/guide.md"];
+    renderExpandedGitBody([
+      "apps/app/src/Panel.tsx",
+      "apps/app/src/Button.tsx",
+      "apps/app/src/usePanel.ts",
+      "apps/server/src/routes/diff.ts",
+      "apps/server/src/routes/files.ts",
+      "apps/server/src/routes/index.ts",
+      "package.json",
+      ...mdFiles,
+    ]);
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(9);
+
+    fireEvent.change(screen.getByLabelText("Filter changed files by path"), {
+      target: { value: "*.md" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("listitem")).toHaveLength(mdFiles.length);
+    });
+    expect(screen.getByTitle("README.md")).toBeTruthy();
+    expect(screen.queryByTitle("apps/app/src/Panel.tsx")).toBeNull();
   });
 
   it("names the changed-files row after the section label", () => {

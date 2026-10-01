@@ -28,7 +28,8 @@ import {
   activityIconClass,
   activityRowClass,
 } from "@bb/shared-ui/activity-row-styles";
-import { WorkspaceChangesList } from "@/components/thread/WorkspaceChangesList";
+// bb-fork(changed-files-filter): the banner's changed-files list filters by path mask.
+import { WorkspaceChangesFilteredList } from "@/components/thread/WorkspaceChangesFilter.fork";
 import {
   formatChangeSummary,
   renderChangeSummary,
@@ -1081,7 +1082,7 @@ export function ThreadPromptContextBanner({
             labelledBy={SECTION_IDS.git.toggle}
             isExpanded={isGitExpanded}
           >
-            <WorkspaceChangesList
+            <WorkspaceChangesFilteredList
               files={gitSection.changedFiles.files}
               className="max-h-32 px-3 pb-2 pt-1"
               onFileClick={(file) =>
