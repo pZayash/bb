@@ -66,6 +66,7 @@ export function makeSidebarThread(
     originPluginId: null,
     providerId: "provider-test",
     model: "gpt-5.5",
+    reasoningLevel: null,
     status: "idle",
     runtimeStatus: "idle",
     queuedWork: "none",

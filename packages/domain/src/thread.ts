@@ -450,6 +450,9 @@ export const threadListEntrySchema = threadWithRuntimeSchema.extend({
    * Null when none of those has ever been set.
    */
   model: z.string().nullable(),
+  // bb-fork(windows): reasoning level resolved for the thread's next turn, shown
+  // bb-fork(windows): beside the model in the sidebar. Null when nothing has ever set one.
+  reasoningLevel: reasoningLevelSchema.nullable(),
   hasPendingInteraction: z.boolean(),
   environmentHostId: z.string().nullable(),
   environmentName: z.string().nullable(),

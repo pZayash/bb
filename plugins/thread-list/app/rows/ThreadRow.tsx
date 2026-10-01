@@ -460,7 +460,7 @@ function ThreadRowComponent({
     SIDEBAR_ROW_BASE_CLASS,
     LIST_HOVER_TRANSITION,
     parentOptions?.stickyLevel === undefined && "relative",
-    thread.model != null
+    thread.model != null || thread.reasoningLevel != null
       ? SIDEBAR_MODEL_ROW_HEIGHT_CLASS
       : options.isCompact
         ? COARSE_POINTER_COMPACT_ROW_HEIGHT_CLASS
@@ -623,14 +623,18 @@ function ThreadRowComponent({
             revealOnHover={!isParentCollapsed}
           />
         ) : null}
-        {thread.model != null ? (
+        {thread.model != null || thread.reasoningLevel != null ? (
           <span
             className={cn(
-              "pointer-events-none flex w-full min-w-0 items-center pb-1.5",
+              "pointer-events-none flex w-full min-w-0 items-center gap-1 pb-1.5",
               showProviderIcons && threadProvider !== null && "pl-5",
             )}
           >
-            <ThreadModelLabel model={thread.model} />
+            <ThreadModelLabel
+              model={thread.model}
+              reasoningLevel={thread.reasoningLevel}
+              provider={threadProvider}
+            />
           </span>
         ) : null}
       </span>

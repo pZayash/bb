@@ -1207,6 +1207,7 @@ describe("server-contract canonical schemas", () => {
           environmentId: null,
           providerId: "codex",
           model: "gpt-5",
+          reasoningLevel: null,
           title: "Pending thread",
           titleFallback: "Pending thread",
           sectionId: null,

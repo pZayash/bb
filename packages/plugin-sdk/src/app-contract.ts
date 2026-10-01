@@ -1168,6 +1168,15 @@ export interface PluginSidebarThread {
   model: string | null;
 
   /**
+   * The reasoning level the thread's next turn would run with, resolved by the
+   * same precedence as {@link PluginSidebarThread.model}. Null when none of the
+   * thread override, its last turn, and the project default has ever set one.
+   * Map it to copy through `reasoningLevels` on the provider from
+   * {@link PluginSdkApp.experimental_useProviders}.
+   */
+  reasoningLevel: ReasoningLevel | null;
+
+  /**
    * The thread's execution status. bb's list sorts busy threads ("starting",
    * "active", "stopping") above idle ones. Treat an unknown value as "idle".
    */

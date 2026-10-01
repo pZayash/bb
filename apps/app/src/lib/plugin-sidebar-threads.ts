@@ -40,6 +40,7 @@ export function toPluginSidebarThread(
     originPluginId: entry.originPluginId,
     providerId: entry.providerId,
     model: entry.model,
+    reasoningLevel: entry.reasoningLevel,
     status: entry.status,
     runtimeStatus: entry.runtime.displayStatus,
     queuedWork: entry.queuedWork,

@@ -47,6 +47,7 @@ export function threadListEntry(
     environmentId: null,
     providerId: "codex",
     model: DEFAULT_MODEL,
+    reasoningLevel: "high",
     title: seed.title,
     titleFallback: seed.title,
     sectionId: null,

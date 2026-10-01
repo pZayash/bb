@@ -34,6 +34,7 @@ function threadOnMachine(
     originPluginId: null,
     providerId: "codex",
     model: null,
+    reasoningLevel: null,
     status: "idle",
     runtimeStatus: "idle",
     queuedWork: "none",

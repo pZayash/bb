@@ -598,6 +598,7 @@ export function optimisticallyInsertThread(
     runtime: thread.runtime,
     hasPendingInteraction: false,
     model: null,
+    reasoningLevel: null,
     pinSortKey: null,
     queuedWork,
   };

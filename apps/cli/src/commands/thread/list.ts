@@ -149,7 +149,10 @@ function formatThreadListProject(
 }
 
 function formatThreadListModel(thread: ThreadListEntry): string {
-  return thread.model ?? "-";
+  // bb-fork(windows): the sidebar shows the reasoning level beside the model, so
+  // bb-fork(windows): the table's model cell carries it too.
+  const model = thread.model ?? "-";
+  return thread.reasoningLevel ? `${model} (${thread.reasoningLevel})` : model;
 }
 
 function formatThreadListStatus(thread: Thread): string {

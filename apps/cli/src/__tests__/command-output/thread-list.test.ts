@@ -145,6 +145,33 @@ describe("bb thread list command output", () => {
     );
   });
 
+  it("bb thread list shows the model's reasoning level", async () => {
+    const list = vi.fn(async () => [
+      {
+        ...fixtures.makeThread({
+          id: "thread-model-1",
+          projectId: "proj-1",
+          providerId: "codex",
+          status: "idle",
+          createdAt: 1,
+          updatedAt: 1,
+        }),
+        model: "gpt-5.6-sol",
+        reasoningLevel: "xhigh",
+      },
+    ]);
+    stubServerApi({
+      "v1.threads.$get": list,
+      "v1.projects.$get": async () => [{ id: "proj-1", name: "Alpha" }],
+    });
+
+    await runCommand(["thread", "list"], register);
+
+    expect(collectLogPayloads(vi.mocked(console.log)).join("\n")).toContain(
+      "gpt-5.6-sol (xhigh)",
+    );
+  });
+
   it("bb thread list hides the personal project label", async () => {
     const list = vi.fn(async () => [
       fixtures.makeThread({

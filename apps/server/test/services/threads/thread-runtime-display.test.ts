@@ -478,6 +478,95 @@ describe("thread runtime display", () => {
     ]);
   });
 
+  it("resolves each list entry's reasoning level like its next turn would", () => {
+    const { db, hostId, hub } = setup();
+    const fromTurn = createThreadWithEnvironment({
+      db,
+      hostId,
+      providerId: "codex",
+    });
+    const overridden = createThreadWithEnvironment({
+      db,
+      hostId,
+      providerId: "codex",
+    });
+    const fromDefault = createThreadWithEnvironment({
+      db,
+      hostId,
+      providerId: "codex",
+    });
+    const mismatched = createThreadWithEnvironment({
+      db,
+      hostId,
+      providerId: "claude-code",
+    });
+    const bare = createThreadWithEnvironment({
+      db,
+      hostId,
+      providerId: "claude-code",
+    });
+
+    appendStoredThreadEvent(db, noopNotifier, {
+      threadId: fromTurn.thread.id,
+      scope: threadScope(),
+      type: "client/turn/requested",
+      data: turnRequestData({
+        input: [{ type: "text", text: "go", mentions: [] }],
+        requestId: formatClientTurnRequestIdSuffix({ suffix: "23456789cc" }),
+      }),
+    });
+    for (const project of [fromDefault.project, mismatched.project]) {
+      upsertProjectExecutionDefaults(db, {
+        projectId: project.id,
+        providerId: "codex",
+        model: "gpt-5-default",
+        reasoningLevel: "xhigh",
+        permissionMode: "auto",
+        serviceTier: "default",
+      });
+    }
+
+    const entries = toThreadListEntryResponses(
+      { db, hub, providerRegistry },
+      {
+        now: 1_000,
+        threads: [
+          createThreadListEntry({
+            environmentHostId: hostId,
+            thread: fromTurn.thread,
+          }),
+          {
+            ...createThreadListEntry({
+              environmentHostId: hostId,
+              thread: overridden.thread,
+            }),
+            reasoningLevelOverride: "ultra",
+          },
+          createThreadListEntry({
+            environmentHostId: hostId,
+            thread: fromDefault.thread,
+          }),
+          createThreadListEntry({
+            environmentHostId: hostId,
+            thread: mismatched.thread,
+          }),
+          createThreadListEntry({
+            environmentHostId: hostId,
+            thread: bare.thread,
+          }),
+        ],
+      },
+    );
+
+    expect(entries.map((entry) => entry.reasoningLevel)).toEqual([
+      "medium",
+      "ultra",
+      "xhigh",
+      null,
+      null,
+    ]);
+  });
+
   it("reports the selected machine before a new thread has an environment", () => {
     const { db, hostId, hub } = setup();
     const { project } = createThreadWithEnvironment({ db, hostId });

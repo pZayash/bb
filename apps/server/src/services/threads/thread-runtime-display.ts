@@ -17,6 +17,7 @@ import {
 } from "@bb/db";
 import { LEGACY_CODEX_GOAL_EXTENSION_KIND } from "@bb/domain";
 import type {
+  ReasoningLevel,
   Thread,
   ThreadActivityState,
   ThreadChangeMetadata,
@@ -96,6 +97,7 @@ interface ToThreadListEntryResponseFromLatestSessionArgs {
   latestSession: HostDaemonSessionRow | null;
   model: string | null;
   now?: number;
+  reasoningLevel: ReasoningLevel | null;
   queuedWork: ThreadQueuedWork;
   thread: ThreadWithPendingInteractionState;
 }
@@ -555,44 +557,59 @@ function buildThreadQueuedWorkByThreadId(
   return result;
 }
 
-function buildThreadModelByThreadId(
+interface ThreadExecutionResolution {
+  model: string | null;
+  reasoningLevel: ReasoningLevel | null;
+}
+
+// bb-fork(windows): the sidebar shows the model and its reasoning level, so the
+// bb-fork(windows): row needs both resolved the way the next turn resolves them.
+function buildThreadExecutionByThreadId(
   deps: ThreadRuntimeDisplayDeps,
   threads: readonly ThreadWithPendingInteractionState[],
-): Map<string, string> {
-  const modelByThreadId = new Map<string, string>();
+): Map<string, ThreadExecutionResolution> {
+  const executionByThreadId = new Map<string, ThreadExecutionResolution>();
   if (threads.length === 0) {
-    return modelByThreadId;
+    return executionByThreadId;
   }
   const defaultsByProjectId = listProjectExecutionDefaultsByProjectIds(
     deps.db,
     { projectIds: [...new Set(threads.map((thread) => thread.projectId))] },
   );
-  const lastModelByThreadId = new Map<string, string>();
+  const lastExecutionByThreadId = new Map<string, ThreadExecutionResolution>();
   for (const row of listLastStoredTurnRequestEvents(deps.db, {
     threadIds: threads.map((thread) => thread.id),
   })) {
     try {
-      lastModelByThreadId.set(
-        row.threadId,
-        parseStoredTurnRequestEvent(row).execution.model,
-      );
+      const execution = parseStoredTurnRequestEvent(row).execution;
+      lastExecutionByThreadId.set(row.threadId, {
+        model: execution.model,
+        reasoningLevel: execution.reasoningLevel,
+      });
     } catch {
       continue;
     }
   }
   for (const thread of threads) {
     const projectDefault = defaultsByProjectId.get(thread.projectId);
+    const projectApplies = projectDefault?.providerId === thread.providerId;
+    const lastExecution = lastExecutionByThreadId.get(thread.id);
     const model =
       thread.modelOverride ??
-      lastModelByThreadId.get(thread.id) ??
-      (projectDefault?.providerId === thread.providerId
-        ? projectDefault.model
-        : undefined);
-    if (model !== undefined) {
-      modelByThreadId.set(thread.id, model);
+      lastExecution?.model ??
+      (projectApplies ? projectDefault?.model : undefined);
+    const reasoningLevel =
+      thread.reasoningLevelOverride ??
+      lastExecution?.reasoningLevel ??
+      (projectApplies ? projectDefault?.reasoningLevel : undefined);
+    if (model !== undefined || reasoningLevel !== undefined) {
+      executionByThreadId.set(thread.id, {
+        model: model ?? null,
+        reasoningLevel: reasoningLevel ?? null,
+      });
     }
   }
-  return modelByThreadId;
+  return executionByThreadId;
 }
 
 export function toThreadListEntryResponses(
@@ -626,11 +643,16 @@ export function toThreadListEntryResponses(
     deps,
     args.threads,
   );
-  const modelByThreadId = buildThreadModelByThreadId(deps, args.threads);
+  const executionByThreadId = buildThreadExecutionByThreadId(
+    deps,
+    args.threads,
+  );
   return args.threads.map((thread) => {
+    const execution = executionByThreadId.get(thread.id);
     const entry = toThreadListEntryResponseFromLatestSession({
       activity: activityByThreadId.get(thread.id) ?? EMPTY_THREAD_ACTIVITY,
-      model: modelByThreadId.get(thread.id) ?? null,
+      model: execution?.model ?? null,
+      reasoningLevel: execution?.reasoningLevel ?? null,
       queuedWork: queuedWorkByThreadId.get(thread.id) ?? "none",
       hostConnected:
         thread.environmentHostId !== null &&
@@ -660,6 +682,7 @@ function toThreadListEntryResponseFromLatestSession(
     ...thread,
     activity: args.activity,
     model: args.model,
+    reasoningLevel: args.reasoningLevel,
     queuedWork: args.queuedWork,
     pinSortKey: args.thread.pinSortKey,
     environmentBranchName: args.thread.environmentBranchName,

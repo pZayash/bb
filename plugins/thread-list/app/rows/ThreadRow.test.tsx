@@ -125,6 +125,7 @@ interface RenderThreadRowArgs extends Omit<HarnessProps, "thread"> {
 function makeProvider(
   id: string,
   displayName: string,
+  reasoningLevels?: PluginProvidersState["providers"][number]["reasoningLevels"],
 ): PluginProvidersState["providers"][number] {
   return {
     id,
@@ -135,6 +136,7 @@ function makeProvider(
     maintenance: { health: false, usage: false, installation: false },
     composerActions: [],
     completedTurnDisplay: "collapse",
+    ...(reasoningLevels === undefined ? {} : { reasoningLevels }),
     capabilities: {
       supportsThreadArchive: true,
       supportsThreadRename: true,
@@ -1129,6 +1131,82 @@ describe("ThreadRow", () => {
     expect(
       container.querySelector("[data-sidebar-thread-model]")?.textContent,
     ).toBe("gpt-5.6-sol");
+  });
+
+  it("shows the provider's declared reasoning label beside the model", () => {
+    const { container } = renderThreadRow({
+      thread: createThread({
+        providerId: "codex",
+        model: "openai-codex/gpt-5.6-sol",
+        reasoningLevel: "xhigh",
+      }),
+      providers: [
+        makeProvider("codex", "Codex", [
+          { id: "high", label: "High" },
+          { id: "xhigh", label: "Extra High" },
+        ]),
+      ],
+      showProviderIcons: true,
+    });
+
+    expect(
+      container.querySelector("[data-sidebar-thread-model]")?.textContent,
+    ).toBe("gpt-5.6-sol");
+    const reasoning = container.querySelector(
+      "[data-sidebar-thread-reasoning]",
+    );
+    expect(reasoning?.textContent).toBe("Extra High");
+    expect(reasoning?.getAttribute("data-sidebar-thread-reasoning")).toBe(
+      "xhigh",
+    );
+  });
+
+  it("falls back to a built-in reasoning label the provider does not declare", () => {
+    const { container } = renderThreadRow({
+      thread: createThread({
+        providerId: "codex",
+        model: "gpt-5.6-sol",
+        reasoningLevel: "ultra",
+      }),
+      providers: [makeProvider("codex", "Codex", [])],
+      showProviderIcons: true,
+    });
+
+    expect(
+      container.querySelector("[data-sidebar-thread-reasoning]")?.textContent,
+    ).toBe("Ultra");
+  });
+
+  it("omits the reasoning label when the thread has no resolved level", () => {
+    const { container } = renderThreadRow({
+      thread: createThread({ providerId: "codex", model: "gpt-5.6-sol" }),
+      providers: [makeProvider("codex", "Codex")],
+      showProviderIcons: true,
+    });
+
+    expect(
+      container.querySelector("[data-sidebar-thread-model]")?.textContent,
+    ).toBe("gpt-5.6-sol");
+    expect(
+      container.querySelector("[data-sidebar-thread-reasoning]"),
+    ).toBeNull();
+  });
+
+  it("shows the reasoning label for a thread with no model yet", () => {
+    const { container } = renderThreadRow({
+      thread: createThread({
+        providerId: "codex",
+        model: null,
+        reasoningLevel: "high",
+      }),
+      providers: [makeProvider("codex", "Codex")],
+      showProviderIcons: true,
+    });
+
+    expect(container.querySelector("[data-sidebar-thread-model]")).toBeNull();
+    expect(
+      container.querySelector("[data-sidebar-thread-reasoning]")?.textContent,
+    ).toBe("High");
   });
 
   it("omits the mark when the thread has neither a known provider nor a model", () => {
