@@ -298,6 +298,8 @@ export async function fetchFrontendCandidates(
 export { applyPluginCss } from "./plugin-css";
 
 export const PLUGIN_FRONTEND_LOAD_CONCURRENCY = 3;
+const PLUGIN_FRONTEND_LOAD_RETRY_LIMIT = 4;
+const PLUGIN_FRONTEND_LOAD_RETRY_BASE_DELAY_MS = 1_000;
 
 export function orderPluginFrontendCandidates(
   candidates: readonly PluginFrontendCandidate[],
@@ -373,6 +375,7 @@ export interface PluginFrontendReconcileDeps {
   beginSlotBatch: () => () => void;
   warn: (message: string) => void;
   routePluginId: () => string | null;
+  scheduleRetry?: (attempt: number) => void;
   mountTimeoutMs?: number;
   diagnosticsChanged?: () => void;
 }
@@ -712,6 +715,9 @@ async function reconcileCandidates(
             scriptId: null,
           },
         });
+        if (retryCount < PLUGIN_FRONTEND_LOAD_RETRY_LIMIT) {
+          deps.scheduleRetry?.(retryCount);
+        }
         return;
       }
       state.failedImportAttempts.delete(pluginId);
@@ -921,6 +927,13 @@ const PLUGIN_SLOT_BATCH_MAX_HOLD_MS = 150;
 
 const browserReconcileDeps: PluginFrontendReconcileDeps = {
   fetchCandidates: fetchFrontendCandidates,
+  scheduleRetry: (attempt) => {
+    if (state.tornDown) return;
+    window.setTimeout(
+      () => schedulePluginFrontendReconcile(),
+      PLUGIN_FRONTEND_LOAD_RETRY_BASE_DELAY_MS * 2 ** attempt,
+    );
+  },
   importModule: (url) => import(/* @vite-ignore */ url),
   applyCss: applyPluginCss,
   retainCss: retainPluginCss,

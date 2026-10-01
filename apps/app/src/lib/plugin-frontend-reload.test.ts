@@ -567,6 +567,23 @@ describe("reconcilePluginFrontends", () => {
     expect(state.records.get("hello")?.status).toBe("loaded");
   });
 
+  it("schedules bounded retries when a bundle import keeps failing", async () => {
+    const state = createPluginFrontendReconcileState();
+    const deps = makeDeps([candidate("hello", "v1")]);
+    const scheduleRetry = vi.fn();
+    deps.scheduleRetry = scheduleRetry;
+    deps.importModule.mockRejectedValue(new Error("offline"));
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      await reconcilePluginFrontends(state, deps);
+    }
+
+    expect(scheduleRetry.mock.calls.map(([attempt]) => attempt)).toEqual([
+      0, 1, 2, 3,
+    ]);
+    expect(state.records.get("hello")).toMatchObject({ status: "failed" });
+  });
+
   it("mounts once, skips repeated reconciliation, and disposes exactly once on reload and removal", async () => {
     const state = createPluginFrontendReconcileState();
     const deps = makeDeps([candidate("hello", "v1")]);
