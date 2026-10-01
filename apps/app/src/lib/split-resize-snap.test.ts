@@ -58,17 +58,17 @@ describe("split resize snapping", () => {
       childCount: 2,
     });
 
-    expect(session.resolve({ start: 100, end: 900, pointer: 100 }).fraction).toBe(
-      0.15,
-    );
+    expect(
+      session.resolve({ start: 100, end: 900, pointer: 100 }).fraction,
+    ).toBe(0.15);
     session.clear();
     const opposite = createSplitResizeSnapSession(source, "x", {
       boundaryIndex: 1,
       childCount: 2,
     });
-    expect(opposite.resolve({ start: 100, end: 900, pointer: 900 }).fraction).toBe(
-      0.85,
-    );
+    expect(
+      opposite.resolve({ start: 100, end: 900, pointer: 900 }).fraction,
+    ).toBe(0.85);
     opposite.clear();
   });
 

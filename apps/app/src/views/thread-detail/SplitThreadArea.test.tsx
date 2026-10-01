@@ -2279,8 +2279,8 @@ describe("SplitThreadArea", () => {
     );
     await waitFor(() =>
       expect(
-        screen.getAllByRole("button", { name: "Close pane" })[0]
-          ?.parentElement?.nextElementSibling,
+        screen.getAllByRole("button", { name: "Close pane" })[0]?.parentElement
+          ?.nextElementSibling,
       ).toBeNull(),
     );
   });

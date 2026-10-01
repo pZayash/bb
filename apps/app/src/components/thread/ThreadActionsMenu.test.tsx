@@ -310,7 +310,10 @@ describe("ThreadActionsMenu new child thread", () => {
 
   it("hides the item when the thread cannot spawn a child", async () => {
     renderWide(
-      <ThreadActionsMenu thread={makeChildCapableThread()} canSpawnChild={false} />,
+      <ThreadActionsMenu
+        thread={makeChildCapableThread()}
+        canSpawnChild={false}
+      />,
     );
     fireEvent.pointerDown(
       screen.getByRole("button", { name: "Thread actions" }),

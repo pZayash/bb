@@ -38,7 +38,10 @@ export function usePromptVoice(
       const current = draft.getCurrent();
       const separator =
         current.text.length > 0 && !/\s$/.test(current.text) ? " " : "";
-      draft.setDraft({ ...current, text: `${current.text}${separator}${text}` });
+      draft.setDraft({
+        ...current,
+        text: `${current.text}${separator}${text}`,
+      });
     },
     [draft, promptBoxRef],
   );

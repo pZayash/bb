@@ -31,10 +31,7 @@ import { TruncateStart } from "@/components/ui/truncate-start.js";
 import { copyToClipboardWithToast } from "@/lib/clipboard";
 import { resolveExportBaseHref } from "@/lib/document-export";
 import { openUrlInExternalBrowser } from "@/lib/url-open-routing";
-import {
-  FileExportMenu,
-  type FileExportTarget,
-} from "./FileExportMenu.js";
+import { FileExportMenu, type FileExportTarget } from "./FileExportMenu.js";
 import type {
   FilePreviewLineRange,
   WorkspaceFilePreviewStatusLabel,

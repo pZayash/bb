@@ -635,7 +635,9 @@ function SplitThreadAreaContent({ routeContent }: SplitThreadAreaProps) {
           isSplitPane={false}
           secondaryPanelRegistry={null}
           reservesWindowPanelToggle={false}
-          onClosePane={firstPane.content.kind === "new-thread" ? null : closePane}
+          onClosePane={
+            firstPane.content.kind === "new-thread" ? null : closePane
+          }
           isMaximized={false}
           onToggleMaximizePane={null}
           isBoundedPane={false}
@@ -1554,7 +1556,13 @@ function PaneStaleWatcher({ threadId, onStale }: PaneStaleWatcherProps) {
     ) {
       onStaleRef.current();
     }
-  }, [isConfirmedArchived, isDeleted, isGone, isUnarchived, unarchivesInFlight]);
+  }, [
+    isConfirmedArchived,
+    isDeleted,
+    isGone,
+    isUnarchived,
+    unarchivesInFlight,
+  ]);
 
   return null;
 }
