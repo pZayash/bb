@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { render, type RenderResult } from "@testing-library/react";
 import { createStore, Provider as JotaiProvider } from "jotai";
 import { vi } from "vitest";
-import type { DiffChangeRailViewport } from "@/components/code/DiffChangeRail.fork";
+import type { DiffChangeRailViewport } from "@/components/code/diff-change-rail-model.fork";
 import { GIT_DIFF_CHANGE_RAIL_STORAGE_KEY } from "@/lib/git-diff-view-preferences";
 
 const clientHeightDescriptor = Object.getOwnPropertyDescriptor(

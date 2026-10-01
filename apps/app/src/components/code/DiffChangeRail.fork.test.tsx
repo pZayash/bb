@@ -11,16 +11,15 @@ import {
   stubScrollGeometry,
 } from "@/test/diff-change-rail-harness";
 import { GIT_DIFF_CHANGE_RAIL_STORAGE_KEY } from "@/lib/git-diff-view-preferences";
+import { DiffChangeRail, DiffChangeRailToggle } from "./DiffChangeRail.fork";
 import {
   buildDiffChangeRailBands,
-  DiffChangeRail,
-  DiffChangeRailToggle,
   diffChangeRailAriaValue,
   readDiffChangeRailMarks,
   scrollTopForRailFraction,
   type DiffChangeRailMark,
   type DiffChangeRailViewport,
-} from "./DiffChangeRail.fork";
+} from "./diff-change-rail-model.fork";
 
 function makeRow(lineType: string, top: number, height = 18): HTMLElement {
   const row = document.createElement("div");

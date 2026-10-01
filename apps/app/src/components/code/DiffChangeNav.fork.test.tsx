@@ -9,14 +9,13 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { rectOf, stubScrollGeometry } from "@/test/diff-change-rail-harness";
-import type { DiffChangeRailMark } from "./DiffChangeRail.fork";
+import type { DiffChangeRailMark } from "./diff-change-rail-model.fork";
+import { DiffChangeNav, DiffChangeNavFrame } from "./DiffChangeNav.fork";
 import {
-  DiffChangeNav,
-  DiffChangeNavFrame,
   findDiffChangeRegionIndex,
   nextDiffChangeRegionIndex,
   scrollTopForDiffChangeRegion,
-} from "./DiffChangeNav.fork";
+} from "./diff-change-nav-model.fork";
 
 function mark(top: number, height = 18): DiffChangeRailMark {
   return { top, height, additions: 1, deletions: 0 };

@@ -3,10 +3,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
 import { cn } from "@bb/shared-ui/lib/utils";
+import { useDiffChangeRailMarks } from "./diff-change-rail-model.fork";
 import {
-  useDiffChangeRailMarks,
-  type DiffChangeRailMark,
-} from "./DiffChangeRail.fork";
+  findDiffChangeRegionIndex,
+  nextDiffChangeRegionIndex,
+  scrollTopForDiffChangeRegion,
+} from "./diff-change-nav-model.fork";
 
 function readViewport(element: HTMLElement): {
   clientHeight: number;
@@ -16,57 +18,6 @@ function readViewport(element: HTMLElement): {
     clientHeight: element.clientHeight,
     scrollHeight: element.scrollHeight,
   };
-}
-
-const CHANGE_REGION_MATCH_TOLERANCE_PX = 1;
-
-export function findDiffChangeRegionIndex({
-  marks,
-  scrollTop,
-}: {
-  marks: readonly DiffChangeRailMark[];
-  scrollTop: number;
-}): number {
-  let current = -1;
-  for (const [index, mark] of marks.entries()) {
-    if (mark.top <= scrollTop + CHANGE_REGION_MATCH_TOLERANCE_PX) {
-      current = index;
-    }
-  }
-  return current;
-}
-
-export function scrollTopForDiffChangeRegion({
-  mark,
-  viewport,
-}: {
-  mark: DiffChangeRailMark;
-  viewport: { clientHeight: number; scrollHeight: number };
-}): number {
-  const maxScrollTop = Math.max(
-    0,
-    viewport.scrollHeight - viewport.clientHeight,
-  );
-  return Math.min(maxScrollTop, Math.max(0, mark.top));
-}
-
-// bb-fork(diff-rail): the stepper's own cursor, because the last changes cannot be scrolled to the top.
-export function nextDiffChangeRegionIndex({
-  currentIndex,
-  direction,
-  markCount,
-}: {
-  currentIndex: number;
-  direction: "next" | "previous";
-  markCount: number;
-}): number | null {
-  if (markCount === 0) return null;
-  if (direction === "next") {
-    const next = Math.max(currentIndex + 1, 0);
-    return next < markCount ? next : null;
-  }
-  if (currentIndex <= 0) return null;
-  return currentIndex - 1;
 }
 
 interface DiffChangeNavFrameProps {

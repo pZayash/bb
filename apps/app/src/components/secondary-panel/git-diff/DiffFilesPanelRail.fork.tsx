@@ -1,9 +1,7 @@
 // bb-fork(diff-rail): change map for the whole changed-files list, built from the virtualizer's geometry.
 import { useCallback, useMemo } from "react";
-import {
-  DiffChangeRailFrame,
-  useDiffChangeRailViewport,
-} from "@/components/code/DiffChangeRail.fork";
+import { DiffChangeRailFrame } from "@/components/code/DiffChangeRail.fork";
+import { useDiffChangeRailViewport } from "@/components/code/diff-change-rail-model.fork";
 import { useGitDiffChangeRailPreference } from "@/lib/git-diff-view-preferences";
 
 export interface DiffFilesPanelRailItem {
