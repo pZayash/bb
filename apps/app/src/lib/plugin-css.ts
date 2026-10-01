@@ -3,6 +3,21 @@ import { useInsertionEffect } from "react";
 const CSS_MARKER = "data-bb-plugin-css";
 const CSS_PRELOAD_MARKER = "data-bb-plugin-css-preload";
 const CSS_RELEASE_GRACE_MS = 1_500;
+const CSS_LOAD_FAILURE_RETRY_LIMIT = 4;
+
+type PluginCssFailureHandler = (
+  pluginId: string,
+  url: string,
+  attempt: number,
+) => void;
+
+let cssFailureHandler: PluginCssFailureHandler | null = null;
+
+export function setPluginCssFailureHandler(
+  handler: PluginCssFailureHandler | null,
+): void {
+  cssFailureHandler = handler;
+}
 
 interface PluginCssRecord {
   consumers: number;
@@ -13,6 +28,8 @@ interface PluginCssRecord {
   preload: HTMLLinkElement | null;
   stylesheet: HTMLLinkElement | null;
   url: string | null;
+  failedUrl: string | null;
+  failureCount: number;
 }
 
 const recordsByPluginId = new Map<string, PluginCssRecord>();
@@ -29,6 +46,8 @@ function recordFor(pluginId: string): PluginCssRecord {
     preload: null,
     stylesheet: null,
     url: null,
+    failedUrl: null,
+    failureCount: 0,
   };
   recordsByPluginId.set(pluginId, created);
   return created;
@@ -42,8 +61,25 @@ function removeLink(link: HTMLLinkElement | null): void {
   link?.remove();
 }
 
-function warnLoadFailure(pluginId: string, url: string): void {
+function reportLoadFailure(
+  pluginId: string,
+  record: PluginCssRecord,
+  url: string,
+): void {
   console.warn(`bb plugin "${pluginId}": failed to load stylesheet ${url}`);
+  if (record.failedUrl !== url) {
+    record.failedUrl = url;
+    record.failureCount = 0;
+  }
+  record.failureCount += 1;
+  if (record.failureCount <= CSS_LOAD_FAILURE_RETRY_LIMIT) {
+    cssFailureHandler?.(pluginId, url, record.failureCount - 1);
+  }
+}
+
+function clearLoadFailure(record: PluginCssRecord): void {
+  record.failedUrl = null;
+  record.failureCount = 0;
 }
 
 function startPreload(
@@ -64,13 +100,14 @@ function startPreload(
     link.remove();
     if (record.preload === link) record.preload = null;
     if (record.url !== url) return;
+    clearLoadFailure(record);
     record.loadedUrl = url;
     if (record.consumers > 0) activateStylesheet(pluginId, record, url);
   };
   link.onerror = () => {
     link.remove();
     if (record.preload === link) record.preload = null;
-    if (record.url === url) warnLoadFailure(pluginId, url);
+    if (record.url === url) reportLoadFailure(pluginId, record, url);
   };
   document.head.appendChild(link);
 }
@@ -108,11 +145,12 @@ function activateStylesheet(
     record.stylesheet = link;
     record.pendingStylesheet = null;
     record.loadedUrl = url;
+    clearLoadFailure(record);
   };
   link.onerror = () => {
     link.remove();
     if (record.pendingStylesheet === link) record.pendingStylesheet = null;
-    if (record.url === url) warnLoadFailure(pluginId, url);
+    if (record.url === url) reportLoadFailure(pluginId, record, url);
   };
   document.head.appendChild(link);
 }
@@ -171,6 +209,7 @@ export function applyPluginCss(pluginId: string, url: string | null): void {
 
   cancelDeferredDeactivate(record);
   record.url = url;
+  clearLoadFailure(record);
   record.loadedUrl = linkUrl(record.stylesheet) === url ? url : null;
   removeLink(record.preload);
   record.preload = null;
@@ -212,6 +251,7 @@ export function resetPluginCssForTest(): void {
     deactivateStylesheet(record);
   }
   recordsByPluginId.clear();
+  cssFailureHandler = null;
   for (const link of document.head.querySelectorAll(
     `link[${CSS_MARKER}], link[${CSS_PRELOAD_MARKER}]`,
   )) {

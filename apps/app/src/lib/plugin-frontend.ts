@@ -40,7 +40,11 @@ import type {
 import { normalizePluginThreadRowStatus } from "@get-bb/plugin-sdk/internal/composer-customization-validation";
 import { resetCrashedPluginSlots } from "@/components/plugin/PluginSlotMount";
 import { runWithPluginDomIsolationAsync } from "./foreign-dom-mutation-guard";
-import { applyPluginCss, retainPluginCss } from "./plugin-css";
+import {
+  applyPluginCss,
+  retainPluginCss,
+  setPluginCssFailureHandler,
+} from "./plugin-css";
 import {
   collectPluginAppRegistrations,
   isPluginAppDefinition,
@@ -923,17 +927,19 @@ function publishBrowserDiagnostics(): void {
   for (const listener of browserDiagnosticsListeners) listener();
 }
 
+function scheduleRetryReconcile(attempt: number): void {
+  if (state.tornDown) return;
+  window.setTimeout(
+    () => schedulePluginFrontendReconcile(),
+    PLUGIN_FRONTEND_LOAD_RETRY_BASE_DELAY_MS * 2 ** attempt,
+  );
+}
+
 const PLUGIN_SLOT_BATCH_MAX_HOLD_MS = 150;
 
 const browserReconcileDeps: PluginFrontendReconcileDeps = {
   fetchCandidates: fetchFrontendCandidates,
-  scheduleRetry: (attempt) => {
-    if (state.tornDown) return;
-    window.setTimeout(
-      () => schedulePluginFrontendReconcile(),
-      PLUGIN_FRONTEND_LOAD_RETRY_BASE_DELAY_MS * 2 ** attempt,
-    );
-  },
+  scheduleRetry: (attempt) => scheduleRetryReconcile(attempt),
   importModule: (url) => import(/* @vite-ignore */ url),
   applyCss: applyPluginCss,
   retainCss: retainPluginCss,
@@ -1006,6 +1012,9 @@ export function bootPluginFrontends(): Promise<void> {
   bootPromise ??= (async () => {
     installPluginRuntime();
     installPluginFrontendPageLifecycle();
+    setPluginCssFailureHandler((_pluginId, _url, attempt) =>
+      scheduleRetryReconcile(attempt),
+    );
     await reconcilePluginFrontends(state, browserReconcileDeps);
   })().catch((error: unknown) => {
     console.warn(
