@@ -22,5 +22,9 @@
   "typst-md": {
     "category": "thread-content",
     "screenshots": []
+  },
+  "zed-theme": {
+    "category": "themes-and-appearance",
+    "screenshots": []
   }
 }

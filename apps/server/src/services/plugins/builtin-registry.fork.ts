@@ -36,4 +36,10 @@ export const FORK_BUILTIN_PLUGINS: readonly ForkBuiltinPluginDefinition[] = [
     pluginId: "typst-md",
     defaultEnabled: true,
   },
+  // bb-fork(windows): the fork-bundled Zed typography theme.
+  {
+    name: "zed-theme",
+    pluginId: "zed-theme",
+    defaultEnabled: true,
+  },
 ];

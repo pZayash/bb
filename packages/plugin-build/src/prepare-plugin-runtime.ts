@@ -17,7 +17,8 @@ import { buildPluginHost } from "./build-plugin-host.js";
 import { pathExists } from "./plugin-sdk-install.js";
 import type { PluginBuildToolchain } from "./toolchain.js";
 
-const RUNTIME_DIRS = ["dist", "skills"] as const;
+// bb-fork(windows): "themes" so a bundled plugin can ship theme CSS; the runtime only copies this list.
+const RUNTIME_DIRS = ["dist", "skills", "themes"] as const;
 
 async function copyIfExists(from: string, to: string): Promise<void> {
   if (await pathExists(from)) {

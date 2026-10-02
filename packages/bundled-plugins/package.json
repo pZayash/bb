@@ -49,6 +49,7 @@
     "bb-plugin-typst-inline": "workspace:*",
     "bb-plugin-typst-md": "workspace:*",
     "bb-plugin-workflows": "workspace:*",
-    "bb-plugin-workspace-explorer": "workspace:*"
+    "bb-plugin-workspace-explorer": "workspace:*",
+    "bb-plugin-zed-theme": "workspace:*"
   }
 }

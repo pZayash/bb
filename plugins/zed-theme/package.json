@@ -1,0 +1,43 @@
+{
+  "name": "bb-plugin-zed-theme",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The IBM Plex Sans and Lilex typefaces Zed uses, as a bb theme.",
+  "engines": {
+    "bb": ">=0.0",
+    "bbPluginSdk": ">=0.4.102"
+  },
+  "bb": {
+    "name": "Zed fonts",
+    "description": "The IBM Plex Sans and Lilex typefaces Zed uses, as a bb theme.",
+    "branding": {
+      "icon": "TextWrap"
+    },
+    "server": "./server.ts",
+    "themes": [
+      {
+        "id": "zed",
+        "name": "Zed",
+        "description": "IBM Plex Sans for the interface and Lilex for code, diffs, paths and the terminal, loaded from the Fontsource CDN.",
+        "css": "./themes/zed.css"
+      }
+    ]
+  },
+  "keywords": [
+    "bb-plugin"
+  ],
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --ignore-pattern node_modules --ignore-pattern dist .",
+    "prepare:bundled": "bb-plugin-build prepare-bundled"
+  },
+  "devDependencies": {
+    "@bb/plugin-build": "workspace:*",
+    "@get-bb/plugin-sdk": "workspace:*",
+    "@types/node": "^22.0.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^4.1.1"
+  }
+}

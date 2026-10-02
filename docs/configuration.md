@@ -399,6 +399,11 @@ Always end font stacks with a generic fallback such as `sans-serif` or
 `monospace`. The complete theme token reference is in the bb-cli skill's
 `references/theming.md`.
 
+<!-- bb-fork(windows): the fork bundles the Zed typefaces as a theme plugin. -->
+`bb theme set plugin:zed-theme:zed` selects the fork-bundled Zed typography
+(IBM Plex Sans and Lilex), documented in
+[plugins/zed-theme/PLUGIN_OVERVIEW.md](../plugins/zed-theme/PLUGIN_OVERVIEW.md).
+
 ## Keyboard Shortcuts
 
 `Mod+Shift+P` opens the quick palette: type to filter, then run a command with

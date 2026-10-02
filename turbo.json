@@ -892,6 +892,10 @@
     "bb-plugin-typst-md#typecheck": {
       "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
     },
+    // bb-fork(windows): the fork-bundled Zed typography theme plugin.
+    "bb-plugin-zed-theme#typecheck": {
+      "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
+    },
     "bb-plugin-plugin-api-docs#typecheck": {
       "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"],
       "inputs": [
