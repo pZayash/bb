@@ -62,7 +62,7 @@ describe("buildThreadStartChangedFilesSection", () => {
       }),
     );
 
-    expect(section?.label).toBe(THREAD_START_CHANGES_LABEL);
+    expect(section?.label).toBe(`${THREAD_START_CHANGES_LABEL} (abc1234)`);
     expect(section?.mergeBaseRef).toBe("abc1234567890");
     expect(section?.files.map((entry) => entry.path)).toEqual([
       "src/committed.ts",
@@ -81,14 +81,16 @@ describe("buildThreadStartChangedFilesSection", () => {
   });
 
   it("keeps an empty start-commit section under the view's label", () => {
-    expect(emptyThreadStartChangedFilesSection(true)).toMatchObject({
-      label: THREAD_START_CHANGES_LABEL,
+    expect(
+      emptyThreadStartChangedFilesSection(true, "abc1234567890"),
+    ).toMatchObject({
+      label: `${THREAD_START_CHANGES_LABEL} (abc1234)`,
       files: [],
       mergeBaseRef: null,
       stats: { insertions: 0, deletions: 0, files: [] },
     });
-    expect(emptyThreadStartChangedFilesSection(false).label).toBe(
-      "All changes",
-    );
+    expect(
+      emptyThreadStartChangedFilesSection(false, "abc1234567890").label,
+    ).toBe("All changes");
   });
 });

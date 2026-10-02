@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createQueryClientTestHarness } from "@/test/queryClientTestHarness";
 import { WorkspaceFilePreviewTabContent } from "./ThreadSecondaryPanelTabContent";
@@ -147,5 +147,32 @@ describe("workspace file preview diff intent", () => {
     expect(
       screen.getByRole("button", { name: "Diff base" }).textContent,
     ).toContain("Changes since thread start");
+  });
+
+  it("keeps the open diff when the tab remounts", () => {
+    const { unmount } = renderPreview({
+      base: "thread_start",
+      requestId: "req_remount",
+      view: "split",
+    });
+    expect(screen.getByRole("button", { name: "Hide changes" })).toBeTruthy();
+    unmount();
+
+    renderPreview(null);
+
+    expect(screen.getByRole("button", { name: "Hide changes" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Diff base" }).textContent,
+    ).toContain("Changes since thread start");
+  });
+
+  it("keeps the diff closed after the user hides it", () => {
+    renderPreview({ requestId: "req_close", view: "split" });
+    fireEvent.click(screen.getByRole("button", { name: "Hide changes" }));
+    cleanup();
+
+    renderPreview(null);
+
+    expect(screen.getByRole("button", { name: "Show changes" })).toBeTruthy();
   });
 });

@@ -42,6 +42,8 @@ import type { FilePreviewDiffSlot } from "./FilePreview";
 import { FileDiffToggle } from "./file-diff/FileDiffToggle.fork";
 import { FileDiffView } from "./file-diff/FileDiffView.fork";
 import { useFileDiff } from "./file-diff/useFileDiff.fork";
+// bb-fork(file-diff-view): remember an open diff per workspace file.
+import { useFileDiffTabView } from "@/lib/file-diff-tab-view.fork";
 import type { GitDiffDisplayMode } from "./GitDiffToolbar";
 import {
   buildMarkdownFileImageRouting,
@@ -338,14 +340,38 @@ export function WorkspaceFilePreviewTabContent({
   threadId,
 }: WorkspaceFilePreviewTabContentProps) {
   // bb-fork(file-diff): per-tab diff mode for Git-backed workspace files.
-  const [isDiffActive, setIsDiffActive] = useState(diffIntent != null);
+  // bb-fork(file-diff-view): an open diff survives the panel remounting.
+  const { setStoredView, storedView } = useFileDiffTabView({
+    environmentId,
+    path: activePath,
+  });
+  const [isDiffActiveOverride, setIsDiffActiveOverride] = useState<
+    boolean | null
+  >(null);
+  const isDiffActive =
+    isDiffActiveOverride ??
+    (diffIntent != null || storedView?.isActive === true);
   // bb-fork(file-diff-open): the requested view wins until the user picks one.
-  const [requestedViewMode, setRequestedViewMode] =
-    useState<GitDiffDisplayMode | null>(diffIntent?.view ?? null);
+  const [requestedViewModeOverride, setRequestedViewModeOverride] = useState<
+    GitDiffDisplayMode | null | undefined
+  >(undefined);
+  const requestedViewMode =
+    requestedViewModeOverride === undefined
+      ? (diffIntent?.view ?? storedView?.view ?? null)
+      : requestedViewModeOverride;
   const diffRequestId = diffIntent?.requestId ?? null;
+  const diffBase = diffIntent?.base ?? storedView?.base;
+  const diffView = diffIntent?.view ?? storedView?.view;
   useEffect(() => {
-    setIsDiffActive(diffRequestId !== null);
-    setRequestedViewMode(diffIntent?.view ?? null);
+    setIsDiffActiveOverride(null);
+    setRequestedViewModeOverride(undefined);
+    if (diffRequestId !== null) {
+      setStoredView({
+        ...(diffIntent?.base === undefined ? {} : { base: diffIntent.base }),
+        isActive: true,
+        ...(diffIntent?.view === undefined ? {} : { view: diffIntent.view }),
+      });
+    }
     // oxlint-disable-next-line react/exhaustive-deps
   }, [activePath, diffRequestId]);
   const fileDiffController = useFileDiff({
@@ -353,7 +379,7 @@ export function WorkspaceFilePreviewTabContent({
     environmentId,
     intentKey: diffRequestId,
     path: activePath,
-    sinceThreadStartIntent: diffIntent?.base === "thread_start",
+    sinceThreadStartIntent: diffBase === "thread_start",
   });
   const canShowFileDiff =
     fileDiffController.availability.status !== "unavailable";
@@ -414,7 +440,9 @@ export function WorkspaceFilePreviewTabContent({
           content: isDiffActive ? (
             <FileDiffView
               controller={fileDiffController}
-              onRequestedViewModeUsed={() => setRequestedViewMode(null)}
+              onRequestedViewModeUsed={() =>
+                setRequestedViewModeOverride(null)
+              }
               onSelectionAddToChat={onSelectionAddToChat}
               requestedViewMode={requestedViewMode}
             />
@@ -424,8 +452,14 @@ export function WorkspaceFilePreviewTabContent({
             <FileDiffToggle
               isActive={isDiffActive}
               onToggle={() => {
-                setRequestedViewMode(null);
-                setIsDiffActive((active) => !active);
+                const nextIsActive = !isDiffActive;
+                setRequestedViewModeOverride(null);
+                setIsDiffActiveOverride(nextIsActive);
+                setStoredView({
+                  ...(diffBase === undefined ? {} : { base: diffBase }),
+                  isActive: nextIsActive,
+                  ...(diffView === undefined ? {} : { view: diffView }),
+                });
               }}
             />
           ),

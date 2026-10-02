@@ -225,9 +225,9 @@ describe("file diff rpc", () => {
     expect(result).toMatchObject({
       outcome: "available",
       options: [
-        { label: "Changes since thread start", value: "all" },
+        { label: "Changes since thread start (abc1234)", value: "all" },
         {
-          label: "Committed since thread start",
+          label: "Committed since thread start (abc1234)",
           value: "branch_committed",
         },
         { label: "Uncommitted changes", value: "uncommitted" },

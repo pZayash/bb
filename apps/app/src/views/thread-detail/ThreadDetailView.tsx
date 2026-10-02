@@ -1799,7 +1799,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
       openWorkspaceFile({
         diffIntent: {
           base:
-            selection.section.label === THREAD_START_CHANGES_LABEL
+            selection.section.label.startsWith(THREAD_START_CHANGES_LABEL)
               ? "thread_start"
               : "merge_base",
           requestId: nanoid(),
@@ -1948,8 +1948,11 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
   const bannerChangedFilesSection = useMemo(
     () =>
       workspaceChangedFilesSection ??
-      emptyThreadStartChangedFilesSection(isComputedSinceThreadStart),
-    [isComputedSinceThreadStart, workspaceChangedFilesSection],
+      emptyThreadStartChangedFilesSection(
+        isComputedSinceThreadStart,
+        threadStartRef,
+      ),
+    [isComputedSinceThreadStart, threadStartRef, workspaceChangedFilesSection],
   );
   const { isLocalDaemonHost } = useHostDaemon();
   const threadEnvironmentIsLocal = environment

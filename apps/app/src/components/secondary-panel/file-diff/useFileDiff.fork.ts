@@ -89,11 +89,11 @@ function buildFileDiffOptions({
   const changeOptions = isSinceThreadStart
     ? [
         {
-          label: "Changes since thread start",
+          label: `Changes since thread start (${shortRef(startRef)})`,
           value: ALL_GIT_DIFF_SELECTION,
         },
         {
-          label: "Committed since thread start",
+          label: `Committed since thread start (${shortRef(startRef)})`,
           value: COMMITTED_GIT_DIFF_SELECTION,
         },
       ]

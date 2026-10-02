@@ -165,7 +165,7 @@ describe("useFileDiff comparison ref", () => {
     });
 
     expect(environmentQueries.statusRefs).toContain("abc1234567890");
-    expect(optionLabels()).toContain("Changes since thread start");
+    expect(optionLabels()).toContain("Changes since thread start (abc1234)");
     expect(optionLabels()).toContain("agent commit");
     expect(screen.getByTestId("selection").textContent).toBe("all");
     expect(sdkCalls.diffPatchTargets.at(-1)).toEqual({

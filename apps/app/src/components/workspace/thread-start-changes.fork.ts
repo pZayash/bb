@@ -4,14 +4,24 @@ import type { WorkspaceChangedFilesSection } from "./workspace-change-summary";
 
 export const THREAD_START_CHANGES_LABEL = "Since thread start";
 
+// bb-fork(thread-start-ref): name the anchor commit beside the label.
+export function threadStartChangesLabel(startRef: string | null): string {
+  return startRef === null
+    ? THREAD_START_CHANGES_LABEL
+    : `${THREAD_START_CHANGES_LABEL} (${startRef.slice(0, 7)})`;
+}
+
 // bb-fork(thread-start-ref): the changed-files card stays reachable with no changes.
 export function emptyThreadStartChangedFilesSection(
   isSinceThreadStart: boolean,
+  startRef: string | null,
 ): WorkspaceChangedFilesSection {
   return {
     files: [],
     kind: "committed",
-    label: isSinceThreadStart ? THREAD_START_CHANGES_LABEL : "All changes",
+    label: isSinceThreadStart
+      ? threadStartChangesLabel(startRef)
+      : "All changes",
     mergeBaseRef: null,
     stats: { deletions: 0, files: [], insertions: 0, lineStatsComplete: true },
   };
@@ -28,7 +38,7 @@ export function buildThreadStartChangedFilesSection(
   return {
     files,
     kind: "committed",
-    label: THREAD_START_CHANGES_LABEL,
+    label: threadStartChangesLabel(mergeBase?.baseRef ?? null),
     mergeBaseRef: mergeBase?.baseRef ?? null,
     stats: {
       deletions: (mergeBase?.deletions ?? 0) + workingTree.deletions,

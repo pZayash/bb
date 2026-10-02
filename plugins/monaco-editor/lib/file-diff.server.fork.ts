@@ -74,16 +74,17 @@ function buildFileDiffOptions({
   mergeBaseBranch,
   threadStartRef,
 }: BuildFileDiffOptionsArgs): FileDiffOption[] {
+  const threadStartShort = threadStartRef?.slice(0, 7) ?? "";
   const changeOptions = isSinceThreadStart
     ? [
         {
-          label: "Changes since thread start",
+          label: `Changes since thread start (${threadStartShort})`,
           value: ALL_SELECTION,
         },
         ...(commits.length > 0
           ? [
               {
-                label: "Committed since thread start",
+                label: `Committed since thread start (${threadStartShort})`,
                 value: COMMITTED_SELECTION,
               },
             ]

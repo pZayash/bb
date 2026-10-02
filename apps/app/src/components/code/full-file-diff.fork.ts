@@ -15,22 +15,28 @@ function fitsRenderBudget(contents: string): boolean {
   return truncateSourceCode(contents) === null;
 }
 
+// bb-fork(file-diff): a checkout with CRLF and a git blob with LF are the same lines.
+function normalizeLineEndings(contents: string): string {
+  return contents.replace(/\r\n?/gu, "\n");
+}
+
 export function buildFullFileDiff({
   fileDiff,
   oldFile,
   newFile,
 }: BuildFullFileDiffArgs): ParsedGitDiffFile {
-  if (oldFile.contents === newFile.contents) return fileDiff;
-  if (
-    !fitsRenderBudget(oldFile.contents) ||
-    !fitsRenderBudget(newFile.contents)
-  ) {
+  const oldContents = normalizeLineEndings(oldFile.contents);
+  const newContents = normalizeLineEndings(newFile.contents);
+  if (oldContents === newContents) return fileDiff;
+  if (!fitsRenderBudget(oldContents) || !fitsRenderBudget(newContents)) {
     return fileDiff;
   }
   try {
-    return parseDiffFromFile(oldFile, newFile, {
-      context: FULL_FILE_CONTEXT_LINES,
-    });
+    return parseDiffFromFile(
+      { name: oldFile.name, contents: oldContents },
+      { name: newFile.name, contents: newContents },
+      { context: FULL_FILE_CONTEXT_LINES },
+    );
   } catch {
     return fileDiff;
   }

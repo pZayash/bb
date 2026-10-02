@@ -73,6 +73,43 @@ describe("buildFullFileDiff", () => {
     ).toBe(fileDiff);
   });
 
+  it("treats a CRLF side against an LF side as the same lines", () => {
+    const fileDiff = fixture();
+    expect(
+      buildFullFileDiff({
+        fileDiff,
+        oldFile: { name: "src/app.ts", contents: OLD_CONTENTS },
+        newFile: {
+          name: "src/app.ts",
+          contents: OLD_CONTENTS.replace(/\n/gu, "\r\n"),
+        },
+      }),
+    ).toBe(fileDiff);
+  });
+
+  it("marks only the real change when the new side uses CRLF", () => {
+    const result = buildFullFileDiff({
+      fileDiff: fixture(),
+      oldFile: { name: "src/app.ts", contents: OLD_CONTENTS },
+      newFile: {
+        name: "src/app.ts",
+        contents: NEW_CONTENTS.replace(/\n/gu, "\r\n"),
+      },
+    });
+
+    expect(result.hunks).toHaveLength(1);
+    expect(result.deletionLines).toEqual([
+      "const a = 1;\n",
+      "const b = 2;\n",
+      "const c = 4;\n",
+    ]);
+    expect(result.additionLines).toEqual([
+      "const a = 1;\n",
+      "const b = 3;\n",
+      "const c = 4;\n",
+    ]);
+  });
+
   it("returns the patch diff when a side is too large to render whole", () => {
     const fileDiff = fixture();
     const huge = `${"line\n".repeat(SOURCE_CODE_MAX_LINES + 1)}`;
