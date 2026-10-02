@@ -18,6 +18,7 @@ export const THREAD_PRUNING_SWEEP_LIMITS: ThreadPruningSweepLimits = {
   maxAdvances: 64,
 };
 
+// bb-fork(log-noise): per-advance and per-sweep detail is trace-only.
 export async function runThreadPruningSweep(
   deps: Pick<AppDeps, "db" | "hub" | "logger">,
   limits: ThreadPruningSweepLimits,
@@ -39,7 +40,7 @@ export async function runThreadPruningSweep(
       const activity = getDatabaseMaintenanceActivity(deps.db);
       if (!isDatabaseMaintenanceIdle(activity)) {
         reason = "busy";
-        deps.logger.debug(
+        deps.logger.trace?.(
           { activity, advances },
           "Thread pruning skipped while app work is active",
         );
@@ -62,7 +63,7 @@ export async function runThreadPruningSweep(
       removedBytes += result.removedBytes;
       if (result.removed > 0 && result.threadId !== null)
         deps.hub.notifyThread(result.threadId, ["history-rewritten"]);
-      deps.logger.debug(
+      deps.logger.trace?.(
         { ...result, advanceElapsedMs },
         "Thread pruning policy advanced",
       );
@@ -75,7 +76,7 @@ export async function runThreadPruningSweep(
     reason = "failed";
     throw error;
   } finally {
-    deps.logger.debug(
+    deps.logger.trace?.(
       {
         advances,
         removed,

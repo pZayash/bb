@@ -26,7 +26,7 @@
 - Every end-user feature must also be usable through the SDK and `bb` CLI; ship and document these surfaces with the UI.
 - For changes to CLI commands/flags or user-facing configuration (env vars, `.bb/` workspace files, settings), update the discoverable surfaces listed in [docs/cli-guide-and-skill.md](docs/cli-guide-and-skill.md).
 - New public plugin API members (`@get-bb/plugin-sdk/app` exports, `app.slots.*` methods, or `BbPluginApi` properties) require an `experimental_` prefix and an entry in [docs/api_to_audit.md](docs/api_to_audit.md) describing behavior and stabilization criteria. Stabilization includes the audit, a project-wide rename, and removal of the entry.
-- The Plugin Guide is the only plugin API documentation. Add new surfaces to `packages/plugin-api-map/src/surfaces.ts` with their SDK symbols.
+- The Plugin Guide is the only plugin API documentation. Add new surfaces to `plugins/plugin-api-docs/src/surfaces.ts` with their SDK symbols.
 
 ## Data Access
 
@@ -55,11 +55,21 @@
 - Use [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md): root cause, change, verification that demonstrates the fix, and `Fixes #N` when applicable.
 - End every agent-created issue and PR body with `> AGENT GENERATED`.
 - Ground debugging in observed state: logs, database queries, server APIs, or CLI output. For dev ports, data directories, entity IDs, and the local QA launcher, see [docs/debugging-and-qa.md](docs/debugging-and-qa.md).
+- Never tail the production bb connect gate (`bb-connect`) with `wrangler tail` or the dashboard's live logs. Attaching or detaching a tail resets its Durable Objects and drops every connected tunnel. Instead, query stored Workers Logs or the Cloudflare GraphQL Analytics API (`httpRequestsAdaptiveGroups`, `durableObjectsInvocationsAdaptiveGroups`), and reproduce with `wrangler tail --env staging` against `bb-connect-staging`.
 
 ## Fork Merge Conventions
 
 This repository is a fork of `get-bb/bb` that adds native Windows support. Keep
 the fork delta small and merges cheap with these rules.
+
+### Push to the fork only
+
+- `origin` is our fork (`pZayash/bb`); `upstream` is `get-bb/bb`. Push commits
+  and branches to `origin` only.
+- Never push a branch to `upstream`, and never open, reopen, or comment on a
+  pull request in `get-bb/bb`. Only a human decides whether work goes upstream.
+- If a pull request in `get-bb/bb` was opened by mistake, close it; GitHub
+  cannot delete pull requests. Leave the fork branch in place.
 
 ### Keep fork code in fork-owned files
 
@@ -115,5 +125,16 @@ the fork delta small and merges cheap with these rules.
   resolutions are replayed automatically.
 - After resolving conflicts: `pnpm exec turbo run typecheck`, run the affected
   package tests, and regenerate the marketplace when plugin lists changed.
+- Restart any running dev instance after the merge
+  (`pnpm dev:restart-server`; it escalates to `pnpm dev:restart` when
+  `HOST_DAEMON_PROTOCOL_VERSION` changed). The dev server reads
+  `BUNDLED_PLUGINS` and reconciles bundled plugins only at startup, so a
+  bundled plugin that upstream added in the merge stays uninstalled until the
+  restart, and the app shows the `No thread list plugin is enabled.`
+  placeholder even though the threads are intact.
 - Track the fork surface with `git diff upstream/main --stat`; the number of
   patched upstream files should shrink over time.
+- `.npmrc` is a shared root config rather than a fork-owned file: it carries the
+  fork's `virtual-store-dir-max-length` for the Windows long-path limit (see
+  [docs/windows.md](docs/windows.md)). If upstream adds its own `.npmrc`, keep
+  both settings instead of choosing a side.

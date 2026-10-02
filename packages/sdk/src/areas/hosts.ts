@@ -1,9 +1,10 @@
 import { hostProviderCliInstallEventSchema } from "@bb/server-contract";
-import type { Host } from "@bb/domain";
+import type { Host, HostType } from "@bb/domain";
 import type {
   CreateHostJoinCodeResponse,
   CreateMachineRequest,
   HostEnrollmentCommandResponse,
+  HostReconnectResponse,
   HostCloneDefaultPathQuery,
   HostCloneDefaultPathResponse,
   HostDirectoryListing,
@@ -17,6 +18,8 @@ import type {
   HostProviderCliInstallRequest,
   HostProviderCliStatusResponse,
   HostRetryUpdateResponse,
+  // bb-fork(windows): shell enumeration for the Start terminal picker.
+  HostTerminalShellsResponse,
   DeleteOldServerCopyResponse,
   UpdateHostRequest,
   SystemMachineProvider,
@@ -44,6 +47,10 @@ export interface HostActionArgs {
   hostId: string;
 }
 
+export interface HostReconnectArgs extends HostActionArgs {
+  signal?: AbortSignal;
+}
+
 export interface HostDirectoryArgs extends HostDirectoryQuery {
   hostId: string;
   signal?: AbortSignal;
@@ -64,12 +71,19 @@ export interface HostPickFolderArgs extends HostPickFolderRequest {
   signal?: AbortSignal;
 }
 
+// bb-fork(windows): shells this host can launch from Start terminal.
+export interface HostTerminalShellsArgs {
+  hostId: string;
+  signal?: AbortSignal;
+}
+
 export interface HostProviderCliInstallArgs extends HostProviderCliInstallRequest {
   hostId: string;
 }
 
 export interface HostListArgs {
   includeCreating?: boolean;
+  type?: HostType;
   signal?: AbortSignal;
 }
 
@@ -87,10 +101,12 @@ export type HostDeleteResult = { ok: true };
 export type HostDirectoryResult = HostDirectoryListing;
 export type HostGetResult = Host & { connectMachineId: string | null };
 export type HostEnrollmentCommandResult = HostEnrollmentCommandResponse;
+export type HostReconnectResult = HostReconnectResponse;
 export type HostCloneDefaultPathResult = HostCloneDefaultPathResponse;
 export type HostProviderCliInstallResult = HostProviderCliInstallEvent[];
 export type HostListResult = Host[];
 export type HostPathsExistResult = HostPathsExistResponse;
+export type HostTerminalShellsResult = HostTerminalShellsResponse;
 export type HostPickFolderResult = HostPickFolderResponse;
 export type HostProviderCliStatusResult = HostProviderCliStatusResponse;
 export type HostRetryUpdateResult = HostRetryUpdateResponse;
@@ -103,6 +119,8 @@ export interface HostsArea {
   experimental_getEnrollmentCommand(
     args: HostGetArgs,
   ): Promise<HostEnrollmentCommandResult>;
+  experimental_reconnect(args: HostReconnectArgs): Promise<HostReconnectResult>;
+  /** @deprecated Use experimental_create() and experimental_getEnrollmentCommand() for bootstrap enrollment. */
   createJoinCode(): Promise<HostCreateJoinCodeResult>;
   delete(args: HostDeleteArgs): Promise<HostDeleteResult>;
   experimental_deleteOldServerCopy(
@@ -121,6 +139,10 @@ export interface HostsArea {
     args?: MachineProviderListArgs,
   ): Promise<MachineProviderListResult>;
   pathsExist(args: HostPathsExistArgs): Promise<HostPathsExistResult>;
+  // bb-fork(windows): shells this host can launch from Start terminal.
+  listTerminalShells(
+    args: HostTerminalShellsArgs,
+  ): Promise<HostTerminalShellsResult>;
   pickFolder(args: HostPickFolderArgs): Promise<HostPickFolderResult>;
   providerCliStatus(args: HostGetArgs): Promise<HostProviderCliStatusResult>;
   experimental_resume(args: HostActionArgs): Promise<Host>;
@@ -168,6 +190,14 @@ export function createHostsArea(args: CreateSdkAreaArgs): HostsArea {
           {
             param: { id: input.hostId },
           },
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+    },
+    async experimental_reconnect(input) {
+      return transport.readJson(
+        transport.api.v1.hosts[":id"]["reconnect-commands"].$post(
+          { param: { id: input.hostId } },
           ...signalRequestArgs(input.signal),
         ),
       );
@@ -254,6 +284,7 @@ export function createHostsArea(args: CreateSdkAreaArgs): HostsArea {
                 : {
                     includeCreating: input.includeCreating ? "true" : "false",
                   }),
+              ...(input?.type === undefined ? {} : { type: input.type }),
             },
           },
           ...signalRequestArgs(input?.signal),
@@ -276,6 +307,15 @@ export function createHostsArea(args: CreateSdkAreaArgs): HostsArea {
             param: { id: input.hostId },
             json: { paths: input.paths },
           },
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+    },
+    // bb-fork(windows): shells this host can launch from Start terminal.
+    async listTerminalShells(input) {
+      return transport.readJson(
+        transport.api.v1.hosts[":id"]["terminal-shells"].$get(
+          { param: { id: input.hostId } },
           ...signalRequestArgs(input.signal),
         ),
       );

@@ -37,11 +37,13 @@ function makeEnvironment(overrides: EnvironmentOverrides = {}): Environment {
     branchName: null,
     defaultBranch: null,
     mergeBaseBranch: null,
+    startRef: null,
     status: "ready",
     environmentProviderId: null,
     environmentProviderSelection: null,
     environmentProviderInstanceKey: null,
     lifecycle: { phase: "active", retireAt: null, teardown: null },
+    hostLifecycle: "active",
     managed: false,
     workspaceProvisionType: null,
     createdAt: 1,
@@ -598,7 +600,7 @@ describe("@bb/sdk", () => {
           jsonResponse({
             body: {
               code: "invalid_request",
-              message: "Attachment exceeds 10MB limit",
+              message: "huge.png is 36MB, over the 35MB attachment limit",
             },
             status: 400,
           }),
@@ -615,7 +617,7 @@ describe("@bb/sdk", () => {
       }),
     ).rejects.toMatchObject({
       code: "invalid_request",
-      message: "HTTP 400: Attachment exceeds 10MB limit",
+      message: "HTTP 400: huge.png is 36MB, over the 35MB attachment limit",
       status: 400,
     });
   });
@@ -1202,7 +1204,7 @@ describe("@bb/sdk", () => {
     });
 
     await expect(
-      // @ts-expect-error Environment update requires at least one update field.
+      // The server rejects an update that names no field.
       sdk.environments.update({ environmentId: "env_update" }),
     ).rejects.toThrow("At least one field must be provided");
     expect(queue.requests).toEqual([]);

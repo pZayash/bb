@@ -48,9 +48,12 @@ import {
   listHostFiles,
   listHostPaths,
   readHostFile,
+  readHostFileChunk,
   readHostFileMetadata,
   readHostRelativeFile,
 } from "./command-handlers/host-files.js";
+// bb-fork(windows): shell enumeration for the Start terminal picker.
+import { listHostTerminalShells } from "./command-handlers/terminal-shells.js";
 import { writeHostFile } from "./command-handlers/file-write.js";
 import {
   mkdirHostPath,
@@ -412,6 +415,8 @@ async function readAvailableWorkspace<TAvailable extends object>(
     | "workspace.diff"
     | "workspace.diffFiles"
     | "workspace.diffPatch"
+    // bb-fork(thread-start-ref): commit listing for the start-commit picker.
+    | "workspace.commits"
   >,
   options: CommandDispatchOptions,
   read: (workspace: HostWorkspace) => Promise<TAvailable>,
@@ -629,6 +634,8 @@ const onlineRpcHandlers: OnlineRpcHandlerMap = {
   "host.remove_path": removeHostPath,
   "host.browse_directory": browseHostDirectory,
   "host.paths_exist": checkHostPathsExist,
+  // bb-fork(windows): shell enumeration for the Start terminal picker.
+  "host.list_terminal_shells": listHostTerminalShells,
   "project.inspect": async (command, options) =>
     inspectProjectPath(
       command.path,
@@ -658,6 +665,7 @@ const onlineRpcHandlers: OnlineRpcHandlerMap = {
   "host.list_branch_options": listHostBranchOptions,
   "host.file_metadata": readHostFileMetadata,
   "host.read_file": readHostFile,
+  "host.read_file_chunk": readHostFileChunk,
   "host.read_file_relative": readHostRelativeFile,
   "host.write_file": writeHostFile,
   "provider.list_models": (command, options) =>
@@ -711,6 +719,11 @@ const onlineRpcHandlers: OnlineRpcHandlerMap = {
         maxFiles: command.maxFiles,
       }),
     ),
+  // bb-fork(thread-start-ref): list the newest commits of the checked-out branch.
+  "workspace.commits": (command, options) =>
+    readAvailableWorkspace(command, options, async (workspace) => ({
+      commits: await workspace.listCommits({ maxCount: command.maxCount }),
+    })),
   "workspace.diffPatch": (command, options) =>
     readAvailableWorkspace(command, options, async (workspace) => ({
       patches: await workspace.diffPatch({

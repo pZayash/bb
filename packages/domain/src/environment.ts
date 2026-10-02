@@ -30,6 +30,37 @@ export const environmentStatusValues = [
 export const environmentStatusSchema = z.enum(environmentStatusValues);
 export type EnvironmentStatus = z.infer<typeof environmentStatusSchema>;
 
+export const environmentHostLifecycleValues = [
+  "active",
+  "removing",
+  "cleanup-failed",
+  "removed",
+] as const;
+export const environmentHostLifecycleSchema = z.enum(
+  environmentHostLifecycleValues,
+);
+export type EnvironmentHostLifecycle = z.infer<
+  typeof environmentHostLifecycleSchema
+>;
+
+export function resolveEnvironmentHostLifecycle(
+  host: {
+    destroyedAt: number | null;
+    phase: string;
+    teardownStatus: string | null;
+  } | null,
+): EnvironmentHostLifecycle {
+  if (
+    host === null ||
+    host.destroyedAt !== null ||
+    host.phase === "destroyed"
+  ) {
+    return "removed";
+  }
+  if (host.phase !== "removing") return "active";
+  return host.teardownStatus === "failed" ? "cleanup-failed" : "removing";
+}
+
 const WORKSPACE_PROVISION_TYPES = [
   "unmanaged",
   "managed-worktree",
@@ -87,9 +118,12 @@ export const environmentSchema = z.object({
   baseBranch: z.string().nullable(),
   defaultBranch: z.string().nullable(),
   mergeBaseBranch: z.string().nullable(),
+  // bb-fork(thread-start-ref): commit HEAD pointed at when the workspace was provisioned.
+  startRef: z.string().nullable(),
   status: environmentStatusSchema,
   environmentProviderId: z.string().nullable(),
   lifecycle: environmentLifecycleSchema,
+  hostLifecycle: environmentHostLifecycleSchema,
   environmentProviderSelection: environmentProviderSelectionSchema.nullable(),
   environmentProviderInstanceKey: z.string().nullable(),
   managed: z.boolean(),

@@ -7,10 +7,15 @@ import {
   type ServiceTier,
   type ThreadVisibility,
 } from "@bb/domain";
-import { action } from "../../action.js";
+import { threadEnvironmentUnavailableApiErrorSchema } from "@bb/server-contract";
+import { action, CliExitError } from "../../action.js";
 import { createCliBbSdk } from "../../client.js";
 import { requireTextInput, TEXT_FILE_HELP_SUFFIX } from "../../text-input.js";
-import type { ThreadRetryResult, ThreadSendResult } from "@bb/sdk";
+import {
+  BbHttpError,
+  type ThreadRetryResult,
+  type ThreadSendResult,
+} from "@bb/sdk";
 import type { QueuedMessageWaitingOn } from "@bb/domain";
 import {
   collectOption,
@@ -45,6 +50,10 @@ interface ThreadUpdateCommandOptions {
   model?: string;
   reasoningLevel?: string;
   visibility?: string;
+  // bb-fork(quiet-reparent): commander --no- flag, defaults to true
+  ownershipNotice?: boolean;
+  // bb-fork(parent-mute): muted or on
+  parentNotifications?: string;
 }
 
 interface ThreadArchiveCommandOptions {
@@ -53,6 +62,11 @@ interface ThreadArchiveCommandOptions {
 }
 
 interface ThreadUnarchiveCommandOptions {
+  self?: boolean;
+  json?: boolean;
+}
+
+interface ThreadRestoreEnvironmentCommandOptions {
   self?: boolean;
   json?: boolean;
 }
@@ -136,6 +150,10 @@ interface ThreadUpdateBody {
   model?: string;
   reasoningLevel?: ReasoningLevel;
   visibility?: ThreadVisibility;
+  // bb-fork(quiet-reparent): false suppresses the parent ownership turns
+  ownershipNotice?: boolean;
+  // bb-fork(parent-mute): true mutes child->parent notifications
+  parentNotificationsMuted?: boolean;
 }
 
 export function registerActionsCommands(
@@ -150,6 +168,10 @@ export function registerActionsCommands(
     .option("--title <title>", "Set the thread title")
     .option("--parent-thread <id>", "Set the parent thread id")
     .option("--clear-parent-thread", "Clear the parent thread id")
+    .option(
+      "--no-ownership-notice",
+      "Reparent without a system turn on the old or new parent thread",
+    )
     .option("--section <id>", "Move the thread into a section")
     .option("--clear-section", "Remove the thread from its section")
     .option(
@@ -161,12 +183,26 @@ export function registerActionsCommands(
       "Set the sticky reasoning level applied on the thread's next turn: low, medium, high, xhigh, max (provider-dependent)",
     )
     .option("--visibility <visibility>", "Thread visibility: visible or hidden")
+    .option(
+      "--parent-notifications <mode>",
+      "Child-to-parent notifications: muted or on",
+    )
     .action(
       action(
         async (id: string | undefined, opts: ThreadUpdateCommandOptions) => {
           if (opts.parentThread && opts.clearParentThread) {
             throw new Error(
               "Cannot combine --parent-thread with --clear-parent-thread.",
+            );
+          }
+          // bb-fork(quiet-reparent): the switch only makes sense with a reparent
+          if (
+            opts.ownershipNotice === false &&
+            !opts.parentThread &&
+            !opts.clearParentThread
+          ) {
+            throw new Error(
+              "--no-ownership-notice requires --parent-thread or --clear-parent-thread.",
             );
           }
           if (opts.section && opts.clearSection) {
@@ -177,6 +213,20 @@ export function registerActionsCommands(
             opts.visibility === undefined
               ? undefined
               : threadVisibilitySchema.parse(opts.visibility);
+          // bb-fork(parent-mute): muted or on, nothing else
+          if (
+            opts.parentNotifications !== undefined &&
+            opts.parentNotifications !== "muted" &&
+            opts.parentNotifications !== "on"
+          ) {
+            throw new Error(
+              `--parent-notifications expects muted or on, got "${opts.parentNotifications}".`,
+            );
+          }
+          const parentNotificationsMuted =
+            opts.parentNotifications === undefined
+              ? undefined
+              : opts.parentNotifications === "muted";
           if (
             !opts.parentThread &&
             !opts.clearParentThread &&
@@ -185,10 +235,11 @@ export function registerActionsCommands(
             !opts.title &&
             !opts.model &&
             !reasoningLevel &&
-            !visibility
+            !visibility &&
+            parentNotificationsMuted === undefined
           ) {
             throw new Error(
-              "No changes requested. Provide --title, --parent-thread, --clear-parent-thread, --section, --clear-section, --model, --reasoning-level, or --visibility.",
+              "No changes requested. Provide --title, --parent-thread, --clear-parent-thread, --section, --clear-section, --model, --reasoning-level, --visibility, or --parent-notifications.",
             );
           }
 
@@ -206,6 +257,10 @@ export function registerActionsCommands(
           } else if (opts.clearParentThread) {
             body.parentThreadId = null;
           }
+          // bb-fork(quiet-reparent): send only the explicit quiet request
+          if (opts.ownershipNotice === false) {
+            body.ownershipNotice = false;
+          }
           if (opts.section) {
             body.sectionId = resolveExplicitIdFlag({
               flagName: "--section",
@@ -222,6 +277,10 @@ export function registerActionsCommands(
           }
           if (visibility) {
             body.visibility = visibility;
+          }
+          // bb-fork(parent-mute): explicit mute request
+          if (parentNotificationsMuted !== undefined) {
+            body.parentNotificationsMuted = parentNotificationsMuted;
           }
 
           const sdk = createCliBbSdk(getUrl());
@@ -251,6 +310,11 @@ export function registerActionsCommands(
           }
           if (visibility) {
             console.log(`Visibility: ${visibility}`);
+          }
+          if (parentNotificationsMuted !== undefined) {
+            console.log(
+              `Parent notifications: ${parentNotificationsMuted ? "muted" : "on"}`,
+            );
           }
         },
       ),
@@ -312,6 +376,38 @@ export function registerActionsCommands(
           await sdk.threads.unarchive({ threadId });
           if (outputJson(opts, { ok: true, threadId })) return;
           console.log(`Thread ${threadId} unarchived`);
+        },
+      ),
+    );
+
+  parent
+    .command("restore-environment [id]")
+    .description(
+      "Restore the workspace of a thread whose environment was destroyed, when its environment provider supports restoring",
+    )
+    .option("--self", "Target the current thread (from BB_THREAD_ID)")
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(
+        async (
+          id: string | undefined,
+          opts: ThreadRestoreEnvironmentCommandOptions,
+        ) => {
+          const threadId = requireThreadIdOrSelf(id, opts);
+          const sdk = createCliBbSdk(getUrl());
+          let thread;
+          try {
+            thread = await sdk.threads.restoreEnvironment({ threadId });
+          } catch (err: unknown) {
+            throw prependErrorContext(
+              `Failed to restore the workspace for thread ${threadId}`,
+              err,
+            );
+          }
+          if (outputJson(opts, thread)) return;
+          console.log(
+            `Thread ${threadId} is restoring its workspace (status: ${thread.status})`,
+          );
         },
       ),
     );
@@ -603,23 +699,49 @@ async function postThreadMessage(
       (await sdk.threads.get({ threadId: args.threadId })).projectId,
     sdk,
   });
-  const response = await sdk.threads.send({
-    threadId: args.threadId,
-    input,
-    mode:
-      args.mode === "steer"
-        ? "steer-if-active"
-        : args.mode === "auto"
-          ? "auto"
-          : "queue-if-active",
-    ...(args.model ? { model: args.model } : {}),
-    ...(args.permissionMode ? { permissionMode: args.permissionMode } : {}),
-    ...(args.reasoningLevel ? { reasoningLevel: args.reasoningLevel } : {}),
-    ...(args.serviceTier ? { serviceTier: args.serviceTier } : {}),
-    ...(args.senderThreadId ? { senderThreadId: args.senderThreadId } : {}),
-    ...(args.sendAt === undefined ? {} : { sendAt: args.sendAt }),
-  });
+  let response: ThreadSendResult;
+  try {
+    response = await sdk.threads.send({
+      threadId: args.threadId,
+      input,
+      mode:
+        args.mode === "steer"
+          ? "steer-if-active"
+          : args.mode === "auto"
+            ? "auto"
+            : "queue-if-active",
+      ...(args.model ? { model: args.model } : {}),
+      ...(args.permissionMode ? { permissionMode: args.permissionMode } : {}),
+      ...(args.reasoningLevel ? { reasoningLevel: args.reasoningLevel } : {}),
+      ...(args.serviceTier ? { serviceTier: args.serviceTier } : {}),
+      ...(args.senderThreadId ? { senderThreadId: args.senderThreadId } : {}),
+      ...(args.sendAt === undefined ? {} : { sendAt: args.sendAt }),
+    });
+  } catch (error: unknown) {
+    throw await withRestoreEnvironmentHint(sdk, args.threadId, error);
+  }
   return { ...response, mode: args.mode };
+}
+
+async function withRestoreEnvironmentHint(
+  sdk: ReturnType<typeof createCliBbSdk>,
+  threadId: string,
+  error: unknown,
+): Promise<unknown> {
+  if (!(error instanceof BbHttpError)) return error;
+  const parsed = threadEnvironmentUnavailableApiErrorSchema.safeParse(
+    error.body,
+  );
+  if (!parsed.success || parsed.data.details.reason !== "destroyed") {
+    return error;
+  }
+  const { canRestoreEnvironment } = await sdk.threads.get({ threadId });
+  return new CliExitError(error.message, 1, {
+    code: parsed.data.code,
+    hint: canRestoreEnvironment
+      ? `Its workspace was removed. Restore it with \`bb thread restore-environment ${threadId}\`, then send again.`
+      : "Its workspace was removed and its environment provider cannot restore it. Start a new thread to continue.",
+  });
 }
 
 function describeThreadTellOutcome(

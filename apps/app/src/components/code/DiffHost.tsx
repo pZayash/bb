@@ -31,6 +31,7 @@ export function DiffHost({
   view = DEFAULT_DIFF_VIEW,
   overflow = DEFAULT_CODE_OVERFLOW,
   showLineNumbers = true,
+  expandUnchanged = false,
   className,
   fallback = null,
   onSelectionAddToChat,
@@ -51,6 +52,7 @@ export function DiffHost({
         view={view}
         overflow={overflow}
         showLineNumbers={showLineNumbers}
+        expandUnchanged={expandUnchanged}
         className={className}
         onSelectionAddToChat={onSelectionAddToChat}
       />
@@ -72,6 +74,7 @@ export function DiffHost({
             overflow={overflow}
             showLineNumbers={showLineNumbers}
             experimental_fullFileContents={fullFileContents}
+            experimental_expandUnchanged={expandUnchanged}
             Original={BoundOriginal}
             experimental_Original={deprecatedOriginalAlias(BoundOriginal)}
           />

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import type {
   DiscoveredWorkspaceProperties,
   EnvironmentChangeKind,
@@ -121,6 +121,8 @@ export function findProviderEnvironmentContainingPath(
           or(
             eq(environments.path, path),
             sql`${path} LIKE ${environments.path} || '/%'`,
+            // bb-fork(windows): a Windows environment path uses `\` separators.
+            sql`${path} LIKE ${environments.path} || '\\%'`,
           ),
           eq(environments.providerOwnsPath, true),
           ne(environments.status, "destroyed"),
@@ -239,6 +241,8 @@ interface EnvironmentMetadataUpdateColumns {
   mergeBaseBranch?: string | null;
   name?: string | null;
   path?: string | null;
+  // bb-fork(thread-start-ref): written once, by the first workspace status read.
+  startRef?: string | null;
 }
 
 interface EnvironmentMetadataChangeArgs {
@@ -250,6 +254,8 @@ interface EnvironmentMetadataChangeArgs {
 export interface UpdateEnvironmentMetadataInput {
   mergeBaseBranch?: string | null;
   name?: string | null;
+  // bb-fork(thread-start-ref): the user can pin the comparison base.
+  startRef?: string | null;
 }
 
 export interface RecordEnvironmentCurrentBranchInput {
@@ -302,6 +308,7 @@ function buildEnvironmentMetadataUpdateSet(
   if ("branchName" in input) set.branchName = input.branchName;
   if ("defaultBranch" in input) set.defaultBranch = input.defaultBranch;
   if ("mergeBaseBranch" in input) set.mergeBaseBranch = input.mergeBaseBranch;
+  if ("startRef" in input) set.startRef = input.startRef;
   if ("name" in input) set.name = input.name;
   return set;
 }
@@ -323,6 +330,9 @@ function environmentMetadataChanged(
       args.updated.defaultBranch !== args.existing.defaultBranch) ||
     ("mergeBaseBranch" in args.metadata &&
       args.updated.mergeBaseBranch !== args.existing.mergeBaseBranch) ||
+    // bb-fork(thread-start-ref): a pinned start commit is metadata other clients follow.
+    ("startRef" in args.metadata &&
+      args.updated.startRef !== args.existing.startRef) ||
     ("name" in args.metadata && args.updated.name !== args.existing.name)
   );
 }
@@ -405,6 +415,33 @@ export function recordProvisionedEnvironmentWorkspace(
   });
 }
 
+// bb-fork(thread-start-ref): pin the commit a workspace started from, exactly once.
+export function recordEnvironmentStartRefOnce(
+  db: EnvironmentWriteConnection,
+  notifier: DbNotifier,
+  id: string,
+  startRef: string | null,
+): EnvironmentRow | null {
+  if (startRef === null) {
+    return null;
+  }
+  const existing = getEnvironment(db, id);
+  if (!existing || existing.startRef !== null) {
+    return null;
+  }
+  const updated = db
+    .update(environments)
+    .set({ startRef, updatedAt: Date.now() })
+    .where(eq(environments.id, id))
+    .returning()
+    .get();
+  if (!updated) {
+    return null;
+  }
+  notifier.notifyEnvironment(id, ["metadata-changed"]);
+  return updated;
+}
+
 export type ApplyEnvironmentLifecycleEventNoopReason =
   | EnvironmentLifecycleNoopReason
   | "not-found"
@@ -467,16 +504,25 @@ export function applyEnvironmentLifecycleEventInTransaction(
   ];
   if (args.event.type === "destroy.recorded") {
     conditions.push(
-      sql`NOT EXISTS (
-        SELECT 1 FROM threads
-        WHERE threads.environment_id = ${environments.id}
-        AND threads.archived_at IS NULL
-        AND threads.deleted_at IS NULL
-      )`,
-      sql`NOT EXISTS (
-        SELECT 1 FROM threads
-        WHERE threads.environment_id = ${environments.id}
-        AND threads.status = 'stopping'
+      sql`(
+        EXISTS (
+          SELECT 1 FROM hosts
+          WHERE hosts.id = ${environments.hostId}
+          AND hosts.phase = 'removing'
+        )
+        OR (
+          NOT EXISTS (
+            SELECT 1 FROM threads
+            WHERE threads.environment_id = ${environments.id}
+            AND threads.archived_at IS NULL
+            AND threads.deleted_at IS NULL
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM threads
+            WHERE threads.environment_id = ${environments.id}
+            AND threads.status = 'stopping'
+          )
+        )
       )`,
     );
   }
@@ -535,7 +581,7 @@ export function updatePreparingEnvironment(db: EnvironmentWriteConnection, row: 
 }
 
 export function listProviderLifecycleEnvironments(db: EnvironmentWriteConnection, providerId: string) {
-  return db.select().from(environments).where(and(eq(environments.environmentProviderId, providerId), or(isNull(environments.ownerThreadId), sql`${environments.teardownStatus} is not null`), sql`(${environments.retireAt} is not null or ${environments.teardownStatus} is not null or not exists (select 1 from ${threads} where ${threads.environmentId} = ${environments.id} and ${threads.archivedAt} is null and ${threads.deletedAt} is null))`, or(ne(environments.status, "destroyed"), isNull(environments.teardownStatus), ne(environments.teardownStatus, "removed")))).all();
+  return db.select().from(environments).where(and(eq(environments.environmentProviderId, providerId), or(isNull(environments.ownerThreadId), sql`${environments.teardownStatus} is not null`), sql`(${environments.retireAt} is not null or ${environments.teardownStatus} is not null or not exists (select 1 from ${threads} where ${threads.environmentId} = ${environments.id} and ${threads.archivedAt} is null and ${threads.deletedAt} is null))`, sql`(${environments.status} <> 'destroyed' OR ${environments.teardownStatus} IS NOT 'removed')`)).all();
 }
 
 export function environmentHasLiveThreads(db: EnvironmentWriteConnection, environmentId: string): boolean {
@@ -543,7 +589,7 @@ export function environmentHasLiveThreads(db: EnvironmentWriteConnection, enviro
 }
 
 export function releaseFinishedEnvironmentPreparationOwners(db: EnvironmentWriteConnection): void {
-  db.update(environments).set({ ownerThreadId: null }).where(and(eq(environments.teardownStatus, "removed"), sql`not exists (select 1 from ${threads} where ${threads.id} = ${environments.ownerThreadId} and ${threads.deletedAt} is null)`)).run();
+  db.update(environments).set({ ownerThreadId: null }).where(and(isNotNull(environments.ownerThreadId), eq(environments.teardownStatus, "removed"), sql`not exists (select 1 from ${threads} where ${threads.id} = ${environments.ownerThreadId} and ${threads.deletedAt} is null)`)).run();
 }
 
 export function claimEnvironmentPath(db: DbConnection, provisioning: EnvironmentRow, path: string, allowCancelled = false): boolean {

@@ -40,6 +40,23 @@ describe("bb thread list command output", () => {
     });
   });
 
+  it("bb thread list accepts a removed machine ID without looking it up among active machines", async () => {
+    const list = vi.fn(async () => []);
+    const hosts = vi.fn(async () => []);
+    stubServerApi({
+      "v1.threads.$get": list,
+      "v1.hosts.$get": hosts,
+    });
+
+    await runCommand(
+      ["thread", "list", "--machine", "host_removed123", "--json"],
+      register,
+    );
+
+    expect(list).toHaveBeenCalledWith({ query: { hostId: "host_removed123" } });
+    expect(hosts).not.toHaveBeenCalled();
+  });
+
   it("bb thread list opts into hidden threads explicitly", async () => {
     const list = vi.fn(async () => []);
     stubServerApi({ "v1.threads.$get": list });
@@ -99,7 +116,7 @@ describe("bb thread list command output", () => {
     });
     expect(collectLogPayloads(vi.mocked(console.log))).toEqual([
       "",
-      "ID                 Title  Project  Status         \n-----------------  -----  -------  ---------------\nthread-archived-1  -      Alpha    idle (archived)",
+      "ID                 Title  Project  Status           Model\n-----------------  -----  -------  ---------------  -----\nthread-archived-1  -      Alpha    idle (archived)  -    ",
       "",
     ]);
   });
@@ -128,6 +145,33 @@ describe("bb thread list command output", () => {
     );
   });
 
+  it("bb thread list shows the model's reasoning level", async () => {
+    const list = vi.fn(async () => [
+      {
+        ...fixtures.makeThread({
+          id: "thread-model-1",
+          projectId: "proj-1",
+          providerId: "codex",
+          status: "idle",
+          createdAt: 1,
+          updatedAt: 1,
+        }),
+        model: "gpt-5.6-sol",
+        reasoningLevel: "xhigh",
+      },
+    ]);
+    stubServerApi({
+      "v1.threads.$get": list,
+      "v1.projects.$get": async () => [{ id: "proj-1", name: "Alpha" }],
+    });
+
+    await runCommand(["thread", "list"], register);
+
+    expect(collectLogPayloads(vi.mocked(console.log)).join("\n")).toContain(
+      "gpt-5.6-sol (xhigh)",
+    );
+  });
+
   it("bb thread list hides the personal project label", async () => {
     const list = vi.fn(async () => [
       fixtures.makeThread({
@@ -152,7 +196,7 @@ describe("bb thread list command output", () => {
     });
     expect(collectLogPayloads(vi.mocked(console.log))).toEqual([
       "",
-      "ID                 Title  Project  Status      \n-----------------  -----  -------  ------------\nthread-personal-1  -      -        idle        ",
+      "ID                 Title  Project  Status        Model\n-----------------  -----  -------  ------------  -----\nthread-personal-1  -      -        idle          -    ",
       "",
     ]);
   });

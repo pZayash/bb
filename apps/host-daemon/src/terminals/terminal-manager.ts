@@ -18,6 +18,7 @@ import {
   killProcessGroup,
   sanitizeInheritedChildProcessEnv,
 } from "@bb/process-utils";
+import { displayWidth, truncateToWidth } from "@bb/text-utils";
 import type { HostDaemonServerTerminalMessage } from "../server-connection-support.js";
 import type { HostDaemonLogger } from "../logger.js";
 import { RuntimeManager } from "../runtime-manager.js";
@@ -77,7 +78,7 @@ export interface TerminalPtyAdapter {
   spawn(args: SpawnTerminalPtyArgs): TerminalPtyProcess;
 }
 
-export type ResolveTerminalShell = () => Promise<string>;
+export type ResolveTerminalShell = (shellId?: string) => Promise<string>;
 type TerminalOpenMessage = Extract<
   HostDaemonServerTerminalMessage,
   { type: "terminal.open" }
@@ -352,9 +353,11 @@ function isNonEmptyString(value: string | undefined): value is string {
 // testable without stubbing process.platform.
 async function resolveDefaultTerminalShell(
   platform: NodeJS.Platform,
+  shellId?: string,
 ): Promise<string> {
   if (platform === "win32") {
-    return resolveWindowsTerminalShell();
+    // bb-fork(windows): honor the shell requested by the Start terminal picker.
+    return resolveWindowsTerminalShell(shellId);
   }
 
   const candidates = [
@@ -392,10 +395,10 @@ function terminalTitleFromShell(shell: string): string {
 
 function terminalTitleFromCommand(command: string): string {
   const normalized = command.trim().replace(/\s+/g, " ");
-  if (normalized.length <= 80) {
+  if (displayWidth(normalized) <= 80) {
     return normalized;
   }
-  return `${normalized.slice(0, 77)}...`;
+  return `${truncateToWidth(normalized, 77)}...`;
 }
 
 function terminalSpawnArgsForStart(message: TerminalOpenMessage): string[] {
@@ -499,7 +502,7 @@ export class TerminalManager {
     // bb-fork(windows): resolve the shell for the injected platform.
     this.resolveShell =
       options.resolveShell ??
-      (() => resolveDefaultTerminalShell(this.platform));
+      ((shellId) => resolveDefaultTerminalShell(this.platform, shellId));
   }
 
   dispose(): void {
@@ -575,7 +578,10 @@ export class TerminalManager {
     this.openingTerminalIds.add(message.terminalId);
     try {
       const target = await this.resolveTerminalOpenTarget(message);
-      const shell = await this.resolveShell();
+      const shell = await this.resolveShell(
+        // bb-fork(windows): a shell id is the host's own alias for one shell.
+        message.start.mode === "shell" ? message.start.shellId : undefined,
+      );
       const pty = this.ptyAdapter.spawn({
         // bb-fork(windows): PowerShell takes -NoLogo/-Command instead of -lc.
         args:

@@ -1,3 +1,4 @@
+import { overwriteStoredUiPreference } from "@bb/db";
 import { defaultUiPreferences, UI_PREFERENCE_KEYS } from "@bb/domain";
 import { describe, expect, it, vi } from "vitest";
 import { readJson } from "../helpers/json.js";
@@ -29,6 +30,84 @@ async function resetPreference(
 }
 
 describe("public ui preferences", () => {
+  it.each(["__automatic__", "__builtin__", "inbox/inbox"])(
+    "keeps thread list selection %s, reading legacy built-in as the bundled plugin",
+    async (previous) => {
+      await withTestHarness(async (harness) => {
+        const key = "sidebar.threadListProvider";
+        const expected =
+          previous === "__builtin__" ? "thread-list/thread-list" : previous;
+        overwriteStoredUiPreference(harness.deps.db, {
+          key,
+          valueJson: JSON.stringify(previous),
+        });
+        expect(await readJson(await listPreferences(harness))).toMatchObject({
+          preferences: { [key]: { revision: 1, value: expected } },
+        });
+        expect(
+          await readJson(
+            await putPreference(harness, key, {
+              expectedRevision: 1,
+              value: previous,
+            }),
+          ),
+        ).toMatchObject({ revision: 2, value: expected });
+        expect(
+          await readJson(await resetPreference(harness, key)),
+        ).toMatchObject({
+          revision: 3,
+          value: "__automatic__",
+        });
+      });
+    },
+  );
+
+  it.each(["__automatic__", "__builtin__", "garden/icons"])(
+    "keeps navigation selection %s, reading legacy built-in as the bundled plugin",
+    async (previous) => {
+      await withTestHarness(async (harness) => {
+        const key = "sidebar.navigationProvider";
+        const expected =
+          previous === "__builtin__" ? "navigation/navigation" : previous;
+        expect(await readJson(await listPreferences(harness))).toMatchObject({
+          preferences: {
+            [key]: { revision: 0, value: "__automatic__" },
+          },
+        });
+        overwriteStoredUiPreference(harness.deps.db, {
+          key,
+          valueJson: JSON.stringify(previous),
+        });
+        expect(await readJson(await listPreferences(harness))).toMatchObject({
+          preferences: { [key]: { revision: 1, value: expected } },
+        });
+      });
+    },
+  );
+
+  it.each([
+    ["__automatic__", "__builtin__"],
+    ["__builtin__", "__builtin__"],
+    ["garden/icons", "garden/icons"],
+  ])(
+    "keeps the sidebar header opt-in: %s resolves to %s",
+    async (previous, expected) => {
+      await withTestHarness(async (harness) => {
+        const key = "sidebar.headerProvider";
+        expect(await readJson(await listPreferences(harness))).toMatchObject({
+          preferences: { [key]: { revision: 0, value: "__builtin__" } },
+        });
+        overwriteStoredUiPreference(harness.deps.db, {
+          key,
+          valueJson: JSON.stringify(previous),
+        });
+        expect(await readJson(await listPreferences(harness))).toMatchObject({
+          preferences: { [key]: { revision: 1, value: expected } },
+        });
+      });
+    },
+  );
+
   it("persists hidden groups across organizations without changing saved order", async () => {
     await withTestHarness(async (harness) => {
       const key = "sidebar.hiddenGroups";
@@ -71,10 +150,12 @@ describe("public ui preferences", () => {
         revision: 2,
         value: ["section:section_review"],
       });
-      expect(await readJson(await resetPreference(harness, key))).toMatchObject({
-        revision: 3,
-        value: [],
-      });
+      expect(await readJson(await resetPreference(harness, key))).toMatchObject(
+        {
+          revision: 3,
+          value: [],
+        },
+      );
       expect(await readJson(await listPreferences(harness))).toMatchObject({
         preferences: {
           [key]: { revision: 3, value: [] },
@@ -200,11 +281,12 @@ describe("public ui preferences", () => {
     });
   });
 
-  it("defaults unset organization to Custom without persisting a choice", async () => {
+  it("defaults unset organization to By project without persisting a choice", async () => {
     await withTestHarness(async (harness) => {
       expect(await readJson(await listPreferences(harness))).toMatchObject({
         preferences: {
-          "sidebar.organizationMode": { revision: 0, value: "chronological" },
+          // bb-fork(windows): the fork defaults an unset organization to By project.
+          "sidebar.organizationMode": { revision: 0, value: "project" },
         },
       });
       expect(
@@ -215,10 +297,52 @@ describe("public ui preferences", () => {
     });
   });
 
+  it("exposes an installation fallback at revision zero and accepts legacy choices", async () => {
+    await withTestHarness(async (harness) => {
+      harness.db.$client.exec(
+        `INSERT INTO ui_preference_defaults VALUES ('sidebar.organizationMode', '"project"')`,
+      );
+      expect(await readJson(await listPreferences(harness))).toMatchObject({
+        preferences: {
+          "sidebar.organizationMode": { revision: 0, value: "project" },
+        },
+      });
+      expect(
+        (
+          await putPreference(harness, "sidebar.organizationMode", {
+            expectedRevision: 0,
+            value: "machine",
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        (
+          await putPreference(harness, "sidebar.organizationMode", {
+            expectedRevision: 0,
+            value: "chronological",
+          })
+        ).status,
+      ).toBe(409);
+      expect(await readJson(await listPreferences(harness))).toMatchObject({
+        preferences: {
+          "sidebar.organizationMode": { revision: 1, value: "machine" },
+        },
+      });
+      expect(
+        await readJson(
+          await resetPreference(harness, "sidebar.organizationMode"),
+        ),
+      ).toMatchObject({ revision: 2, value: "project" });
+    });
+  });
+
   it.each(["project", "machine", "chronological"])(
-    "preserves saved %s organization",
+    "preserves saved %s organization over the installation fallback",
     async (value) => {
       await withTestHarness(async (harness) => {
+        harness.db.$client.exec(
+          `INSERT INTO ui_preference_defaults VALUES ('sidebar.organizationMode', '"project"')`,
+        );
         harness.db.$client
           .prepare(
             "INSERT INTO ui_preferences (key, value_json, revision, updated_at) VALUES (?, ?, 3, 1)",
@@ -350,8 +474,9 @@ describe("public ui preferences", () => {
         preferences: Record<string, { revision: number; value: unknown }>;
       };
       expect(listed.preferences["sidebar.organizationMode"]).toEqual({
+        // bb-fork(windows): the fork defaults an unset organization to By project.
         revision: 4,
-        value: "chronological",
+        value: "project",
       });
       expect(listed.preferences["sidebar.unknownKey"]).toBeUndefined();
     });

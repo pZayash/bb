@@ -1,4 +1,10 @@
-import { useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import type {
   TimelineConversationAttachments,
   TimelineRowBase,
@@ -57,6 +63,8 @@ import {
   splitStreamingMarkdown,
 } from "./streaming-markdown-split.js";
 import { TurnRequestLabel } from "./TurnRequestLabel.js";
+// bb-fork(windows): per-message timestamp with process duration.
+import { MessageTimestamp } from "./MessageTimestamp.js";
 import {
   MessageActionBar,
   PROSE_COLUMN_INSET_CLASS,
@@ -75,6 +83,8 @@ import { buildMarkdownMessageLinkRouting } from "@/components/ui/markdown-messag
 
 interface ConversationMessageContentBaseProps {
   attachments: TimelineConversationAttachments | null;
+  // bb-fork(windows): message timestamp inputs.
+  createdAt?: number;
   onOpenLocalFileLink?: ThreadTimelineLocalFileLinkHandler;
   onOpenPluginPanel?: MarkdownMessageDirectives["openThreadPanel"];
   pluginActions?: readonly ThreadTimelinePluginMessageAction[];
@@ -103,6 +113,8 @@ interface ConversationMessageContentUserProps extends ConversationMessageContent
   systemMessageKind: TimelineUserConversationRow["systemMessageKind"];
   systemMessageSubject: TimelineUserConversationRow["systemMessageSubject"];
   threadId?: string;
+  // bb-fork(windows): message timestamp inputs.
+  turnId?: string | null;
   turnRequest: TimelineUserConversationRow["turnRequest"];
 }
 
@@ -149,6 +161,10 @@ type ConversationMessageContentProps =
 interface UserConversationMessageProps {
   addToChatAttachments: readonly PromptDraftAttachment[];
   attachmentItems: ConversationAttachmentItems;
+  // bb-fork(windows): message timestamp inputs for generated messages.
+  createdAt?: number;
+  turnId?: string | null;
+  messageTimestamp: ReactNode | null;
   originKind: ThreadOriginKind | null;
   pluginActions?: readonly ThreadTimelinePluginMessageAction[];
   initiator: TimelineUserConversationRow["initiator"];
@@ -177,6 +193,7 @@ interface UserConversationMessageProps {
 interface AssistantConversationMessageProps extends AssistantMessageRowIdentity {
   addToChatAttachments: readonly PromptDraftAttachment[];
   attachmentItems: ConversationAttachmentItems;
+  messageTimestamp: ReactNode | null;
   pluginActions?: readonly ThreadTimelinePluginMessageAction[];
   onAddToChat?: ThreadTimelineAddToChatHandler;
   onFork?: () => void;
@@ -283,6 +300,7 @@ function CollapsibleMessageText({
           <span>{body.text}</span>
         ) : (
           <MarkdownPreview
+            allowHtml
             content={
               collapsedPreview?.wasCapped === true
                 ? closeUnterminatedMarkdownCodeSpan(body.text)
@@ -330,6 +348,9 @@ function buildAddToChatAttachments(
 function UserConversationMessage({
   addToChatAttachments,
   attachmentItems,
+  createdAt,
+  messageTimestamp,
+  turnId,
   originKind,
   initiator,
   mentions,
@@ -397,6 +418,8 @@ function UserConversationMessage({
       <GeneratedConversationMessage
         {...generatedSource}
         attachmentItems={attachmentItems}
+        createdAt={createdAt}
+        turnId={turnId}
         mentions={bodyMentions}
         onOpenLink={onOpenLink}
         onOpenLocalFileLink={onOpenLocalFileLink}
@@ -451,6 +474,11 @@ function UserConversationMessage({
               projectId={projectId}
             />
           </div>
+          {messageTimestamp !== null ? (
+            <div className="mt-0.5 flex max-w-full items-center">
+              {messageTimestamp}
+            </div>
+          ) : null}
           <MessageActionBar
             messageText={messageText}
             alignment="end"
@@ -471,6 +499,7 @@ function AssistantConversationMessage({
   addToChatAttachments,
   attachmentItems,
   id,
+  messageTimestamp,
   onAddToChat,
   onFork,
   onSendToMain,
@@ -574,6 +603,7 @@ function AssistantConversationMessage({
     >
       <SelectableMessageProse onSelect={onSelectProse}>
         <MarkdownPreview
+          allowHtml
           className={
             streamingSplit === null
               ? undefined
@@ -589,6 +619,7 @@ function AssistantConversationMessage({
         />
         {streamingSplit === null ? null : (
           <MarkdownPreview
+            allowHtml
             className={STREAMING_TAIL_MARKDOWN_CLASS_NAME}
             content={liveMarkdown}
             sourcePrefix={streamingSplit.settled}
@@ -605,6 +636,9 @@ function AssistantConversationMessage({
         onOpenLocalFileLink={onOpenLocalFileLink}
         projectId={projectId}
       />
+      {messageTimestamp !== null ? (
+        <div className="mt-0.5 flex items-center">{messageTimestamp}</div>
+      ) : null}
       {showActions ? (
         <MessageActionBar
           messageText={text}
@@ -647,12 +681,23 @@ export function ConversationMessageContent(
     () => buildAddToChatAttachments(attachments),
     [attachments],
   );
+  // bb-fork(windows): message timestamp with the owning turn's process duration.
+  const messageTimestamp =
+    props.createdAt === undefined ? null : (
+      <MessageTimestamp
+        createdAt={props.createdAt}
+        turnId={props.turnId ?? null}
+      />
+    );
 
   if (props.role === "user") {
     return (
       <UserConversationMessage
         addToChatAttachments={addToChatAttachments}
         attachmentItems={attachmentItems}
+        createdAt={props.createdAt}
+        messageTimestamp={messageTimestamp}
+        turnId={props.turnId ?? null}
         originKind={props.originKind}
         pluginActions={props.pluginActions}
         initiator={props.initiator}
@@ -685,6 +730,7 @@ export function ConversationMessageContent(
       addToChatAttachments={addToChatAttachments}
       attachmentItems={attachmentItems}
       id={props.id}
+      messageTimestamp={messageTimestamp}
       pluginActions={props.pluginActions}
       onAddToChat={props.onAddToChat}
       onFork={props.onFork}

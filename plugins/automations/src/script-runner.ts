@@ -16,6 +16,8 @@ import {
 import {
   bbProbeCandidates,
   bbProbeCommand,
+  killWindowsProcessTree,
+  releaseWindowsStdioAfterKill,
 } from "./script-runner.fork.js";
 
 const execFileAsync = promisify(execFile);
@@ -27,9 +29,12 @@ let resolvedBbPath: string | null = null;
 const BB_NOT_INJECTED_WARNING =
   "[bb] warning: could not locate the bb CLI, so `bb` is not on PATH for this script.";
 
-async function commandWorks(candidate: string, args: string[]): Promise<boolean> {
+async function commandWorks(
+  candidate: string,
+  args: string[],
+): Promise<boolean> {
   // bb-fork(windows): a .cmd launcher needs shell, an extensionless bundle needs Node,
-  // and a POSIX-shell shim is not runnable here at all.
+  // bb-fork(windows): and a POSIX-shell shim is not runnable here at all.
   const probe = bbProbeCommand(candidate, args);
   if (probe === null) return false;
   try {
@@ -139,9 +144,9 @@ export interface ScriptRunResult {
   output: string;
   stderr: string;
   timedOut: boolean;
-  /**
-   * bb-fork(windows): plugin diagnostics about the run itself (today: bb is not on the
-   * script's PATH). Kept out of `output` so it cannot turn a silent tick into a run.
+  /** bb-fork(windows): plugin diagnostics about the run itself (today: bb is
+   * not on the script's PATH). Kept out of `output` so it cannot turn a silent
+   * tick into a run.
    */
   warning?: string | null;
 }
@@ -229,6 +234,16 @@ export function mapScriptResultToRun(
 }
 
 function signalProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  // bb-fork(windows): taskkill /T /F terminates the whole descendant tree.
+  if (
+    killWindowsProcessTree(child, () => {
+      try {
+        child.kill(signal);
+      } catch {}
+    })
+  ) {
+    return;
+  }
   try {
     if (process.platform !== "win32" && child.pid !== undefined) {
       process.kill(-child.pid, signal);
@@ -267,6 +282,8 @@ function executeWithProcessGroup(args: {
 
     const terminateGroup = (): void => {
       signalProcessGroup(child, "SIGTERM");
+      // bb-fork(windows): release pipes a surviving descendant would hold open.
+      releaseWindowsStdioAfterKill(child);
       if (forceKill) return;
       forceKill = setTimeout(() => {
         signalProcessGroup(child, "SIGKILL");

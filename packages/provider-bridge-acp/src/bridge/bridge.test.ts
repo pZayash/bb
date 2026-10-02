@@ -571,13 +571,32 @@ beforeEach(() => {
   output = captureBridgeJsonRpcOutput();
 });
 
+// bb-fork(windows): a just-stopped child can still hold files in the workspace,
+// so removing it needs a short retry instead of failing the test with EBUSY.
+async function removeWorkspaceDir(dir: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      const retryable =
+        code === "EBUSY" || code === "EPERM" || code === "ENOTEMPTY";
+      if (!retryable || attempt >= 20) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+}
+
 afterEach(async () => {
   for (const providerThreadId of startedProviderThreadIds.splice(0)) {
     await stopThread(providerThreadId);
   }
   vi.unstubAllEnvs();
   output.restore();
-  rmSync(workspaceDir, { recursive: true, force: true });
+  await removeWorkspaceDir(workspaceDir);
 });
 
 describe("acp bridge", () => {
@@ -704,6 +723,45 @@ describe("acp bridge", () => {
         },
       ],
       selectedOnlyModels: [],
+    });
+  });
+
+  it("keeps probing reasoning for later models after one model's probe fails", async () => {
+    const modelListId = sendModelList({
+      envVars: {
+        FAKE_ACP_MODEL_CONFIG: "1",
+        FAKE_ACP_THOUGHT_LEVEL_CONFIG: "1",
+        FAKE_ACP_MODEL_COUNT: "3",
+        FAKE_ACP_SET_CONFIG_MODEL_ERROR_VALUE: "fake/strong",
+      },
+    });
+
+    expect((await waitForResponse(modelListId)).result).toMatchObject({
+      models: [
+        {
+          id: "fake/default",
+          supportedReasoningEfforts: [{ reasoningEffort: "medium" }],
+        },
+        {
+          id: "fake/strong",
+          supportedReasoningEfforts: [
+            {
+              reasoningEffort: "medium",
+              description:
+                "Reasoning effort is managed by the connected ACP agent.",
+            },
+          ],
+        },
+        {
+          id: "fake/gen-2",
+          defaultReasoningEffort: "low",
+          supportedReasoningEfforts: [
+            { reasoningEffort: "low" },
+            { reasoningEffort: "medium" },
+            { reasoningEffort: "high" },
+          ],
+        },
+      ],
     });
   });
 
@@ -1054,36 +1112,40 @@ describe("acp bridge", () => {
     });
   });
 
-  it("times out hung ACP-native discovery, kills the child, and falls back to the synthetic model", async () => {
-    const signalFile = join(workspaceDir, "discovery-agent-signal.txt");
-    const readyFile = join(workspaceDir, "discovery-agent-ready.txt");
-    let modelListId: number;
+  // bb-fork(windows): killing a hung ACP child relies on POSIX process groups.
+  it.skipIf(process.platform === "win32")(
+    "times out hung ACP-native discovery, kills the child, and falls back to the synthetic model",
+    async () => {
+      const signalFile = join(workspaceDir, "discovery-agent-signal.txt");
+      const readyFile = join(workspaceDir, "discovery-agent-ready.txt");
+      let modelListId: number;
 
-    vi.useFakeTimers();
-    try {
-      modelListId = sendModelList({
-        envVars: {
-          FAKE_ACP_HANG_INITIALIZE: "1",
-          FAKE_ACP_READY_FILE: readyFile,
-          FAKE_ACP_SIGNAL_FILE: signalFile,
-        },
+      vi.useFakeTimers();
+      try {
+        modelListId = sendModelList({
+          envVars: {
+            FAKE_ACP_HANG_INITIALIZE: "1",
+            FAKE_ACP_READY_FILE: readyFile,
+            FAKE_ACP_SIGNAL_FILE: signalFile,
+          },
+        });
+        await waitForFileWithRealTimer(readyFile);
+        await vi.advanceTimersByTimeAsync(30_000);
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect((await waitForResponse(modelListId!)).result).toMatchObject({
+        models: [{ id: "acp-default", isDefault: true }],
+        selectedOnlyModels: [],
       });
-      await waitForFileWithRealTimer(readyFile);
-      await vi.advanceTimersByTimeAsync(30_000);
-    } finally {
-      vi.useRealTimers();
-    }
-
-    expect((await waitForResponse(modelListId!)).result).toMatchObject({
-      models: [{ id: "acp-default", isDefault: true }],
-      selectedOnlyModels: [],
-    });
-    await waitFor(
-      () => (existsSync(signalFile) ? true : undefined),
-      "discovery agent termination",
-      5_000,
-    );
-  });
+      await waitFor(
+        () => (existsSync(signalFile) ? true : undefined),
+        "discovery agent termination",
+        5_000,
+      );
+    },
+  );
 
   it("serves ACP-native discovered models from cache within the TTL and re-discovers after it", async () => {
     const launchLog = join(workspaceDir, "discovery-launches.txt");
@@ -1458,20 +1520,6 @@ describe("acp bridge", () => {
     ]);
   });
 
-  it("does not leak bridge-only Electron env to the spawned agent", async () => {
-    vi.stubEnv("ELECTRON_RUN_AS_NODE", "1");
-    const { providerThreadId } = await startThread();
-
-    sendTurnRequest("turn/start", providerThreadId, {
-      input: [
-        { type: "text", text: "echo-electron-run-as-node", mentions: [] },
-      ],
-    });
-    await waitForTurnCompleted();
-
-    expect(agentMessageTexts()).toContain("electron-run-as-node:missing");
-  });
-
   it("preserves Electron Node mode for the dynamic-tool MCP process only", async () => {
     vi.stubEnv("ELECTRON_RUN_AS_NODE", "1");
     const { providerThreadId } = await startThread({
@@ -1513,13 +1561,15 @@ describe("acp bridge", () => {
         { type: "text", text: "echo-electron-run-as-node", mentions: [] },
       ],
     });
-    await waitFor(
-      () =>
-        agentMessageTexts().find(
-          (text) => text === "electron-run-as-node:missing",
-        ),
-      "agent environment report",
-    );
+    await expect(
+      waitFor(
+        () =>
+          agentMessageTexts().find((text) =>
+            text.startsWith("electron-run-as-node:"),
+          ),
+        "agent environment report",
+      ),
+    ).resolves.toBe("electron-run-as-node:missing");
   });
 
   it("warns and launches the family id when a reasoning variant is missing", async () => {
@@ -1693,41 +1743,47 @@ describe("acp bridge", () => {
     );
   });
 
-  it("approves Cursor session MCP servers for the session lifetime (#2018)", async () => {
-    const cursorAgent = join(workspaceDir, "cursor-agent");
-    const cursorDataDir = join(workspaceDir, "cursor-data");
-    symlinkSync(process.execPath, cursorAgent);
-    const { providerThreadId } = await startThread({
-      agent: { command: cursorAgent, args: [FAKE_AGENT_PATH] },
-      envVars: { CURSOR_DATA_DIR: cursorDataDir },
-      dynamicTools: [
-        {
-          name: "update_environment_directory",
-          description: "Move this thread to another environment directory.",
-          inputSchema: { type: "object", properties: {} },
-        },
-      ],
-    });
-    const projectSlug = workspaceDir
-      .replace(/[^a-zA-Z0-9]/gu, "-")
-      .replace(/-+/gu, "-")
-      .replace(/^-+|-+$/gu, "");
-    const approvalPath = join(
-      cursorDataDir,
-      "projects",
-      projectSlug,
-      "mcp-approvals.json",
-    );
-    const approvals = JSON.parse(readFileSync(approvalPath, "utf8")) as unknown;
-    expect(approvals).toEqual([
-      expect.stringMatching(`^${ACP_BRIDGE_MCP_SERVER_NAME}-[a-f0-9]{16}$`),
-    ]);
+  // bb-fork(windows): the fake cursor-agent is a symlink to node.
+  it.skipIf(process.platform === "win32")(
+    "approves Cursor session MCP servers for the session lifetime (#2018)",
+    async () => {
+      const cursorAgent = join(workspaceDir, "cursor-agent");
+      const cursorDataDir = join(workspaceDir, "cursor-data");
+      symlinkSync(process.execPath, cursorAgent);
+      const { providerThreadId } = await startThread({
+        agent: { command: cursorAgent, args: [FAKE_AGENT_PATH] },
+        envVars: { CURSOR_DATA_DIR: cursorDataDir },
+        dynamicTools: [
+          {
+            name: "update_environment_directory",
+            description: "Move this thread to another environment directory.",
+            inputSchema: { type: "object", properties: {} },
+          },
+        ],
+      });
+      const projectSlug = workspaceDir
+        .replace(/[^a-zA-Z0-9]/gu, "-")
+        .replace(/-+/gu, "-")
+        .replace(/^-+|-+$/gu, "");
+      const approvalPath = join(
+        cursorDataDir,
+        "projects",
+        projectSlug,
+        "mcp-approvals.json",
+      );
+      const approvals = JSON.parse(
+        readFileSync(approvalPath, "utf8"),
+      ) as unknown;
+      expect(approvals).toEqual([
+        expect.stringMatching(`^${ACP_BRIDGE_MCP_SERVER_NAME}-[a-f0-9]{16}$`),
+      ]);
 
-    await stopThread(providerThreadId);
-    expect(JSON.parse(readFileSync(approvalPath, "utf8")) as unknown).toEqual(
-      [],
-    );
-  });
+      await stopThread(providerThreadId);
+      expect(JSON.parse(readFileSync(approvalPath, "utf8")) as unknown).toEqual(
+        [],
+      );
+    },
+  );
 
   it("forwards ACP dynamic tool calls through the runtime tool-call contract", async () => {
     const { bbThreadId, providerThreadId } = await startThread({
@@ -3044,6 +3100,42 @@ describe("acp bridge", () => {
     expect(forkResets[0]).toBeGreaterThan(forkIdentities[0] ?? Infinity);
   });
 
+  it("surfaces Grok context window size and prompt usage from session _meta", async () => {
+    const { bbThreadId, providerThreadId } = await startThread({
+      dialectId: "grok",
+      envVars: { FAKE_ACP_GROK_CONTEXT: "1" },
+    });
+
+    expect(contextWindowDeltasFor(bbThreadId)).toEqual([
+      { used: 0, size: 500_000 },
+    ]);
+
+    sendTurnRequest("turn/start", providerThreadId, {
+      input: [{ type: "text", text: "hello", mentions: [] }],
+    });
+    await waitForTurnCompleted();
+
+    expect(contextWindowDeltasFor(bbThreadId)).toEqual([
+      { used: 0, size: 500_000 },
+      { used: 17_504, size: 500_000 },
+    ]);
+  });
+
+  it("ignores Grok-shaped session _meta on other ACP dialects", async () => {
+    const { bbThreadId, providerThreadId } = await startThread({
+      envVars: { FAKE_ACP_GROK_CONTEXT: "1" },
+    });
+
+    expect(contextWindowDeltasFor(bbThreadId)).toEqual([]);
+
+    sendTurnRequest("turn/start", providerThreadId, {
+      input: [{ type: "text", text: "hello", mentions: [] }],
+    });
+    await waitForTurnCompleted();
+
+    expect(contextWindowDeltasFor(bbThreadId)).toEqual([]);
+  });
+
   it("holds an agent update written with the session/new response until thread/identity is out", async () => {
     const { bbThreadId } = await startThread({
       envVars: { FAKE_ACP_UPDATES_WITH_SESSION_RESPONSE: "1" },
@@ -3308,124 +3400,132 @@ describe("acp bridge", () => {
     startedProviderThreadIds.pop();
   });
 
-  it("releases a session still under construction: the agent is reaped and the pending thread/start fails", async () => {
-    const readyFile = join(workspaceDir, "agent-ready");
-    const signalFile = join(workspaceDir, "agent-signal");
-    const threadId = "thread-release-during-construction";
-    const options = executionOptions({
-      providerOptions: {
-        acpLaunchSpec: acpLaunchSpec({
-          envVars: {
-            FAKE_ACP_SESSION_NEW_DELAY_MS: "5000",
-            FAKE_ACP_READY_FILE: readyFile,
-            FAKE_ACP_SIGNAL_FILE: signalFile,
-          },
-        }),
-      },
-    });
-    const startId = sendRequest("thread/start", {
-      threadId,
-      cwd: workspaceDir,
-      instructionMode: "append",
-      options,
-    });
-    await waitForFileWithRealTimer(readyFile);
-    expect(findResponse(startId)).toBeUndefined();
-
-    const stopId = sendRequest("thread/stop", {
-      threadId,
-      providerThreadId: threadId,
-      intent: "release",
-      activeTurnId: null,
-    });
-    expect((await waitForResponse(stopId)).result).toEqual({ ok: true });
-
-    const start = await waitForResponse(startId);
-    expect(start.result).toBeUndefined();
-    expect(start.error?.message).toMatch(/exited|not running|released/u);
-    await waitForFileWithRealTimer(signalFile);
-    expect(readFileSync(signalFile, "utf8")).toContain("SIGTERM");
-    expect(
-      messagesForThread(threadId).filter(
-        (message) => message.method === "thread/identity",
-      ),
-    ).toEqual([]);
-
-    const turnId = sendRequest("turn/start", {
-      threadId,
-      providerThreadId: threadId,
-      clientRequestId: CLIENT_REQUEST_ID,
-      input: [{ type: "text", text: "ping", mentions: [] }],
-      options,
-    });
-    expect((await waitForResponse(turnId)).error?.message).toBe(
-      "No active ACP session",
-    );
-  });
-
-  it("lets a retried thread/start supersede a construction still in flight for the same thread", async () => {
-    const threadId = "thread-retried-construction";
-    const slowReadyFile = join(workspaceDir, "slow-agent-ready");
-    const slowSignalFile = join(workspaceDir, "slow-agent-signal");
-    const firstStartId = sendRequest("thread/start", {
-      threadId,
-      cwd: workspaceDir,
-      instructionMode: "append",
-      options: executionOptions({
+  // bb-fork(windows): reaping a hung ACP child relies on POSIX process groups.
+  it.skipIf(process.platform === "win32")(
+    "releases a session still under construction: the agent is reaped and the pending thread/start fails",
+    async () => {
+      const readyFile = join(workspaceDir, "agent-ready");
+      const signalFile = join(workspaceDir, "agent-signal");
+      const threadId = "thread-release-during-construction";
+      const options = executionOptions({
         providerOptions: {
           acpLaunchSpec: acpLaunchSpec({
             envVars: {
               FAKE_ACP_SESSION_NEW_DELAY_MS: "5000",
-              FAKE_ACP_READY_FILE: slowReadyFile,
-              FAKE_ACP_SIGNAL_FILE: slowSignalFile,
+              FAKE_ACP_READY_FILE: readyFile,
+              FAKE_ACP_SIGNAL_FILE: signalFile,
             },
           }),
         },
-      }),
-    });
-    await waitForFileWithRealTimer(slowReadyFile);
+      });
+      const startId = sendRequest("thread/start", {
+        threadId,
+        cwd: workspaceDir,
+        instructionMode: "append",
+        options,
+      });
+      await waitForFileWithRealTimer(readyFile);
+      expect(findResponse(startId)).toBeUndefined();
 
-    const stopId = sendRequest("thread/stop", {
-      threadId,
-      providerThreadId: threadId,
-      intent: "release",
-      activeTurnId: null,
-    });
-    await waitForResponse(stopId);
-    const secondStartId = sendRequest("thread/start", {
-      threadId,
-      cwd: workspaceDir,
-      instructionMode: "append",
-      options: executionOptions({
-        providerOptions: { acpLaunchSpec: acpLaunchSpec({}) },
-      }),
-    });
-    const liveProviderThreadId = providerThreadIdOf(
-      await waitForResponse(secondStartId),
-    );
-    startedProviderThreadIds.push(liveProviderThreadId);
-    bbThreadIdByProviderThreadId.set(liveProviderThreadId, threadId);
+      const stopId = sendRequest("thread/stop", {
+        threadId,
+        providerThreadId: threadId,
+        intent: "release",
+        activeTurnId: null,
+      });
+      expect((await waitForResponse(stopId)).result).toEqual({ ok: true });
 
-    const first = await waitForResponse(firstStartId);
-    expect(first.result).toBeUndefined();
-    expect(first.error).toBeDefined();
-    await waitForFileWithRealTimer(slowSignalFile);
-    expect(
-      messagesForThread(threadId)
-        .filter((message) => message.method === "thread/identity")
-        .map(
-          (message) =>
-            (message.params as { providerThreadId: string }).providerThreadId,
+      const start = await waitForResponse(startId);
+      expect(start.result).toBeUndefined();
+      expect(start.error?.message).toMatch(/exited|not running|released/u);
+      await waitForFileWithRealTimer(signalFile);
+      expect(readFileSync(signalFile, "utf8")).toContain("SIGTERM");
+      expect(
+        messagesForThread(threadId).filter(
+          (message) => message.method === "thread/identity",
         ),
-    ).toEqual([liveProviderThreadId]);
+      ).toEqual([]);
 
-    const turnId = sendTurnRequest("turn/start", liveProviderThreadId, {
-      input: [{ type: "text", text: "echo-selected-model", mentions: [] }],
-    });
-    await waitForResponse(turnId);
-    await waitForTurnCompleted();
-    expect(agentMessageTexts()).toContain("selected-model:fake/default");
-  });
+      const turnId = sendRequest("turn/start", {
+        threadId,
+        providerThreadId: threadId,
+        clientRequestId: CLIENT_REQUEST_ID,
+        input: [{ type: "text", text: "ping", mentions: [] }],
+        options,
+      });
+      expect((await waitForResponse(turnId)).error?.message).toBe(
+        "No active ACP session",
+      );
+    },
+  );
+
+  // bb-fork(windows): reaping a hung ACP child relies on POSIX process groups.
+  it.skipIf(process.platform === "win32")(
+    "lets a retried thread/start supersede a construction still in flight for the same thread",
+    async () => {
+      const threadId = "thread-retried-construction";
+      const slowReadyFile = join(workspaceDir, "slow-agent-ready");
+      const slowSignalFile = join(workspaceDir, "slow-agent-signal");
+      const firstStartId = sendRequest("thread/start", {
+        threadId,
+        cwd: workspaceDir,
+        instructionMode: "append",
+        options: executionOptions({
+          providerOptions: {
+            acpLaunchSpec: acpLaunchSpec({
+              envVars: {
+                FAKE_ACP_SESSION_NEW_DELAY_MS: "5000",
+                FAKE_ACP_READY_FILE: slowReadyFile,
+                FAKE_ACP_SIGNAL_FILE: slowSignalFile,
+              },
+            }),
+          },
+        }),
+      });
+      await waitForFileWithRealTimer(slowReadyFile);
+
+      const stopId = sendRequest("thread/stop", {
+        threadId,
+        providerThreadId: threadId,
+        intent: "release",
+        activeTurnId: null,
+      });
+      await waitForResponse(stopId);
+      const secondStartId = sendRequest("thread/start", {
+        threadId,
+        cwd: workspaceDir,
+        instructionMode: "append",
+        options: executionOptions({
+          providerOptions: { acpLaunchSpec: acpLaunchSpec({}) },
+        }),
+      });
+      const liveProviderThreadId = providerThreadIdOf(
+        await waitForResponse(secondStartId),
+      );
+      startedProviderThreadIds.push(liveProviderThreadId);
+      bbThreadIdByProviderThreadId.set(liveProviderThreadId, threadId);
+
+      const first = await waitForResponse(firstStartId);
+      expect(first.result).toBeUndefined();
+      expect(first.error).toBeDefined();
+      await waitForFileWithRealTimer(slowSignalFile);
+      expect(
+        messagesForThread(threadId)
+          .filter((message) => message.method === "thread/identity")
+          .map(
+            (message) =>
+              (message.params as { providerThreadId: string }).providerThreadId,
+          ),
+      ).toEqual([liveProviderThreadId]);
+
+      const turnId = sendTurnRequest("turn/start", liveProviderThreadId, {
+        input: [{ type: "text", text: "echo-selected-model", mentions: [] }],
+      });
+      await waitForResponse(turnId);
+      await waitForTurnCompleted();
+      expect(agentMessageTexts()).toContain("selected-model:fake/default");
+    },
+  );
 
   it("fails thread/start with a clear error when the agent command is missing", async () => {
     const id = sendRequest("thread/start", {

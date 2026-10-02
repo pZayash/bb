@@ -149,6 +149,10 @@ Making your repo work with bb:
     --clear-merge-base-branch             Clear merge-base override
     --name <name>                         Set display name
     --clear-name                          Clear display name
+    --start-ref <sha>                     Set the comparison start commit
+    --clear-start-ref                     Clear the comparison start commit
+
+  bb environment commits <id>             List recent commits, newest first (50 at most)
 
   bb environment commit <id>              Create a commit in the environment
 

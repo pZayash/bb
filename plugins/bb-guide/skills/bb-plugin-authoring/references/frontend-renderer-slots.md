@@ -15,9 +15,11 @@
   `{ content, path, overflow, highlightedLines, Original }`;
   diff props:
   `{ patch, path, view, overflow, showLineNumbers, experimental_fullFileContents,
-Original }`. `experimental_fullFileContents` is either
-  `{ old: { path, content }, new: { path, content } }` or `null`; a replacement
-  can use those complete UTF-8 sides to implement context expansion.
+experimental_expandUnchanged, Original }`. `experimental_fullFileContents` is
+  either `{ old: { path, content }, new: { path, content } }` or `null`; a
+  replacement can use those complete UTF-8 sides to implement context
+  expansion. `experimental_expandUnchanged` is the resolved caller request to
+  render both sides whole instead of the collapsed hunks.
   Every value is already resolved. Render `Original` (bb's
   renderer, bound to this call) to delegate without re-entering resolution —
   behind a plugin setting, by language, over a size threshold:

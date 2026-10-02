@@ -704,6 +704,11 @@ const destroyedEnvironmentFixture: ThreadPromptEnvironmentGoneSection = {
   status: "destroyed",
 };
 
+const restorableEnvironmentFixture: ThreadPromptEnvironmentGoneSection = {
+  status: "destroyed",
+  onRestore: noop,
+};
+
 export function Overview() {
   return (
     <StoryCard>
@@ -721,7 +726,7 @@ export function Overview() {
       </StoryRow>
       <StoryRow
         label="archived + child thread"
-        hint="archived row plus parent context; action is hidden because archived is not the only segment"
+        hint="archived row plus parent context; unarchive stays pinned to the far right because it is the only way out"
       >
         <Row
           archived={archivedFixture}
@@ -747,11 +752,17 @@ export function Overview() {
         <Row environmentGone={destroyedEnvironmentFixture} mergeBase={null} />
       </StoryRow>
       <StoryRow
+        label="environment archived (restorable)"
+        hint="the workspace can be rebuilt on its branch, so a filled restore action is pinned to the far right"
+      >
+        <Row environmentGone={restorableEnvironmentFixture} mergeBase={null} />
+      </StoryRow>
+      <StoryRow
         label="environment archived + child thread"
-        hint="archived-environment row plus parent context"
+        hint="archived-environment row plus parent context; restore stays pinned to the far right because it is the only way out"
       >
         <Row
-          environmentGone={destroyedEnvironmentFixture}
+          environmentGone={restorableEnvironmentFixture}
           parentThread={parentThreadFixture}
           mergeBase={null}
         />
@@ -911,3 +922,17 @@ export function Overview() {
     </StoryCard>
   );
 }
+
+export const MachineRemovalHistory = () => (
+  <StoryCard>
+    <StoryRow label="Machine removed">
+      <Row environmentGone={{ status: "removed" }} mergeBase={null} />
+    </StoryRow>
+    <StoryRow label="Removal in progress">
+      <Row environmentGone={{ status: "removing" }} mergeBase={null} />
+    </StoryRow>
+    <StoryRow label="Cleanup failed">
+      <Row environmentGone={{ status: "cleanup-failed" }} mergeBase={null} />
+    </StoryRow>
+  </StoryCard>
+);

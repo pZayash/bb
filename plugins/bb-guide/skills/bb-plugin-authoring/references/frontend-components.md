@@ -120,7 +120,7 @@ routing?, allowProviderChange?, align?, disabled?, className? }`, where `routing
   null). bb owns syntax highlighting, gutters, and the live code theme.
 - `experimental_Diff` — bb's diff viewer. Props:
   `{ patch, path, view?, overflow?, showLineNumbers?, experimental_fullFileContents?,
-className? }` —
+experimental_expandUnchanged?, className? }` —
   `patch` is a unified patch for exactly ONE file and `view` is `"unified"`
   (default) or `"split"`. bb normalizes the patch, so a GitHub REST patch or
   a bare `@@` hunk works without synthesizing a `diff --git` header
@@ -129,7 +129,11 @@ className? }` —
   `{ old: { path, content }, new: { path, content } }`; when supplied and
   consistent with the patch, bb enables expand-context controls between
   hunks. The caller owns loading those complete UTF-8 sides and omits the prop
-  while it has only the patch. Reference: `plugins/github/app.tsx`.
+  while it has only the patch. `experimental_expandUnchanged` renders those
+  sides whole — every unchanged region instead of the collapsed hunks — and is
+  ignored without `experimental_fullFileContents`; very large sides or an
+  invalid patch fall back to the collapsed render. Reference:
+  `plugins/github/app.tsx`.
 
   Alias both on import — JSX reads a lowercase-initial name as an intrinsic
   element:
@@ -145,6 +149,48 @@ className? }` —
   not, so code there renders unhighlighted rather than broken.
   Experimental: see `docs/api_to_audit.md`.
 
+- `experimental_DiffChangeRail` — bb's change map for a diff: a narrow strip
+  marking the diff's changed regions that doubles as its scroll control
+  (click or drag to jump; arrows, Page Up/Down, Home, and End when focused).
+  Props are `DiffChangeControlsProps`:
+  `{ scrollElement: HTMLElement | null, className? }`, where `scrollElement` is
+  the element that scrolls the diff. Render it as a flex-row sibling of that
+  scroller, never inside it, because the rail must not move with the content:
+
+  ```tsx
+  import {
+    experimental_Diff as Diff,
+    experimental_DiffChangeRail as DiffChangeRail,
+  } from "@get-bb/plugin-sdk/app";
+
+  <div className="flex min-h-0 flex-1">
+    <div ref={scrollerRef} className="min-h-0 flex-1 overflow-auto">
+      <Diff patch={file.patch} path={file.path} />
+    </div>
+    <DiffChangeRail scrollElement={scrollElement} />
+  </div>;
+  ```
+
+  The rail paints nothing when the diff has no changed lines or does not
+  scroll, and obeys the app-wide change map preference. The caller keeps its
+  own scroll container: bb neither adds scrolling nor restyles it.
+  Experimental: see `docs/api_to_audit.md`.
+
+- `experimental_DiffChangeNav` — bb's change stepper for a diff the plugin
+  renders: previous/next change buttons with an `n/total` counter, taking the
+  same `DiffChangeControlsProps` as the change rail. Put it in the plugin's diff
+  toolbar and pass the scroller the diff lives in. The buttons disable
+  themselves at the first and last change, and the control scrolls the diff to
+  its first change as soon as the diff's rows render, so an opened diff does not
+  start above the change; pass `jumpToFirstChange: false` to leave it where the
+  caller put it. It describes bb's renderer, so a plugin that replaces
+  `experimental_diffRenderer` gets no change positions.
+  Experimental: see `docs/api_to_audit.md`.
+- `experimental_DiffChangeRailToggle` — the host's change map switch, so a
+  plugin toolbar offers the same control bb's diff toolbars do. Props are
+  `DiffChangeRailToggleProps`: `{ className? }`. It flips the shared preference
+  for every change map in bb, including bb's own, and remembers the choice.
+  Experimental: see `docs/api_to_audit.md`.
 - `Markdown` — bb's chat-message markdown renderer (same typography,
   spacing, and code styling as timeline messages). Props:
   `{ content, className? }`. Use it wherever plugin UI quotes or previews
@@ -272,12 +318,13 @@ className?, draftKey? }` — the `default*` props are SEEDS, not controlled
   submit it calls `onSubmit(request)` with a JSON-serializable
   `NewThreadRequest`
   `{ projectId, providerId, model, reasoningLevel, permissionMode,
-serviceTier?, executionInputSources, environment, input }`. Forward it
-  verbatim to your backend rpc and hand it to `bb.sdk.threads.spawn`,
-  adding `sectionId` / `parentThreadId` / `title` / `visibility` yourself —
-  `spawn` fills in `origin: "plugin"` and `originPluginId`, so threads
-  created this way stay attributed to your plugin. The draft clears when
-  `onSubmit` resolves and is KEPT if it throws, so a failed create never
+serviceTier?, executionInputSources, environment, input }`. Hand it to
+  `useSdk().threads.spawn` from the frontend (or forward it verbatim to your
+  backend rpc and `bb.sdk.threads.spawn` when the create needs server-side
+  work), adding `sectionId` / `parentThreadId` / `title` / `visibility`
+  yourself — both clients fill in `origin: "plugin"` and `originPluginId`, so
+  threads created this way stay attributed to your plugin. The draft clears
+  when `onSubmit` resolves and is KEPT if it throws, so a failed create never
   loses what the user typed.
 
   Alias it on import — JSX reads a lowercase-initial name as an intrinsic
@@ -285,31 +332,26 @@ serviceTier?, executionInputSources, environment, input }`. Forward it
 
   ```tsx
   // app.tsx
-  import { experimental_NewThreadComposer as NewThreadComposer } from "@get-bb/plugin-sdk/app";
+  import {
+    experimental_NewThreadComposer as NewThreadComposer,
+    useSdk,
+  } from "@get-bb/plugin-sdk/app";
 
+  const sdk = useSdk();
   <NewThreadComposer
     defaultProjectId={projectId}
     onSubmit={async (request) => {
-      await rpc.call("createThread", { request, sectionId });
+      await sdk.threads.spawn({
+        ...request,
+        ...(sectionId ? { sectionId } : {}),
+      });
     }}
   />;
-  ```
-
-  ```ts create-thread-handler
-  // server.ts
-  async createThread({ request, sectionId }) {
-    const thread = await bb.sdk.threads.spawn({
-      ...request,
-      ...(sectionId ? { sectionId } : {}),
-    });
-    return { threadId: thread.id };
-  }
   ```
 
   Experimental: the `experimental_` prefix will drop once the entry in
   `docs/api_to_audit.md` is audited. Give it real width — the control row
   does not fit in a ~420px column.
-
 
 ## Shared app and provider icons
 
@@ -341,10 +383,15 @@ string), and `strings.iconTint` without fetching. An id-only record resolves a
 frontend registration or fallback. For example:
 
 ```tsx
-<ProviderIcon providerKind="agent" provider={provider} fallback="Bot" className="size-4" />
+<ProviderIcon
+  providerKind="agent"
+  provider={provider}
+  fallback="Bot"
+  className="size-4"
+/>
 ```
 
- Resolution is the matching kind/id `app.slots.experimental_providerIcon` override,
+Resolution is the matching kind/id `app.slots.experimental_providerIcon` override,
 then a legacy unscoped override, then
 declared logo mask, then glyph through the shared app registry, then fallback.
 Invalid tints are ignored. Overrides update and remount per plugin generation;

@@ -1,8 +1,14 @@
 import { ProviderIcon } from "@/components/plugin/ProviderIcon";
 import { Icon } from "@bb/shared-ui/icon";
-import { useCallback, useMemo } from "react";
-import type { MarkdownProps, PluginSdkApp } from "@get-bb/plugin-sdk";
+import type { PluginSdkApp } from "@get-bb/plugin-sdk";
 import { PluginDiff } from "@/components/plugin/PluginDiff";
+import { PluginMarkdown } from "@/components/plugin/PluginMarkdown";
+// bb-fork(diff-rail): host diff change map for plugin-embedded diffs.
+import {
+  DiffChangeRail,
+  DiffChangeRailToggle,
+} from "@/components/code/DiffChangeRail.fork";
+import { DiffChangeNav } from "@/components/code/DiffChangeNav.fork";
 import { PluginBranchPicker } from "@/components/plugin/PluginBranchPicker";
 import {
   usePluginBranches,
@@ -13,14 +19,11 @@ import { PluginProviderModelPicker } from "@/components/plugin/PluginProviderMod
 import { PluginPermissionModePicker } from "@/components/plugin/PluginPermissionModePicker";
 import { PluginSourceCode } from "@/components/plugin/PluginSourceCode";
 import { PluginThreadChat } from "@/components/plugin/PluginThreadChat";
+import { PluginThreadTitle } from "@/components/plugin/PluginThreadTitle";
 import { PluginUrlLink } from "@/components/plugin/PluginUrlLink";
 import { ExperimentalFileLink } from "@/components/plugin/ExperimentalFileLink";
-import { MarkdownPreview } from "@/components/ui/markdown-preview";
-import type { MarkdownLinkRouting } from "@/components/ui/markdown-link-routing";
-import { buildMarkdownDocumentLinkRouting } from "@/components/ui/markdown-document-link-routing";
-import { buildMarkdownMessageLinkRouting } from "@/components/ui/markdown-message-link-routing";
-import type { MarkdownPreviewLinkHandler } from "@/components/ui/markdown-link";
-import { useThreadTimelineNavigation } from "@/components/thread/timeline/ThreadTimelineNavigationContext";
+import { usePluginId } from "@/components/plugin/plugin-context";
+import { useQuestionFormHost } from "@bb/shared-ui/question-form-host";
 import { definePluginApp } from "./plugin-app-definition";
 import { installDeprecatedAliases } from "./plugin-sdk-deprecated-aliases";
 import {
@@ -28,21 +31,35 @@ import {
   useBbNavigate,
   useComposer,
   useComposerView,
+  useEnvironmentProviders,
   useProviders,
   useRealtime,
   useRealtimeConnectionState,
   useRpc,
+  useSdk,
   useSettings,
   experimental_useAppPanel,
   experimental_useFixedTabTarget,
 } from "./plugin-sdk-hooks";
 import {
   useSidebarThreadActions,
+  useSidebarThreadDraft,
+  useSidebarThreadDraftIds,
   useSidebarThreadPullRequest,
+  useSidebarThreadRowStatus,
+  useSidebarThreadRowStatuses,
+  useSidebarThreadShortcut,
   useSidebarThreads,
 } from "./plugin-sidebar-hooks";
-import { useSidebarThreadSplit } from "./plugin-sidebar-split";
-import { useAppNavigationHost } from "./app-navigation-host";
+import {
+  useSidebarSplitLayout,
+  useSidebarThreadSplit,
+} from "./plugin-sidebar-split";
+import {
+  useSidebarNavigation,
+  useSidebarNavigationSplit,
+} from "./plugin-sidebar-navigation";
+import { SidebarNavigationIcon } from "@/components/sidebar/SidebarNavigationModel";
 import { useCodeTheme } from "./plugin-code-theme";
 
 export const pluginSdkAppImplementation = installDeprecatedAliases(
@@ -51,6 +68,8 @@ export const pluginSdkAppImplementation = installDeprecatedAliases(
     experimental_Icon: Icon,
     experimental_ProviderIcon: ProviderIcon,
     useBbContext,
+    experimental_usePluginId: usePluginId,
+    experimental_useQuestionFormHost: useQuestionFormHost,
     useBbNavigate,
     experimental_useAppPanel,
     experimental_useFixedTabTarget,
@@ -72,58 +91,27 @@ export const pluginSdkAppImplementation = installDeprecatedAliases(
     experimental_useCheckoutState: usePluginCheckoutState,
     experimental_SourceCode: PluginSourceCode,
     experimental_Diff: PluginDiff,
+    experimental_DiffChangeRail: DiffChangeRail,
+    experimental_DiffChangeRailToggle: DiffChangeRailToggle,
+    experimental_DiffChangeNav: DiffChangeNav,
     experimental_useSidebarThreads: useSidebarThreads,
     experimental_useSidebarThreadActions: useSidebarThreadActions,
     experimental_useSidebarThreadPullRequest: useSidebarThreadPullRequest,
     experimental_useSidebarThreadSplit: useSidebarThreadSplit,
+    experimental_useSidebarNavigation: useSidebarNavigation,
+    experimental_useSidebarNavigationSplit: useSidebarNavigationSplit,
+    experimental_SidebarNavigationIcon: SidebarNavigationIcon,
+    useSidebarThreadDraft,
+    useSidebarThreadDraftIds,
+    useSidebarThreadRowStatus,
+    useSidebarThreadRowStatuses,
+    useSidebarSplitLayout,
+    useSidebarThreadShortcut,
+    ThreadTitle: PluginThreadTitle,
+    useEnvironmentProviders,
+    useSdk,
     experimental_useProviders: useProviders,
     experimental_useCodeTheme: useCodeTheme,
   } satisfies PluginSdkApp,
   { experimental_UrlLink: "UrlLink" },
 );
-
-function PluginMarkdown({
-  content,
-  className,
-  experimental_document,
-}: MarkdownProps) {
-  const timelineNavigation = useThreadTimelineNavigation();
-  const onOpenLocalFileLink = timelineNavigation?.onOpenLocalFileLink;
-  const threadId = timelineNavigation?.threadId;
-  const workspaceRootPath = timelineNavigation?.workspaceRootPath;
-  const navigation = useAppNavigationHost();
-  const onOpenLink = useCallback<MarkdownPreviewLinkHandler>(
-    ({ href }) => navigation.openUrl({ url: href }),
-    [navigation],
-  );
-  const linkRouting = useMemo<MarkdownLinkRouting>(() => {
-    const messageRouting = buildMarkdownMessageLinkRouting({
-      onOpenLink,
-      onOpenLocalFileLink,
-      threadId,
-      workspaceRootPath,
-    }) ?? { onOpenLink };
-    return experimental_document === undefined
-      ? messageRouting
-      : buildMarkdownDocumentLinkRouting({
-          document: experimental_document,
-          messageRouting,
-          openFilePreview: navigation.openFilePreview,
-        });
-  }, [
-    experimental_document,
-    navigation.openFilePreview,
-    onOpenLink,
-    onOpenLocalFileLink,
-    threadId,
-    workspaceRootPath,
-  ]);
-
-  return (
-    <MarkdownPreview
-      content={content}
-      className={className}
-      linkRouting={linkRouting}
-    />
-  );
-}

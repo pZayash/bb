@@ -8,7 +8,13 @@ import {
 } from "./api/machine-environment.js";
 import {
   machineEnvironmentReplaceSchema,
+  setAiServiceSelectionRequestSchema,
+  testAiServiceRequestSchema,
   type MachineEnvironmentReplace,
+  type SetAiServiceSelectionRequest,
+  type SystemAiServicesResponse,
+  type TestAiServiceRequest,
+  type TestAiServiceResponse,
 } from "./api/system.js";
 import {
   desktopBrowserHostRequestSchema,
@@ -116,10 +122,12 @@ import type {
   EnvironmentPathsQuery,
   EnvironmentPullRequestResponse,
   EnvironmentStatusQuery,
+  EnvironmentCommitsResponse,
   EnvironmentStatusResponse,
   HostDirectoryListing,
   HostDirectoryQuery,
   HostEnrollmentCommandResponse,
+  HostReconnectResponse,
   HostListQuery,
   HostActionResponse,
   HostCloneDefaultPathQuery,
@@ -145,6 +153,8 @@ import type {
   HostPickFolderResponse,
   HostPathsExistRequest,
   HostPathsExistResponse,
+  // bb-fork(windows): shell enumeration for the Start terminal picker.
+  HostTerminalShellsResponse,
   HostProviderCliInstallEvent,
   HostProviderCliInstallRequest,
   HostProviderCliStatusResponse,
@@ -202,6 +212,10 @@ import type {
   SystemProvidersQuery,
   SystemProviderStatesResponse,
   SystemUsageLimitsQuery,
+  SystemAppUpdateAcknowledgeRequest,
+  SystemAppUpdateApplyRequest,
+  SystemAppUpdateQuery,
+  SystemAppUpdateStatus,
   SystemVersionQuery,
   SystemVersionResponse,
   SystemVoiceTranscriptionForm,
@@ -249,7 +263,6 @@ import type {
   ThreadStoragePathsQuery,
   ThreadTimelineQuery,
   ThreadTimelineResponse,
-  ThreadImageMetadata,
   ThreadContextResponse,
   ThreadWithIncludesResponse,
   TimelineTurnSummaryDetailsQuery,
@@ -265,6 +278,7 @@ import type {
   UpdateThreadPluginMetadataRequest,
   UpdateThreadRequest,
   UpdateQueuedMessageRequest,
+  UpdateThreadDraftRequest,
   UploadedPromptAttachment,
   WorkspaceFileListResponse,
   WorkspacePathListResponse,
@@ -297,6 +311,7 @@ import {
   createQueuedMessageRequestSchema,
   queuedMessageListQuerySchema,
   updateQueuedMessageRequestSchema,
+  updateThreadDraftRequestSchema,
   createThreadRequestSchema,
   forkThreadRequestSchema,
   updateThreadPluginMetadataRequestSchema,
@@ -352,6 +367,9 @@ import {
   systemProvidersQuerySchema,
   systemUsageLimitsQuerySchema,
   systemVersionQuerySchema,
+  systemAppUpdateAcknowledgeRequestSchema,
+  systemAppUpdateApplyRequestSchema,
+  systemAppUpdateQuerySchema,
   threadEventWaitQuerySchema,
   threadEventsQuerySchema,
   threadFilesRawQuerySchema,
@@ -370,7 +388,6 @@ import {
   terminalOutputQuerySchema,
   terminalResizeRequestSchema,
   threadTimelineQuerySchema,
-  threadImageMetadataSchema,
   systemCliSkillsStatusQuerySchema,
   systemInstallCliSkillsRequestSchema,
   timelineTurnSummaryDetailsQuerySchema,
@@ -850,6 +867,12 @@ export const publicApiRoutes = {
       request: noRequest<PathId>(),
       response: jsonResponse<HostEnrollmentCommandResponse>(),
     }),
+    reconnect: defineRoute({
+      path: "/hosts/:id/reconnect-commands",
+      method: "post",
+      request: noRequest<PathId>(),
+      response: jsonResponse<HostReconnectResponse>({ status: 201 }),
+    }),
     update: defineRoute({
       path: "/hosts/:id",
       method: "patch",
@@ -931,6 +954,13 @@ export const publicApiRoutes = {
         hostPickFolderRequestSchema,
       ),
       response: jsonResponse<HostPickFolderResponse>(),
+    }),
+    // bb-fork(windows): shells this host can launch from Start terminal.
+    terminalShells: defineRoute({
+      path: "/hosts/:id/terminal-shells",
+      method: "get",
+      request: noRequest<PathId>(),
+      response: jsonResponse<HostTerminalShellsResponse>(),
     }),
     providerCliStatus: defineRoute({
       path: "/hosts/:id/provider-clis/status",
@@ -1106,6 +1136,13 @@ export const publicApiRoutes = {
         environmentStatusQuerySchema,
       ),
       response: jsonResponse<EnvironmentStatusResponse>(),
+    }),
+    // bb-fork(thread-start-ref): recent commits for the start-commit picker.
+    commits: defineRoute({
+      path: "/environments/:id/commits",
+      method: "get",
+      request: noRequest<PathId>(),
+      response: jsonResponse<EnvironmentCommitsResponse>(),
     }),
     pullRequest: defineRoute({
       path: "/environments/:id/pull-request",
@@ -1470,6 +1507,14 @@ export const publicApiRoutes = {
       ),
       response: jsonResponse<ThreadPaneActionResponse>(),
     }),
+    updateDraft: defineRoute({
+      path: "/threads/:id/draft",
+      method: "put",
+      request: jsonRequest<PathId, UpdateThreadDraftRequest>(
+        updateThreadDraftRequestSchema,
+      ),
+      response: jsonResponse<ThreadResponse>(),
+    }),
     tabs: defineRoute({
       path: "/threads/:id/tabs",
       method: "get",
@@ -1555,6 +1600,21 @@ export const publicApiRoutes = {
       request: noRequest<PathId>(),
       response: jsonResponse<{ ok: true }>(),
     }),
+    /**
+     * Ask the environment provider to restore a thread's destroyed environment
+     * and attach the result; the provider decides what restoring means, such
+     * as checking the recorded branch out again. Sends to such a thread fail
+     * until this runs. Answers
+     * the thread as it now stands — `starting`, with provisioning underway —
+     * and starts no turn: the thread settles back to `idle` once the workspace
+     * is ready. Refused unless `canRestoreEnvironment` is true.
+     */
+    restoreEnvironment: defineRoute({
+      path: "/threads/:id/restore-environment",
+      method: "post",
+      request: noRequest<PathId>(),
+      response: jsonResponse<ThreadResponse>(),
+    }),
     read: defineRoute({
       path: "/threads/:id/read",
       method: "post",
@@ -1566,14 +1626,6 @@ export const publicApiRoutes = {
       method: "post",
       request: noRequest<PathId>(),
       response: jsonResponse<ThreadResponse>(),
-    }),
-    saveImageMetadata: defineRoute({
-      path: "/threads/:id/timeline/image-metadata",
-      method: "put",
-      request: jsonRequest<PathId, ThreadImageMetadata>(
-        threadImageMetadataSchema,
-      ),
-      response: jsonResponse<{ ok: true }>(),
     }),
     timeline: defineRoute({
       path: "/threads/:id/timeline",
@@ -1753,6 +1805,28 @@ export const publicApiRoutes = {
       request: noRequest(),
       response: jsonResponse<SystemConfigResponse>(),
     }),
+    aiServices: defineRoute({
+      path: "/system/ai-services",
+      method: "get",
+      request: noRequest(),
+      response: jsonResponse<SystemAiServicesResponse>(),
+    }),
+    setAiServiceSelection: defineRoute({
+      path: "/system/ai-services/selection",
+      method: "put",
+      request: jsonRequest<EmptyInput, SetAiServiceSelectionRequest>(
+        setAiServiceSelectionRequestSchema,
+      ),
+      response: jsonResponse<SystemAiServicesResponse>(),
+    }),
+    testAiService: defineRoute({
+      path: "/system/ai-services/test",
+      method: "post",
+      request: jsonRequest<EmptyInput, TestAiServiceRequest>(
+        testAiServiceRequestSchema,
+      ),
+      response: jsonResponse<TestAiServiceResponse>(),
+    }),
     generalSettings: defineRoute({
       path: "/settings/general",
       method: "put",
@@ -1918,6 +1992,30 @@ export const publicApiRoutes = {
         systemVersionQuerySchema,
       ),
       response: jsonResponse<SystemVersionResponse>(),
+    }),
+    appUpdate: defineRoute({
+      path: "/system/app-update",
+      method: "get",
+      request: optionalQueryRequest<EmptyInput, SystemAppUpdateQuery>(
+        systemAppUpdateQuerySchema,
+      ),
+      response: jsonResponse<SystemAppUpdateStatus>(),
+    }),
+    applyAppUpdate: defineRoute({
+      path: "/system/app-update/apply",
+      method: "post",
+      request: jsonRequest<EmptyInput, SystemAppUpdateApplyRequest>(
+        systemAppUpdateApplyRequestSchema,
+      ),
+      response: jsonResponse<SystemAppUpdateStatus>(),
+    }),
+    acknowledgeAppUpdate: defineRoute({
+      path: "/system/app-update/acknowledge",
+      method: "post",
+      request: jsonRequest<EmptyInput, SystemAppUpdateAcknowledgeRequest>(
+        systemAppUpdateAcknowledgeRequestSchema,
+      ),
+      response: jsonResponse<SystemAppUpdateStatus>(),
     }),
   },
 };

@@ -44,6 +44,7 @@ export function makeEnvironment(
     baseBranch: "main",
     defaultBranch: "main",
     mergeBaseBranch: null,
+    startRef: null,
     status: "ready",
     environmentProviderId: "git-worktree",
     environmentProviderSelection: {
@@ -52,6 +53,7 @@ export function makeEnvironment(
     },
     environmentProviderInstanceKey: null,
     lifecycle: { phase: "active", retireAt: null, teardown: null },
+    hostLifecycle: "active",
     managed: true,
     workspaceProvisionType: "managed-worktree",
     createdAt: 0,
@@ -126,6 +128,8 @@ export function makeThread(overrides: Partial<Thread> = {}): Thread {
     sectionId: null,
     status: "idle",
     parentThreadId: null,
+    // bb-fork(parent-mute): default = parent notifications on
+    parentNotificationsMutedAt: null,
     lifecycleOwnerThreadId: null,
     sourceThreadId: null,
     originKind: null,
@@ -178,6 +182,8 @@ export function makeThreadListEntry(
       activeGoalCount: 0,
     },
     hasPendingInteraction: false,
+    model: "gpt-5.5",
+    reasoningLevel: null,
     environmentHostId: null,
     environmentName: null,
     environmentBranchName: null,

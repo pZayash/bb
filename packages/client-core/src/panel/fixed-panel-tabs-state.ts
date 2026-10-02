@@ -12,9 +12,11 @@ import {
   type ThreadTabFileOpenerOwner,
 } from "@bb/server-contract";
 import {
+  areFilePreviewDiffIntentsEqual,
   areFilePreviewLineRangesEqual,
   areEnvironmentFilePreviewSourcesEqual,
   type EnvironmentFilePreviewSource,
+  type FilePreviewDiffIntent,
   type FilePreviewLineRange,
   type HostFileTabState,
   type ThreadStorageFileTabState,
@@ -52,6 +54,15 @@ const environmentFilePreviewSourceSchema: z.ZodType<EnvironmentFilePreviewSource
   ]);
 const workspaceFilePreviewStatusLabelSchema: z.ZodType<WorkspaceFilePreviewStatusLabel | null> =
   z.literal("deleted").nullable();
+// bb-fork(file-diff-open): the open request asked for this file's diff view.
+const filePreviewDiffIntentSchema: z.ZodType<FilePreviewDiffIntent> = z
+  .object({
+    requestId: z.string().min(1),
+    // bb-fork(file-diff-base): optional so a tab written before it stays valid.
+    base: z.enum(["merge_base", "thread_start"]).optional(),
+    view: z.enum(["unified", "split"]),
+  })
+  .strict();
 const filePreviewLineRangeSchema: z.ZodType<FilePreviewLineRange> = z
   .object({
     endLineNumber: z.number().int().positive(),
@@ -86,6 +97,7 @@ const workspaceFilePreviewFixedPanelTabSchema = z
     id: z.string().min(1),
     kind: z.literal("workspace-file-preview"),
     lineRange: filePreviewLineRangeSchema.nullable().default(null),
+    diffIntent: filePreviewDiffIntentSchema.nullable().default(null),
     path: z.string().min(1),
     projectId: z.string().min(1).nullable().default(null),
     source: environmentFilePreviewSourceSchema,
@@ -236,6 +248,7 @@ export interface WorkspaceFilePreviewFixedPanelTab {
   projectId: string | null;
   source: EnvironmentFilePreviewSource;
   statusLabel: WorkspaceFilePreviewStatusLabel | null;
+  diffIntent?: FilePreviewDiffIntent | null;
 }
 
 export interface HostFilePreviewFixedPanelTab {
@@ -568,6 +581,7 @@ export function createWorkspaceFilePreviewFixedPanelTab({
     }),
     kind: "workspace-file-preview",
     lineRange: tab.lineRange,
+    diffIntent: tab.diffIntent ?? null,
     path: tab.path,
     projectId,
     source: tab.source,
@@ -819,6 +833,7 @@ function stripTransientFixedPanelTabForStorage(
       return {
         ...tab,
         lineRange: null,
+        ...(tab.kind === "workspace-file-preview" ? { diffIntent: null } : {}),
       };
     case "thread-info":
     case "git-diff":
@@ -844,7 +859,10 @@ function stripFileOpenerOwnerForStorage(
 ): ThreadTabFileOpenerOwner {
   switch (owner.kind) {
     case "workspace-file-preview":
-      return { ...owner, tab: { ...owner.tab, lineRange: null } };
+      return {
+        ...owner,
+        tab: { ...owner.tab, lineRange: null, diffIntent: null },
+      };
     case "host-file-preview":
       return { ...owner, tab: { ...owner.tab, lineRange: null } };
     case "thread-storage-file-preview":
@@ -1055,6 +1073,7 @@ export function areFixedPanelTabsEquivalent(
           a: a.lineRange,
           b: b.lineRange,
         }) &&
+        areFilePreviewDiffIntentsEqual(a.diffIntent, b.diffIntent) &&
         a.path === b.path &&
         a.projectId === b.projectId &&
         areEnvironmentFilePreviewSourcesEqual(a.source, b.source) &&
@@ -1116,7 +1135,11 @@ function areFileOpenerOwnersEqual(
     !areFilePreviewLineRangesEqual({
       a: a.tab.lineRange,
       b: b.tab.lineRange,
-    })
+    }) ||
+    !areFilePreviewDiffIntentsEqual(
+      a.kind === "workspace-file-preview" ? a.tab.diffIntent : null,
+      b.kind === "workspace-file-preview" ? b.tab.diffIntent : null,
+    )
   ) {
     return false;
   }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtom } from "jotai";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { DiffFileEntry, DiffPatchEntry } from "@bb/server-contract";
@@ -11,14 +11,21 @@ import {
   type RetryDiffPatchPath,
   useEnvironmentDiffPatches,
 } from "@/hooks/queries/use-environment-diff-patches";
+import { EmptyStatePanel } from "@bb/shared-ui/empty-state";
 import { cn } from "@bb/shared-ui/lib/utils";
 import { DiffFileCard } from "./DiffFileCard";
+// bb-fork(diff-rail): change map for the changed-files list.
+import {
+  DiffFilesPanelRail,
+  type DiffFilesPanelRailItem,
+} from "./DiffFilesPanelRail.fork";
 import {
   diffFileCardStateAtomFamily,
   estimateCardHeight,
   resolveCardCollapsed,
   resolveDiffFileCardInitialState,
 } from "./diffFilesStore";
+import { filterDiffFilesByPath } from "./gitDiffPanelHelpers";
 
 const DIFF_FILES_OVERSCAN = 4;
 const DIFF_FILES_GAP_PX = 8;
@@ -28,6 +35,7 @@ interface DiffFilesPanelProps {
   target: WorkspaceDiffTarget;
   diffIdentity: string;
   files: DiffFileEntry[];
+  fileFilter: string;
   initialPatches: DiffPatchEntry[];
   filesUpdatedAt: number;
   presentation: DiffPresentation;
@@ -47,6 +55,7 @@ export function DiffFilesPanel({
   target,
   diffIdentity,
   files,
+  fileFilter,
   initialPatches,
   filesUpdatedAt,
   presentation,
@@ -61,6 +70,13 @@ export function DiffFilesPanel({
   onSelectionAddToChat,
 }: DiffFilesPanelProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const attachScroll = useCallback((element: HTMLDivElement | null) => {
+    scrollRef.current = element;
+    setScrollElement(element);
+  }, []);
   const {
     requestPaths,
     getPatchState,
@@ -80,11 +96,16 @@ export function DiffFilesPanel({
     prunePaths(files.map((file) => file.path));
   }, [files, prunePaths]);
 
+  const visibleFiles = useMemo(
+    () => filterDiffFilesByPath(files, fileFilter),
+    [files, fileFilter],
+  );
+
   const virtualizer = useVirtualizer({
-    count: files.length,
+    count: visibleFiles.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: (index) => {
-      const entry = files[index];
+      const entry = visibleFiles[index];
       if (!entry) {
         return 0;
       }
@@ -94,7 +115,7 @@ export function DiffFilesPanel({
       }).collapsed;
       return estimateCardHeight({ entry, collapsed }) + DIFF_FILES_GAP_PX;
     },
-    getItemKey: (index) => files[index]?.path ?? index,
+    getItemKey: (index) => visibleFiles[index]?.path ?? index,
     overscan: DIFF_FILES_OVERSCAN,
   });
 
@@ -103,12 +124,29 @@ export function DiffFilesPanel({
     startIndex: 0,
     endIndex: -1,
   };
+  // bb-fork(diff-rail): one band per file, placed by the virtualizer.
+  const railItems: DiffFilesPanelRailItem[] = [];
+  visibleFiles.forEach((entry, index) => {
+    const measurement = virtualizer.measurementsCache[index];
+    if (measurement === undefined) return;
+    railItems.push({
+      additions: entry.additions,
+      deletions: entry.deletions,
+      start: measurement.start,
+      end: measurement.end,
+    });
+  });
+  const scrollToOffset = useCallback((offset: number) => {
+    const element = scrollRef.current;
+    if (element === null) return;
+    element.scrollTop = Math.max(0, offset);
+  }, []);
 
   const { visiblePaths, overscanPaths } = useMemo(() => {
     const visible: string[] = [];
     const overscan: string[] = [];
     for (const item of virtualItems) {
-      const entry = files[item.index];
+      const entry = visibleFiles[item.index];
       if (!entry || entry.loadMode !== "auto") {
         continue;
       }
@@ -119,7 +157,7 @@ export function DiffFilesPanel({
       }
     }
     return { visiblePaths: visible, overscanPaths: overscan };
-  }, [virtualItems, files, startIndex, endIndex]);
+  }, [virtualItems, visibleFiles, startIndex, endIndex]);
 
   const visibleKey = visiblePaths.join("\n");
   const overscanKey = overscanPaths.join("\n");
@@ -135,54 +173,81 @@ export function DiffFilesPanel({
     if (!scrollToPath || isPlaceholderData) {
       return;
     }
-    const index = files.findIndex((file) => file.path === scrollToPath);
+    const index = visibleFiles.findIndex((file) => file.path === scrollToPath);
     if (index < 0) {
       return;
     }
     virtualizer.scrollToIndex(index, { align: "start" });
     onScrolledToPath?.();
-  }, [scrollToPath, files, isPlaceholderData, virtualizer, onScrolledToPath]);
+  }, [
+    scrollToPath,
+    visibleFiles,
+    isPlaceholderData,
+    virtualizer,
+    onScrolledToPath,
+  ]);
+
+  if (visibleFiles.length === 0) {
+    return (
+      <div className={cn(PANEL_SCROLL_SLOT_CLASS, "px-4 pb-3")}>
+        <EmptyStatePanel className="rounded-lg">
+          No changed files match “{fileFilter.trim()}”.
+        </EmptyStatePanel>
+      </div>
+    );
+  }
 
   return (
-    <div ref={scrollRef} className={cn(PANEL_SCROLL_SLOT_CLASS, "px-4 pb-3")}>
+    <div className="flex min-h-0 flex-1">
       <div
-        className="relative w-full"
-        style={{ height: virtualizer.getTotalSize() }}
+        ref={attachScroll}
+        className={cn(PANEL_SCROLL_SLOT_CLASS, "px-4 pb-3")}
       >
-        {virtualItems.map((item) => {
-          const entry = files[item.index];
-          if (!entry) {
-            return null;
-          }
-          return (
-            <div
-              key={entry.path}
-              data-index={item.index}
-              ref={virtualizer.measureElement}
-              className="absolute left-0 w-full"
-              style={{
-                top: item.start,
-                paddingBottom: DIFF_FILES_GAP_PX,
-              }}
-            >
-              <DiffFileRow
-                entry={entry}
-                diffIdentity={diffIdentity}
-                fileCount={files.length}
-                presentation={presentation}
-                filePathRoot={filePathRoot}
-                patchState={getPatchState(entry.path)}
-                loadPath={loadPath}
-                retry={retry}
-                onOpenFileInEditor={onOpenFileInEditor}
-                onOpenFilePreview={onOpenFilePreview}
-                onRequestFileContents={onRequestFileContents}
-                onSelectionAddToChat={onSelectionAddToChat}
-              />
-            </div>
-          );
-        })}
+        <div
+          className="relative w-full"
+          style={{ height: virtualizer.getTotalSize() }}
+        >
+          {virtualItems.map((item) => {
+            const entry = visibleFiles[item.index];
+            if (!entry) {
+              return null;
+            }
+            return (
+              <div
+                key={entry.path}
+                data-index={item.index}
+                ref={virtualizer.measureElement}
+                className="absolute left-0 w-full"
+                style={{
+                  top: item.start,
+                  paddingBottom: DIFF_FILES_GAP_PX,
+                }}
+              >
+                <DiffFileRow
+                  entry={entry}
+                  diffIdentity={diffIdentity}
+                  fileCount={files.length}
+                  presentation={presentation}
+                  filePathRoot={filePathRoot}
+                  patchState={getPatchState(entry.path)}
+                  loadPath={loadPath}
+                  retry={retry}
+                  onOpenFileInEditor={onOpenFileInEditor}
+                  onOpenFilePreview={onOpenFilePreview}
+                  onRequestFileContents={onRequestFileContents}
+                  onSelectionAddToChat={onSelectionAddToChat}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
+      <DiffFilesPanelRail
+        items={railItems}
+        onScrollToOffset={scrollToOffset}
+        scrollElement={scrollElement}
+        totalSize={virtualizer.getTotalSize()}
+      />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import {
   FilePreview as FilePreviewSurface,
+  type FilePreviewDiffSlot,
   type FilePreviewFile,
   type FilePreviewState,
   type TextFilePreviewKind,
@@ -37,6 +38,8 @@ interface SecondaryPanelFilePreviewProps {
   onOpenInEditor?: (path: string) => void;
   onRefresh?: () => void;
   statusLabel?: WorkspaceFilePreviewStatusLabel | null;
+  // bb-fork(file-diff): forwarded to the preview surface when supplied.
+  fileDiff?: FilePreviewDiffSlot | null;
 }
 
 interface BuildTextPreviewFileArgs {
@@ -186,6 +189,7 @@ export function SecondaryPanelFilePreview({
   onOpenInEditor,
   onRefresh,
   statusLabel = null,
+  fileDiff = null,
 }: SecondaryPanelFilePreviewProps) {
   const state = resolveSecondaryPanelFilePreviewState({
     activePath,
@@ -203,6 +207,7 @@ export function SecondaryPanelFilePreview({
       path={activePath}
       copyPath={copyPath}
       exportBaseHref={exportBaseHref}
+      fileDiff={fileDiff}
       onSelectionAddToChat={onSelectionAddToChat}
       onOpenInEditor={onOpenInEditor}
       onRefresh={onRefresh}

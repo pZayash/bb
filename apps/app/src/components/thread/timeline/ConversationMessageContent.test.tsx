@@ -46,7 +46,9 @@ describe("ConversationMessageContent assistant images", () => {
             showActions={false}
             mobileActionDisplay="overflow"
             streaming={false}
-            text="![Generated diagram](/workspace/output/diagram.png)"
+            text={
+              '![Generated diagram](/workspace/output/diagram.png)\n\n<video src="/workspace/output/clip.mp4" title="Clip" controls></video>'
+            }
           />
         </RouteNavigationProvider>
       </MemoryRouter>,
@@ -55,9 +57,12 @@ describe("ConversationMessageContent assistant images", () => {
     expect(
       screen
         .getByRole("img", { name: "Generated diagram" })
-        .getAttribute("data-markdown-image-src"),
+        .getAttribute("src"),
     ).toBe(
       "/api/v1/threads/thr_image/host-files/content?path=%2Fworkspace%2Foutput%2Fdiagram.png",
+    );
+    expect(screen.getByLabelText("Clip").getAttribute("src")).toBe(
+      "/api/v1/threads/thr_image/host-files/content?path=%2Fworkspace%2Foutput%2Fclip.mp4",
     );
   });
 });
@@ -92,7 +97,7 @@ describe("ConversationMessageContent user images", () => {
     );
 
     expect(
-      screen.getByRole("img", { name: "diagram" }).getAttribute("data-markdown-image-src"),
+      screen.getByRole("img", { name: "diagram" }).getAttribute("src"),
     ).toBe(
       "/api/v1/threads/thr_image/host-files/content?path=%2Fworkspace%2Foutput%2Fdiagram.png",
     );

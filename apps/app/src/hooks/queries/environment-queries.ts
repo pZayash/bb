@@ -13,7 +13,10 @@ import type {
   EnvironmentStatusResponse,
   WorkspacePathListResponse,
 } from "@bb/server-contract";
-import type { EnvironmentDiffArgs } from "@bb/sdk/browser";
+import type {
+  EnvironmentCommitsResult,
+  EnvironmentDiffArgs,
+} from "@bb/sdk/browser";
 import {
   buildFilePreview,
   normalizeFilePreviewMimeType,
@@ -34,12 +37,14 @@ import {
   environmentQueryKey,
   environmentWorkStatusQueryKey,
 } from "./query-keys";
+import { useDebouncedBranchSearchQuery } from "./branch-search-debounce";
 import {
   resolveEnvironmentDiffFilesPlaceholder,
   resolveEnvironmentMergeBaseBranchesPlaceholder,
   resolveEnvironmentWorkStatusPlaceholder,
 } from "./query-placeholders";
 import { requireEnabledQueryArg, type QueryOptions } from "./query-helpers";
+import { environmentCommitsQueryKey } from "./query-keys";
 import {
   EXPENSIVE_MANUAL_QUERY_POLICY,
   HEAVY_PAYLOAD_QUERY_POLICY,
@@ -136,6 +141,30 @@ export function useEnvironmentWorkStatus(
   });
 }
 
+// bb-fork(thread-start-ref): recent commits for the start-commit picker.
+export function useEnvironmentCommits(
+  environmentId: string | null | undefined,
+  options?: QueryOptions,
+) {
+  const enabled = (options?.enabled ?? true) && Boolean(environmentId);
+  useEnvironmentDetailRealtimeSubscription(environmentId, { enabled });
+
+  return useQuery<EnvironmentCommitsResult>({
+    queryKey: environmentCommitsQueryKey(environmentId),
+    queryFn: ({ signal }) =>
+      sdk.environments.commits({
+        environmentId: requireEnvironmentId(
+          environmentId,
+          "useEnvironmentCommits",
+        ),
+        signal,
+      }),
+    enabled,
+    ...REALTIME_OWNED_NO_FOCUS_QUERY_POLICY,
+    staleTime: 5_000,
+  });
+}
+
 export function getEnvironmentPullRequestFromResponse(
   response: EnvironmentPullRequestResponse | undefined,
 ): ThreadPullRequest | null {
@@ -200,7 +229,7 @@ export function useEnvironmentMergeBaseBranches(
   environmentId: string,
   options?: BranchQueryOptions,
 ) {
-  const query = options?.query?.trim() ?? "";
+  const query = useDebouncedBranchSearchQuery(options?.query?.trim() ?? "");
   const selectedBranch = options?.selectedBranch?.trim();
   const limit = options?.limit ?? MERGE_BASE_BRANCHES_LIMIT;
   const enabled = (options?.enabled ?? true) && Boolean(environmentId);

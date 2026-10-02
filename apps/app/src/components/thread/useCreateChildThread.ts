@@ -40,7 +40,8 @@ export function useCreateChildThread(): (thread: Thread) => Promise<void> {
         });
         if (executionOptions === null) {
           appToast.error("Could not create child thread", {
-            description: "The parent thread's execution defaults are unavailable.",
+            description:
+              "The parent thread's execution defaults are unavailable.",
           });
           return;
         }
@@ -73,7 +74,8 @@ export function useCreateChildThread(): (thread: Thread) => Promise<void> {
           }),
         );
       } catch {
-        // useCreateThread reports the failure through its mutation meta toast.
+        // bb-fork(windows): useCreateThread reports the failure through its
+        // bb-fork(windows): mutation meta toast.
       } finally {
         createInFlightRef.current = false;
       }

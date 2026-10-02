@@ -20,6 +20,7 @@ import {
   missingClaudeCliGuidance,
   translateMissingClaudeCliError,
 } from "./missing-cli-error.js";
+import { resolveClaudeSpawn } from "./claude-spawn.fork.js";
 
 export interface SdkSessionOptions {
   cwd: string;
@@ -56,6 +57,7 @@ export type ClaudeMutableFlagSettings = {
   enableWorkflows: boolean;
   effortLevel?: ClaudeSdkReasoningEffort;
   ultracode: boolean;
+  fastMode: boolean;
 };
 
 type SdkSessionMessageHandler = (message: SDKMessage) => void;
@@ -121,7 +123,12 @@ function spawnRecordedClaudeProcess(args: {
   spawnOptions: SpawnOptions;
   threadId: string | null;
 }): SpawnedProcess {
-  const child = spawn(args.spawnOptions.command, args.spawnOptions.args, {
+  // bb-fork(windows): a Node CLI entry must run through Node on Windows.
+  const launch = resolveClaudeSpawn(
+    args.spawnOptions.command,
+    args.spawnOptions.args,
+  );
+  const child = spawn(launch.command, launch.args, {
     cwd: args.spawnOptions.cwd,
     env: args.spawnOptions.env,
     signal: args.spawnOptions.signal,
@@ -282,7 +289,10 @@ export class SdkSession {
       ...(this.options.plugins ? { plugins: this.options.plugins } : {}),
       ...(this.options.thinking ? { thinking: this.options.thinking } : {}),
       ...(this.options.settings ? { settings: this.options.settings } : {}),
-      ...(this.options.extraArgs ? { extraArgs: this.options.extraArgs } : {}),
+      extraArgs: {
+        ...this.options.extraArgs,
+        "replay-user-messages": null,
+      },
     };
 
     try {

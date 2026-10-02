@@ -49,44 +49,48 @@ afterEach(async () => {
 });
 
 describe("workspace path discovery", () => {
-  it("includes tracked and non-ignored untracked files while pruning Git-ignored trees", async () => {
-    const root = await createRoot();
-    await initRepo(root);
-    await write(root, ".github/workflows/ci.yml");
-    await write(root, ".generated/tracked.txt");
-    await runGit(["add", "."], { cwd: root });
-    await write(
-      root,
-      ".gitignore",
-      ".generated/\ncustom-cache/\n.state/*\n!.state/keep.txt\n",
-    );
-    await write(root, ".git/info/exclude", "local-output/\n");
-    await write(root, ".generated/deep/ignored.txt");
-    await write(root, "custom-cache/arbitrary-tool/ignored.txt");
-    await write(root, "local-output/ignored.txt");
-    await write(root, ".state/drop.txt");
-    await write(root, ".state/keep.txt");
-    await write(root, "src/new\nfile.ts");
-    await write(root, "src/ignored\nfile.log");
-    await write(root, "src/.gitignore", "*.log\n");
-    await fs.mkdir(path.join(root, "empty"));
-    await fs.symlink("src/new\nfile.ts", path.join(root, "link.ts"));
+  // bb-fork(windows): filenames with newlines and symlinks are POSIX-only.
+  it.skipIf(process.platform === "win32")(
+    "includes tracked and non-ignored untracked files while pruning Git-ignored trees",
+    async () => {
+      const root = await createRoot();
+      await initRepo(root);
+      await write(root, ".github/workflows/ci.yml");
+      await write(root, ".generated/tracked.txt");
+      await runGit(["add", "."], { cwd: root });
+      await write(
+        root,
+        ".gitignore",
+        ".generated/\ncustom-cache/\n.state/*\n!.state/keep.txt\n",
+      );
+      await write(root, ".git/info/exclude", "local-output/\n");
+      await write(root, ".generated/deep/ignored.txt");
+      await write(root, "custom-cache/arbitrary-tool/ignored.txt");
+      await write(root, "local-output/ignored.txt");
+      await write(root, ".state/drop.txt");
+      await write(root, ".state/keep.txt");
+      await write(root, "src/new\nfile.ts");
+      await write(root, "src/ignored\nfile.log");
+      await write(root, "src/.gitignore", "*.log\n");
+      await fs.mkdir(path.join(root, "empty"));
+      await fs.symlink("src/new\nfile.ts", path.join(root, "link.ts"));
 
-    expect(await paths(root)).toEqual([
-      ".generated",
-      ".generated/tracked.txt",
-      ".github",
-      ".github/workflows",
-      ".github/workflows/ci.yml",
-      ".gitignore",
-      ".state",
-      ".state/keep.txt",
-      "empty",
-      "src",
-      "src/.gitignore",
-      "src/new\nfile.ts",
-    ]);
-  });
+      expect(await paths(root)).toEqual([
+        ".generated",
+        ".generated/tracked.txt",
+        ".github",
+        ".github/workflows",
+        ".github/workflows/ci.yml",
+        ".gitignore",
+        ".state",
+        ".state/keep.txt",
+        "empty",
+        "src",
+        "src/.gitignore",
+        "src/new\nfile.ts",
+      ]);
+    },
+  );
 
   it("resolves ignore rules relative to a subdirectory and a linked worktree", async () => {
     const root = await createRoot();
@@ -205,4 +209,67 @@ describe("workspace path discovery", () => {
     expect(alpha.paths.map((entry) => entry.path)).toEqual(["alpha.md"]);
     expect(beta.paths.map((entry) => entry.path)).toEqual(["beta.md"]);
   });
+
+  it("skips excluded names at any depth and never lists .git", async () => {
+    const root = await createRoot();
+    await write(root, ".git/HEAD");
+    await write(root, "node_modules/pkg/index.js");
+    await write(root, "apps/web/.turbo/log");
+    await write(root, "apps/web/.DS_Store");
+    await write(root, "apps/web/index.ts");
+    const listPaths = async (excludeNames: string[]) =>
+      (
+        await listWorkspacePaths({
+          ...listingArgs(root),
+          respectGitIgnore: false,
+          excludeNames,
+        })
+      )
+        .map((entry) => entry.path)
+        .sort();
+
+    expect(await listPaths(["node_modules", ".turbo", ".DS_Store"])).toEqual([
+      "apps",
+      "apps/web",
+      "apps/web/index.ts",
+    ]);
+    expect(await listPaths([])).toEqual([
+      "apps",
+      "apps/web",
+      "apps/web/.DS_Store",
+      "apps/web/.turbo",
+      "apps/web/.turbo/log",
+      "apps/web/index.ts",
+      "node_modules",
+      "node_modules/pkg",
+      "node_modules/pkg/index.js",
+    ]);
+  });
+
+  it("does not overflow the call stack merging a large subdirectory", async () => {
+    const root = await createRoot();
+    const nested = path.join(root, "many");
+    await fs.mkdir(nested, { recursive: true });
+    // bb-fork(windows): 150k file creations take minutes on NTFS, which blows
+    // bb-fork(windows): the timeout and the afterEach cleanup.
+    const fileCount = process.platform === "win32" ? 20_000 : 150_000;
+    const batchSize = 500;
+    for (let start = 0; start < fileCount; start += batchSize) {
+      const end = Math.min(start + batchSize, fileCount);
+      await Promise.all(
+        Array.from({ length: end - start }, (_, offset) =>
+          fs.writeFile(path.join(nested, `f${start + offset}.txt`), ""),
+        ),
+      );
+    }
+
+    const result = await listWorkspacePaths({
+      ...listingArgs(root),
+      includeDirectories: false,
+      includeHidden: false,
+      respectGitIgnore: false,
+    });
+
+    expect(result).toHaveLength(fileCount);
+  }, process.platform === "win32" ? 180_000 : 60_000);
 });

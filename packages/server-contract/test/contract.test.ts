@@ -49,9 +49,21 @@ interface OptionalServerFieldGroup {
   reason: string;
 }
 
-const OPTIONAL_SERVER_FIELD_GROUP_LIMIT = 45;
+const OPTIONAL_SERVER_FIELD_GROUP_LIMIT = 46;
 
 const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
+  {
+    reason:
+      "Older parent notices have no per-child outcomes. New notices omit interruption details for completed, failed, or unclassified turns; a recorded host-connection-loss cause is optional even when the interruption reason is known.",
+    fields: [
+      "threadTimelineResponseSchema.delta.upsertRows.systemMessageSubject.outcomes",
+      "threadTimelineResponseSchema.delta.upsertRows.systemMessageSubject.outcomes.interruption",
+      "threadTimelineResponseSchema.delta.upsertRows.systemMessageSubject.outcomes.interruption.cause",
+      "threadTimelineResponseSchema.rows.systemMessageSubject.outcomes",
+      "threadTimelineResponseSchema.rows.systemMessageSubject.outcomes.interruption",
+      "threadTimelineResponseSchema.rows.systemMessageSubject.outcomes.interruption.cause",
+    ],
+  },
   {
     reason:
       "A submitted plugin form leaves on its row only what the plugin's describeSubmission returned, and the whole description is absent when the plugin declares no describeSubmission or when that call throws or times out. Within one, an absent title means the presentation's completed label stands, an absent detail means the title is the whole row, and an absent payload means the row renders without handing anything to the plugin's own timeline renderer. bb never stores the form's payload or the submitted value, so these fields are the entire record of what happened.",
@@ -278,9 +290,8 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
   },
   {
     reason:
-      "Timeline snapshot and image metadata fields are absent on older servers; content metadata and detail continuation inputs only apply to paginated content.",
+      "Timeline snapshot fields are absent on older servers; content metadata and detail continuation inputs only apply to paginated content.",
     fields: [
-      "threadTimelineResponseSchema.imageMetadata",
       "threadTimelineResponseSchema.timelinePage.contentPage",
       "threadTimelineResponseSchema.timelinePage.historySnapshot",
       "threadTimelineResponseSchema.timelinePage.olderRowsSourceSeqEnd",
@@ -428,6 +439,8 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
     fields: [
       "updateEnvironmentRequestSchema.mergeBaseBranch",
       "updateEnvironmentRequestSchema.name",
+      // bb-fork(thread-start-ref): the start-commit baseline is PATCHed the same way.
+      "updateEnvironmentRequestSchema.startRef",
     ],
   },
   {
@@ -444,6 +457,10 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
       "Thread PATCH requests omit fields that should be left unchanged; null explicitly clears nullable values.",
     fields: [
       "updateThreadRequestSchema.model",
+      // bb-fork(quiet-reparent): omitted keeps the default parent notification
+      "updateThreadRequestSchema.ownershipNotice",
+      // bb-fork(parent-mute): omitted leaves the mute state untouched
+      "updateThreadRequestSchema.parentNotificationsMuted",
       "updateThreadRequestSchema.sectionId",
       "updateThreadRequestSchema.parentThreadId",
       "updateThreadRequestSchema.reasoningLevel",
@@ -503,6 +520,7 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
     fields: [
       "threadListQuerySchema.archived",
       "threadListQuerySchema.environmentId",
+      "threadListQuerySchema.hostId",
       "threadListQuerySchema.sectionId",
       "threadListQuerySchema.limit",
       "threadListQuerySchema.hasParent",
@@ -553,8 +571,9 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
   },
   {
     reason:
-      "sendAt is present only when the caller is scheduling the dispatch; omission means attempt the dispatch now, which allocates no queued row at all when nothing blocks it.",
+      "sendAt is present only when the caller is scheduling the dispatch, and draft only when it is saving the input as a draft thread instead; omission of both means attempt the dispatch now, which allocates no queued row at all when nothing blocks it.",
     fields: [
+      "createThreadRequestSchema.draft",
       "createThreadRequestSchema.sendAt",
       "sendMessageRequestSchema.sendAt",
     ],
@@ -1187,11 +1206,15 @@ describe("server-contract canonical schemas", () => {
           projectId: "proj_123",
           environmentId: null,
           providerId: "codex",
+          model: "gpt-5",
+          reasoningLevel: null,
           title: "Pending thread",
           titleFallback: "Pending thread",
           sectionId: null,
           status: "idle",
           parentThreadId: null,
+          // bb-fork(parent-mute): default = parent notifications on
+          parentNotificationsMutedAt: null,
           sourceThreadId: null,
           lifecycleOwnerThreadId: null,
           originKind: null,

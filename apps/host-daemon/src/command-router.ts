@@ -31,7 +31,7 @@ import { RuntimeManager } from "./runtime-manager.js";
 import type { PluginHostManager } from "./plugin-host-manager.js";
 import { runInSerialLane } from "./serial-lane.js";
 
-type CommandRouterLogger = Pick<HostDaemonLogger, "debug" | "warn">;
+type CommandRouterLogger = Pick<HostDaemonLogger, "debug" | "trace" | "warn">;
 
 type EnvironmentLaneMode = HostDaemonCommandEnvironmentLane;
 
@@ -299,7 +299,8 @@ export class CommandRouter {
       return;
     }
 
-    this.logger.debug?.(
+    // bb-fork(log-noise): per-RPC detail is trace-only.
+    this.logger.trace?.(
       {
         commandType: args.commandType,
         ...(args.errorCode ? { errorCode: args.errorCode } : {}),

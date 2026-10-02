@@ -232,12 +232,20 @@ target? })`. Inside the fixed-tab component,
   and disclosures share one surface.
 - `experimental_sidebarNavigation` → replaces the bounded navigation controls
   above the thread list. Registration:
-  `{ id, title, description?, component }`. The component receives semantic
-  host items, the active item id, the compact-viewport state,
-  `experimental_activate`, and `experimental_Original`. Search activation opens
-  the quick palette. No inline search field or query state exists. BB keeps the
-  drawer, thread list, footer, resize handle, and shortcut ownership.
-- `fileOpener` → `{ path: string, source, experimental_lineRange?, Original }` — register as a viewer/editor
+  `{ id, title, description?, component }`. The component receives the
+  compact-viewport state and `experimental_Original`; it reads items, the active item, and host actions
+  with `experimental_useSidebarNavigation()`.
+  Search activation opens the quick palette. No inline search field or query
+  state exists. BB keeps the drawer, thread list, footer, resize handle, and
+  shortcut ownership.
+- `experimental_sidebarHeader` → `{ width, controlSize, isCompactViewport }`
+  — renders controls in the sidebar header row between the sidebar toggle and
+  bb's back and forward buttons. Registration:
+  `{ id, title, description?, component }`. Exclusive; the user picks at most
+  one under Settings → Appearance → Header, and the default is bb's controls
+  only. Content is clipped to the row. Experimental: see
+  `docs/api_to_audit.md`.
+- `fileOpener` → `{ path: string, source, experimental_diffIntent?, experimental_lineRange?, Original }` — register as a viewer/editor
   for file extensions: `{ id, title, extensions: ["md"], component }`.
   Matching files use the first applicable opener in deterministic slot order
   by default. Users can pin BB's preview or a specific opener per extension
@@ -258,6 +266,16 @@ projectId, experimental_hostId? }` (nullable fields). The optional host ID
   identical range in the active tab. Apply the latest target after loading
   and on subsequent requests without replacing the editor model; null means
   no requested navigation.
+  `experimental_diffIntent` is a nullable `ExperimentalFileDiffIntent`
+  (`{ requestId, base?: "merge_base" | "thread_start", view: "unified" | "split" }`,
+  also fork-added) set when the
+  open asked for the file's diff — bb's changed-files list opens a file
+  straight into its diff, against `base` (absent meaning the merge base). BB
+  supplies a new object per request, including a
+  repeat request for the same file and view, so observe object identity,
+  apply a non-null intent (activate the diff in `view` against `base`), and
+  ignore null
+  rather than treating it as "close the diff". Older hosts may omit it.
   `Original` is BB's preview bound to this file; render it to
   delegate conditionally without re-entering plugin replacement resolution.
   Applies only to live file content — git-ref snapshots and deleted files

@@ -15,7 +15,6 @@ import {
   HOST_DAEMON_PROTOCOL_VERSION,
   HOST_DAEMON_ONLINE_RPC_COMMAND_TYPES,
   HOST_DAEMON_SETTLED_COMMAND_TYPES,
-  createHostDaemonClient,
   hostDaemonEnrollRequestSchema,
   hostDaemonEnrollResponseSchema,
   hostDaemonCommandResultSchemaByType,
@@ -278,6 +277,23 @@ const ONLINE_RPC_RESPONSE_RESULT_FIXTURES: OnlineRpcResponseResultFixtures = {
       "/home/me/missing": false,
     },
   },
+  // bb-fork(windows): shell enumeration for the Start terminal picker.
+  "host.list_terminal_shells": {
+    shells: [
+      {
+        id: "pwsh",
+        isDefault: true,
+        label: "PowerShell 7",
+        path: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+      },
+      {
+        id: "git-bash",
+        isDefault: false,
+        label: "Git Bash",
+        path: "C:\\Program Files\\Git\\bin\\bash.exe",
+      },
+    ],
+  },
   "project.inspect": {
     path: "/home/me/project",
     gitRemoteUrl: "git@example.com:me/project.git",
@@ -370,6 +386,15 @@ const ONLINE_RPC_RESPONSE_RESULT_FIXTURES: OnlineRpcResponseResultFixtures = {
     mimeType: "text/html",
     sizeBytes: 15,
     sha256: "a".repeat(64),
+  },
+  "host.read_file_chunk": {
+    path: "/tmp/clip.mp4",
+    content: "AAEC",
+    offset: 0,
+    sizeBytes: 3,
+    modifiedAtMs: 1234,
+    mimeType: "video/mp4",
+    revision: "a".repeat(64),
   },
   "host.read_file_relative": {
     path: "assets/logo.png",
@@ -471,6 +496,7 @@ const ONLINE_RPC_RESPONSE_RESULT_FIXTURES: OnlineRpcResponseResultFixtures = {
   "workspace.diff": WORKSPACE_UNAVAILABLE_RESULT,
   "workspace.diffFiles": WORKSPACE_UNAVAILABLE_RESULT,
   "workspace.diffPatch": WORKSPACE_UNAVAILABLE_RESULT,
+  "workspace.commits": WORKSPACE_UNAVAILABLE_RESULT,
   "workspace.pull_request": {
     outcome: "available",
     pullRequest: {
@@ -580,6 +606,19 @@ const WORKSPACE_DIFF_FILES_AVAILABLE_RESULT: JsonObject = {
   truncated: false,
 };
 
+const WORKSPACE_COMMITS_AVAILABLE_RESULT: JsonObject = {
+  outcome: "available",
+  commits: [
+    {
+      sha: "abc1234567890",
+      shortSha: "abc1234",
+      subject: "Commit the work",
+      authorName: "BB Tests",
+      authoredAt: 1790682398124,
+    },
+  ],
+};
+
 const WORKSPACE_DIFF_PATCH_AVAILABLE_RESULT: JsonObject = {
   outcome: "available",
   patches: [
@@ -624,6 +663,11 @@ const ADDITIONAL_ONLINE_RPC_RESPONSE_ROUND_TRIP_CASES: OnlineRpcResponseRoundTri
       name: "workspace.diffPatch available result",
       commandType: "workspace.diffPatch",
       result: WORKSPACE_DIFF_PATCH_AVAILABLE_RESULT,
+    },
+    {
+      name: "workspace.commits available result",
+      commandType: "workspace.commits",
+      result: WORKSPACE_COMMITS_AVAILABLE_RESULT,
     },
     {
       name: "workspace.pull_request no-PR result",
@@ -1136,7 +1180,7 @@ const CONTRIBUTED_ENV = [
 
 describe("host-daemon command schemas", () => {
   it("uses the current host-daemon protocol version", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(216);
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(221);
     expect(HOST_ARTIFACT_MAX_BYTES).toBe(256 * 1024 * 1024);
   });
 
@@ -4014,6 +4058,43 @@ describe("host-daemon session schemas", () => {
         start: { mode: "shell" },
       }).success,
     ).toBe(true);
+    // bb-fork(windows): the Start terminal picker sends a host shell id.
+    expect(
+      hostDaemonServerWsMessageSchema.safeParse({
+        type: "terminal.open",
+        contributedEnv: [],
+        requestId: "request-1",
+        terminalId: "term_123",
+        target: {
+          kind: "workspace",
+          environmentId: "env_123",
+          workspaceContext: {
+            workspacePath: "/tmp/workspace",
+          },
+        },
+        cols: TERMINAL_COLS_MAX,
+        rows: TERMINAL_ROWS_MAX,
+        start: { mode: "shell", shellId: "git-bash" },
+      }).success,
+    ).toBe(true);
+    expect(
+      hostDaemonServerWsMessageSchema.safeParse({
+        type: "terminal.open",
+        contributedEnv: [],
+        requestId: "request-1",
+        terminalId: "term_123",
+        target: {
+          kind: "workspace",
+          environmentId: "env_123",
+          workspaceContext: {
+            workspacePath: "/tmp/workspace",
+          },
+        },
+        cols: TERMINAL_COLS_MAX,
+        rows: TERMINAL_ROWS_MAX,
+        start: { mode: "shell", shellId: "" },
+      }).success,
+    ).toBe(false);
     expect(
       hostDaemonServerWsMessageSchema.safeParse({
         type: "terminal.resize",
@@ -4104,10 +4185,41 @@ describe("host-daemon session schemas", () => {
       }).success,
     ).toBe(false);
   });
+});
 
-  it("builds an internal client rooted at /internal", () => {
-    const client = createHostDaemonClient("http://localhost:3334", "secret");
-
-    expect(client.session.open.$url().pathname).toBe("/internal/session/open");
+describe("bounded file read contract", () => {
+  const command = {
+    type: "host.read_file_chunk",
+    path: "/tmp/clip.mp4",
+    rootPath: "/tmp",
+    offset: 0,
+    length: 0,
+    revision: null,
+  };
+  it("accepts metadata-only probes and bounded revision-checked reads", () => {
+    expect(hostDaemonOnlineRpcCommandSchema.parse(command)).toEqual(command);
+    expect(
+      hostDaemonOnlineRpcCommandSchema.parse({
+        ...command,
+        offset: 32 * 1024 * 1024,
+        length: 1024 * 1024,
+        revision: "a".repeat(64),
+      }),
+    ).toMatchObject({ length: 1024 * 1024 });
+  });
+  it.each([
+    { length: 1024 * 1024 + 1 },
+    { length: -1 },
+    { length: 1.5 },
+    { offset: -1 },
+    { offset: Number.MAX_SAFE_INTEGER + 1 },
+    { offset: 0.5 },
+    { revision: "invalid" },
+    { rootPath: undefined },
+  ])("rejects unsafe bounds or missing confinement: %j", (override) => {
+    expect(
+      hostDaemonOnlineRpcCommandSchema.safeParse({ ...command, ...override })
+        .success,
+    ).toBe(false);
   });
 });

@@ -348,6 +348,18 @@ function FileOpenerTabContent({
     const range = owner?.tab.lineRange;
     return range == null ? null : { ...range };
   }, [owner]);
+  // bb-fork(file-diff-open): the open request's diff view, when it asked for one.
+  const diffIntent = useMemo(() => {
+    if (owner?.kind !== "workspace-file-preview") return null;
+    const intent = owner.tab.diffIntent;
+    return intent == null
+      ? null
+      : {
+          base: intent.base,
+          requestId: intent.requestId,
+          view: intent.view,
+        };
+  }, [owner]);
   if (file === null || owner === undefined || original === undefined) {
     return <UnavailableFileOpenerTab />;
   }
@@ -365,6 +377,7 @@ function FileOpenerTabContent({
           <opener.component
             path={file.path}
             source={file.source}
+            experimental_diffIntent={diffIntent}
             experimental_lineRange={lineRange}
             Original={BoundOriginal}
             experimental_Original={deprecatedOriginalAlias(BoundOriginal)}

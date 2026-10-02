@@ -18,6 +18,8 @@ export interface DiffPresentation {
   view: DiffViewMode;
   overflow: CodeOverflowMode;
   showLineNumbers: boolean;
+  // bb-fork(file-diff): render both complete sides rather than only the hunks.
+  expandUnchanged?: boolean;
 }
 
 export interface BbSourceCodeProps extends SourceCodePresentation {

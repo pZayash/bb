@@ -249,6 +249,7 @@ type ExpectedEnvironmentsKey =
   | "listProviders"
   | "diff"
   | "diffBranches"
+  | "commits"
   | "diffFile"
   | "diffFiles"
   | "diffPatch"
@@ -277,6 +278,7 @@ type ExpectedHostsKey =
   | "cloneDefaultPath"
   | "experimental_create"
   | "experimental_getEnrollmentCommand"
+  | "experimental_reconnect"
   | "createJoinCode"
   | "delete"
   | "experimental_deleteOldServerCopy"
@@ -284,6 +286,8 @@ type ExpectedHostsKey =
   | "get"
   | "installProviderCli"
   | "list"
+  // bb-fork(windows): shells this host can launch from Start terminal.
+  | "listTerminalShells"
   | "experimental_listProviders"
   | "pathsExist"
   | "pickFolder"
@@ -297,6 +301,8 @@ type ExpectedHostsKey =
 
 type ExpectedPluginsKey =
   | "experimental_discoverRpc"
+  | "experimental_getSafeMode"
+  | "experimental_setSafeMode"
   | "applyUpdate"
   | "callRpc"
   | "catalog"
@@ -348,16 +354,22 @@ type ExpectedProvidersKey = "list" | "models";
 type ExpectedStatusKey = "get";
 
 type ExpectedSystemKey =
+  | "acknowledgeAppUpdate"
+  | "appUpdate"
+  | "applyAppUpdate"
   | "setMachineEnvironmentVariable"
   | "deleteMachineEnvironmentVariable"
   | "machineEnvironment"
   | "replaceMachineEnvironment"
+  | "aiServices"
   | "attention"
   | "cliSkillsStatus"
   | "config"
   | "executionOptions"
   | "installCliSkills"
   | "reloadConfig"
+  | "setAiServiceSelection"
+  | "testAiService"
   | "transcribeVoice"
   | "uiPreferences"
   | "updateExperiments"
@@ -374,7 +386,6 @@ type ExpectedThemeKey = "catalog" | "get" | "resolve" | "set";
 type ExpectedThreadSectionsKey = "create" | "delete" | "list" | "update";
 
 type ExpectedThreadsKey =
-  | "saveImageMetadata"
   | "getPluginMetadata"
   | "updatePluginMetadata"
   | "context"
@@ -407,6 +418,7 @@ type ExpectedThreadsKey =
   | "queuedMessages"
   | "reorderPinned"
   | "resolveMentions"
+  | "restoreEnvironment"
   | "retry"
   | "search"
   | "send"
@@ -421,6 +433,7 @@ type ExpectedThreadsKey =
   | "unarchive"
   | "unpin"
   | "update"
+  | "updateDraft"
   | "wait";
 
 type ExpectedThreadEventsKey = "list" | "wait";

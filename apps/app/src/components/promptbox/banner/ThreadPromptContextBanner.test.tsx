@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import type { ThreadPullRequest } from "@bb/domain";
@@ -50,8 +56,10 @@ const pullRequestFixture: ThreadPullRequest = {
 function makeGitSection(
   kind: ThreadPromptGitSection["changedFiles"]["kind"] = "uncommitted",
   mergeBase: ThreadPromptGitSection["mergeBase"] = null,
+  threadStartControl: ThreadPromptGitSection["threadStartControl"] = null,
 ): ThreadPromptGitSection {
   return {
+    threadStartControl,
     changedFiles: {
       kind,
       label: kind === "committed" ? "Committed" : "Uncommitted",
@@ -71,7 +79,123 @@ function makeGitSection(
 
 afterEach(cleanup);
 
+// bb-fork(thread-start-ref): the git row hosts the start-commit control.
+function renderGitRow(
+  threadStartControl: ThreadPromptGitSection["threadStartControl"],
+) {
+  return render(
+    <ThreadPromptContextBanner
+      gitSection={makeGitSection("committed", null, threadStartControl)}
+      gitSectionPending={false}
+      archivedSection={null}
+      environmentGoneSection={null}
+      parentThreadSection={null}
+      childThreadsSection={null}
+      pullRequestSection={null}
+      expandedSection={null}
+      onToggleSection={noop}
+    />,
+  );
+}
+
+// bb-fork(changed-files-filter): the changed-files list filters by path mask.
+function makeChangedFiles(paths: readonly string[]) {
+  return paths.map((path) => ({
+    path,
+    status: "M" as const,
+    insertions: 1,
+    deletions: 0,
+  }));
+}
+
+function renderExpandedGitBody(paths: readonly string[]) {
+  const section = makeGitSection();
+  const files = makeChangedFiles(paths);
+  return render(
+    <ThreadPromptContextBanner
+      gitSection={{
+        ...section,
+        changedFiles: {
+          ...section.changedFiles,
+          files,
+          stats: { ...section.changedFiles.stats, files },
+        },
+      }}
+      gitSectionPending={false}
+      archivedSection={null}
+      environmentGoneSection={null}
+      parentThreadSection={null}
+      childThreadsSection={null}
+      pullRequestSection={null}
+      expandedSection="git"
+      onToggleSection={noop}
+    />,
+  );
+}
+
 describe("ThreadPromptContextBanner", () => {
+  it("renders the supplied start-commit control in the changed-files row", () => {
+    renderGitRow(<button type="button">Since start</button>);
+
+    expect(screen.getByRole("button", { name: "Since start" })).toBeTruthy();
+  });
+
+  it("renders no start-commit control when the thread view supplies none", () => {
+    renderGitRow(null);
+
+    expect(screen.queryByRole("button", { name: "Since start" })).toBeNull();
+  });
+
+  it("filters the changed-files body by path mask", async () => {
+    const mdFiles = ["README.md", "docs/guide.md"];
+    renderExpandedGitBody([
+      "apps/app/src/Panel.tsx",
+      "apps/app/src/Button.tsx",
+      "apps/app/src/usePanel.ts",
+      "apps/server/src/routes/diff.ts",
+      "apps/server/src/routes/files.ts",
+      "apps/server/src/routes/index.ts",
+      "package.json",
+      ...mdFiles,
+    ]);
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(9);
+
+    fireEvent.change(screen.getByLabelText("Filter changed files by path"), {
+      target: { value: "*.md" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("listitem")).toHaveLength(mdFiles.length);
+    });
+    expect(screen.getByTitle("README.md")).toBeTruthy();
+    expect(screen.queryByTitle("apps/app/src/Panel.tsx")).toBeNull();
+  });
+
+  it("names the changed-files row after the section label", () => {
+    render(
+      <ThreadPromptContextBanner
+        gitSection={{
+          ...makeGitSection("committed", null, null),
+          changedFiles: {
+            ...makeGitSection("committed").changedFiles,
+            label: "Since thread start",
+          },
+        }}
+        gitSectionPending={false}
+        archivedSection={null}
+        environmentGoneSection={null}
+        parentThreadSection={null}
+        childThreadsSection={null}
+        pullRequestSection={null}
+        expandedSection={null}
+        onToggleSection={noop}
+      />,
+    );
+
+    expect(screen.getAllByText(/Since thread start/).length).toBeGreaterThan(0);
+  });
+
   it("renders the archived read-only status without an action", () => {
     const markup = renderToStaticMarkup(
       <ThreadPromptContextBanner
@@ -92,27 +216,61 @@ describe("ThreadPromptContextBanner", () => {
     expect(markup).not.toContain("<button");
   });
 
-  it("renders the environment-gone read-only status without a provision action", () => {
-    const markup = renderToStaticMarkup(
+  it.each([
+    ["removed", "Machine removed"],
+    ["removing", "Machine removal in progress"],
+    ["cleanup-failed", "Machine cleanup failed"],
+    ["destroyed", "Environment unavailable"],
+  ] as const)(
+    "collapses the %s explanation behind its status toggle by default",
+    (status, label) => {
+      const toggled: string[] = [];
+      render(
+        <ThreadPromptContextBanner
+          gitSection={null}
+          gitSectionPending={false}
+          archivedSection={null}
+          environmentGoneSection={{ status }}
+          parentThreadSection={null}
+          childThreadsSection={null}
+          pullRequestSection={null}
+          expandedSection={null}
+          onToggleSection={(section) => toggled.push(section)}
+        />,
+      );
+      const toggle = screen.getByRole("button", { name: label });
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(screen.queryByText(/history|machine settings/)).toBeNull();
+      expect(screen.queryByText("Provision")).toBeNull();
+      toggle.click();
+      expect(toggled).toEqual(["status"]);
+    },
+  );
+
+  it("shows the machine removal explanation once the status is expanded", () => {
+    render(
       <ThreadPromptContextBanner
         gitSection={null}
         gitSectionPending={false}
         archivedSection={null}
-        environmentGoneSection={{ status: "destroyed" }}
+        environmentGoneSection={{ status: "cleanup-failed" }}
         parentThreadSection={null}
         childThreadsSection={null}
         pullRequestSection={null}
-        expandedSection={null}
+        expandedSection="status"
         onToggleSection={noop}
       />,
     );
-
-    expect(markup).toContain("Environment archived");
-    expect(markup).toContain("This environment has been archived.");
-    expect(markup).not.toContain("to keep working");
-    expect(markup).toContain('role="status"');
-    expect(markup).not.toContain("<button");
-    expect(markup).not.toContain("Provision");
+    expect(
+      screen
+        .getByRole("button", { name: "Machine cleanup failed" })
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+    expect(
+      screen.getByText(
+        "This thread is unavailable while machine cleanup is pending. Retry cleanup in machine settings.",
+      ),
+    ).toBeDefined();
   });
 
   it.each([
@@ -126,7 +284,7 @@ describe("ThreadPromptContextBanner", () => {
       label: "environment archived",
       archivedSection: null,
       environmentGoneSection: { status: "destroyed" as const },
-      expectedLabel: "Environment archived",
+      expectedLabel: "Environment unavailable",
     },
   ])(
     "keeps the $label read-only status visible in compact mode",
@@ -158,17 +316,79 @@ describe("ThreadPromptContextBanner", () => {
     },
   );
 
-  it("prioritizes the archived-environment status over unarchiving", () => {
+  it("offers unarchiving first when an archived thread also lost its environment", () => {
+    const markup = renderToStaticMarkup(
+      <ThreadPromptContextBanner
+        gitSection={null}
+        gitSectionPending={false}
+        archivedSection={{
+          archivedAt: 1_731_456_000_000,
+          onUnarchive: noop,
+        }}
+        environmentGoneSection={{ status: "destroyed" }}
+        parentThreadSection={null}
+        childThreadsSection={null}
+        pullRequestSection={null}
+        expandedSection={null}
+        onToggleSection={noop}
+      />,
+    );
+
+    expect(markup).toContain("Environment unavailable");
+    expect(markup).not.toContain("Thread is archived");
+    expect(markup).toContain(">Unarchive<");
+  });
+
+  it("offers restoring the workspace once the thread is live again", () => {
+    const markup = renderToStaticMarkup(
+      <ThreadPromptContextBanner
+        gitSection={null}
+        gitSectionPending={false}
+        archivedSection={null}
+        environmentGoneSection={{ status: "destroyed", onRestore: noop }}
+        parentThreadSection={null}
+        childThreadsSection={null}
+        pullRequestSection={null}
+        expandedSection={null}
+        onToggleSection={noop}
+      />,
+    );
+
+    expect(markup).toContain("Environment unavailable");
+    expect(markup).toContain(">Restore workspace<");
+  });
+
+  it("shows the restore action as pending while it runs", () => {
+    const markup = renderToStaticMarkup(
+      <ThreadPromptContextBanner
+        gitSection={null}
+        gitSectionPending={false}
+        archivedSection={null}
+        environmentGoneSection={{
+          status: "destroyed",
+          onRestore: noop,
+          restorePending: true,
+        }}
+        parentThreadSection={null}
+        childThreadsSection={null}
+        pullRequestSection={null}
+        expandedSection={null}
+        onToggleSection={noop}
+      />,
+    );
+
+    expect(markup).toContain(">Restoring...<");
+    expect(markup).toContain("disabled");
+  });
+
+  it("keeps the restore action on a child thread with a parent segment", () => {
     const markup = renderToStaticMarkup(
       <MemoryRouter>
         <ThreadPromptContextBanner
           gitSection={null}
           gitSectionPending={false}
-          archivedSection={{
-            archivedAt: 1_731_456_000_000,
-            onUnarchive: noop,
-          }}
-          environmentGoneSection={{ status: "destroyed" }}
+          archivedSection={null}
+          environmentGoneSection={{ status: "destroyed", onRestore: noop }}
           parentThreadSection={{
             parentThreadTitle: "Parent thread",
             href: "/threads/thr_parent",
@@ -182,9 +402,36 @@ describe("ThreadPromptContextBanner", () => {
       </MemoryRouter>,
     );
 
-    expect(markup).toContain("Environment archived");
-    expect(markup).not.toContain("Thread is archived");
-    expect(markup).not.toContain(">Unarchive<");
+    expect(markup).toContain("Environment unavailable");
+    expect(markup).toContain(">Restore workspace<");
+  });
+
+  it("keeps the unarchive action on a child thread with a parent segment", () => {
+    const markup = renderToStaticMarkup(
+      <MemoryRouter>
+        <ThreadPromptContextBanner
+          gitSection={null}
+          gitSectionPending={false}
+          archivedSection={{
+            archivedAt: 1_731_456_000_000,
+            onUnarchive: noop,
+          }}
+          environmentGoneSection={null}
+          parentThreadSection={{
+            parentThreadTitle: "Parent thread",
+            href: "/threads/thr_parent",
+            relationship: "parent",
+          }}
+          childThreadsSection={null}
+          pullRequestSection={null}
+          expandedSection={null}
+          onToggleSection={noop}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(markup).toContain("Thread is archived");
+    expect(markup).toContain(">Unarchive<");
   });
 
   it("labels a standalone pull request without non-actionable attention text", () => {

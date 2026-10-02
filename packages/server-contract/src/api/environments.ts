@@ -6,6 +6,7 @@ import {
   gitBranchOptionsSchema,
   threadGitDiffResponseSchema,
   threadPullRequestSchema,
+  workspaceCommitSummarySchema,
   workspaceDiffTargetSchema,
   workspaceStatusSchema,
 } from "@bb/domain";
@@ -19,14 +20,24 @@ import {
 
 export const environmentNameSchema = z.string().trim().min(1).max(80);
 
+// bb-fork(thread-start-ref): the user can pin which commit a thread compares from.
+const environmentStartRefSchema = z
+  .string()
+  .regex(/^[0-9a-f]{4,40}$/iu)
+  .nullable();
+
 export const updateEnvironmentRequestSchema = z
   .object({
     mergeBaseBranch: gitBranchNameSchema.nullable(),
     name: environmentNameSchema.nullable(),
+    startRef: environmentStartRefSchema,
   })
   .partial()
   .refine(
-    (value) => value.mergeBaseBranch !== undefined || value.name !== undefined,
+    (value) =>
+      value.mergeBaseBranch !== undefined ||
+      value.name !== undefined ||
+      value.startRef !== undefined,
     "At least one field must be provided",
   );
 export type UpdateEnvironmentRequest = z.infer<
@@ -259,6 +270,29 @@ const environmentWorkspaceNotApplicableOutcomeSchema = z
     message: z.string().min(1),
   })
   .strict();
+
+// bb-fork(thread-start-ref): recent commits for the start-commit picker.
+export const environmentCommitsResponseSchema = z.discriminatedUnion(
+  "outcome",
+  [
+    z
+      .object({
+        outcome: z.literal("available"),
+        commits: z.array(workspaceCommitSummarySchema),
+      })
+      .strict(),
+    environmentWorkspaceNotApplicableOutcomeSchema,
+    z
+      .object({
+        outcome: z.literal("unavailable"),
+        failure: workspaceResolutionFailureSchema,
+      })
+      .strict(),
+  ],
+);
+export type EnvironmentCommitsResponse = z.infer<
+  typeof environmentCommitsResponseSchema
+>;
 
 export const environmentStatusResponseSchema = z.discriminatedUnion("outcome", [
   z

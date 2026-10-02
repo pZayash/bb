@@ -3,6 +3,12 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+// bb-fork(file-diff): workspace diff of the open file.
+import {
+  fileDiffResultSchema,
+  fileDiffSelectionSchema,
+  resolveFileDiff,
+} from "./lib/file-diff.server.fork.js";
 
 const MAX_EDITABLE_BYTES = 8 * 1024 * 1024;
 
@@ -40,6 +46,8 @@ export const rpcContract = defineRpcContract({
         sha256: z.string(),
         absolutePath: z.string(),
         relativePath: z.string(),
+        // bb-fork(md-preview): root for document-relative Markdown link routing.
+        rootPath: z.string(),
       }),
       z.object({ kind: z.literal("unsupported"), reason: z.string() }),
     ]),
@@ -69,6 +77,11 @@ export const rpcContract = defineRpcContract({
         currentSha256: z.string().nullable(),
       }),
     ]),
+  },
+  // bb-fork(file-diff): the file's diff against the workspace Git state.
+  diff: {
+    input: fileSchema.extend({ selection: fileDiffSelectionSchema }).strict(),
+    output: fileDiffResultSchema,
   },
 });
 
@@ -139,6 +152,18 @@ export default async function plugin(bb: BbPluginApi) {
     return assetLease;
   }
 
+  // bb-fork(windows): pick the path API from the root's own convention; a POSIX
+  // bb-fork(windows): remote root must not be joined with `\` just because the host is Windows.
+  function pathApiFor(value: string): typeof path.posix {
+    return /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("\\\\")
+      ? path.win32
+      : path.posix;
+  }
+
+  function hostJoin(root: string, ...segments: string[]): string {
+    return pathApiFor(root).join(root, ...segments);
+  }
+
   async function resolveTarget(
     source: z.infer<typeof sourceSchema>,
     filePath: string,
@@ -151,7 +176,7 @@ export default async function plugin(bb: BbPluginApi) {
         threadId: source.threadId,
       });
       return {
-        path: path.join(storageRootPath, filePath),
+        path: hostJoin(storageRootPath, filePath),
         rootPath: storageRootPath,
         hostId,
       };
@@ -174,7 +199,7 @@ export default async function plugin(bb: BbPluginApi) {
         throw new Error("This project has no matching source checkout");
       }
       return {
-        path: path.join(checkout.path, filePath),
+        path: hostJoin(checkout.path, filePath),
         rootPath: checkout.path,
         hostId: checkout.hostId,
       };
@@ -187,7 +212,7 @@ export default async function plugin(bb: BbPluginApi) {
     });
 
     if (source.kind === "host") {
-      const api = path.win32.isAbsolute(filePath) ? path.win32 : path.posix;
+      const api = pathApiFor(filePath);
       return {
         path: filePath,
         rootPath: api.dirname(filePath),
@@ -199,14 +224,14 @@ export default async function plugin(bb: BbPluginApi) {
       throw new Error("This environment has no workspace path");
     }
     return {
-      path: path.join(environment.path, filePath),
+      path: hostJoin(environment.path, filePath),
       rootPath: environment.path,
       ...(environment.hostId ? { hostId: environment.hostId } : {}),
     };
   }
 
   function relativeTo(root: string, target: string): string {
-    const api = path.win32.isAbsolute(root) ? path.win32 : path.posix;
+    const api = pathApiFor(root);
     return api.relative(root, target) || api.basename(target);
   }
 
@@ -235,6 +260,7 @@ export default async function plugin(bb: BbPluginApi) {
         sha256: file.sha256,
         absolutePath: target.path,
         relativePath: relativeTo(target.rootPath, target.path),
+        rootPath: target.rootPath,
       };
     },
 
@@ -270,5 +296,15 @@ export default async function plugin(bb: BbPluginApi) {
         ? { outcome: "written" as const, sha256: result.sha256 }
         : { outcome: "conflict" as const, currentSha256: result.currentSha256 };
     },
+
+    // bb-fork(file-diff): only workspace files have Git state to diff against.
+    diff: ({ path: filePath, source, selection }) =>
+      resolveFileDiff({
+        environmentId:
+          source.kind === "workspace" ? source.environmentId : null,
+        path: filePath,
+        plugin: bb,
+        selection,
+      }),
   });
 }

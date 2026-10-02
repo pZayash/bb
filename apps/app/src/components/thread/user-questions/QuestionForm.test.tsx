@@ -44,6 +44,7 @@ vi.mock("@/views/thread-detail/PaneContext", () => ({
 
 beforeEach(() => {
   pane.isFocused = true;
+  window.sessionStorage.clear();
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     value: vi.fn((query: string) => ({
@@ -92,6 +93,7 @@ function render(
     submit?: (value: InteractionResponse) => Promise<void>;
     cancel?: () => Promise<void>;
   } = {},
+  options: { draftKey?: string } = {},
 ) {
   return renderReact(
     <AppCommandProvider>
@@ -100,6 +102,7 @@ function render(
           questions={payload.questions}
           disabled={false}
           cancelDisabled={false}
+          draftKey={options.draftKey}
           onSubmit={(answers) => {
             void handlers.submit?.({ answers });
           }}
@@ -124,6 +127,51 @@ function getButtonByText(
 }
 
 describe("answering a single-select question", () => {
+  it("submits after a number shortcut followed by Enter", () => {
+    const submit = vi.fn(async () => undefined);
+    const slot = render(singleSelect, { submit });
+    fireEvent.keyDown(document.body, { key: "2" });
+    expect(getButtonByText(slot, "SQLite").getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Enter",
+    });
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not intercept modified Enter after a shortcut", () => {
+    const submit = vi.fn(async () => undefined);
+    render(singleSelect, { submit });
+    fireEvent.keyDown(document.body, { key: "2" });
+    for (const modifier of [
+      "shiftKey",
+      "ctrlKey",
+      "metaKey",
+      "altKey",
+      "isComposing",
+    ]) {
+      fireEvent.keyDown(document.activeElement!, {
+        key: "Enter",
+        [modifier]: true,
+      });
+    }
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("leaves free-text Enter available for newlines", () => {
+    const submit = vi.fn(async () => undefined);
+    const slot = render(singleSelect, { submit });
+    fireEvent.keyDown(document.body, { key: "3" });
+    const textarea = slot.getByLabelText("Database answer");
+    expect(document.activeElement).toBe(textarea);
+    fireEvent.change(textarea, { target: { value: "Custom" } });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    expect(submit).not.toHaveBeenCalled();
+    fireEvent.keyDown(textarea, { key: "Enter", ctrlKey: true });
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+
   it("submits the selected option value", () => {
     const submit = vi.fn<(value: InteractionResponse) => Promise<void>>(
       async () => undefined,
@@ -244,6 +292,24 @@ describe("multi-select and multi-question flows", () => {
     ],
   };
 
+  it("advances and submits multiple questions entirely by keyboard", () => {
+    const submit = vi.fn(async () => undefined);
+    const slot = render(multi, { submit });
+    fireEvent.keyDown(document.body, { key: "1" });
+    fireEvent.keyDown(document.activeElement!, { key: "2" });
+    fireEvent.keyDown(document.activeElement!, { key: "Enter" });
+    expect(slot.getByText("2 of 2")).toBeTruthy();
+    expect(submit).not.toHaveBeenCalled();
+    fireEvent.keyDown(document.activeElement!, { key: "2" });
+    fireEvent.keyDown(document.activeElement!, { key: "Enter" });
+    expect(submit).toHaveBeenCalledExactlyOnceWith({
+      answers: {
+        q0: { selected: ["q0o0", "q0o1"] },
+        q1: { selected: ["q1o1"] },
+      },
+    });
+  });
+
   it("keeps several options selected and walks both questions before submitting", () => {
     const submit = vi.fn<(value: InteractionResponse) => Promise<void>>(
       async () => undefined,
@@ -274,5 +340,76 @@ describe("multi-select and multi-question flows", () => {
 
     fireEvent.click(getButtonByText(slot, "Cancel"));
     expect(cancel).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("restoring a draft after a reload", () => {
+  it("restores the selection and the active question from the same draft key", () => {
+    const first = render(singleSelect, {}, { draftKey: "pint_draft_restore" });
+    fireEvent.click(getButtonByText(first, "Postgres"));
+    expect(
+      getButtonByText(first, "Postgres").getAttribute("aria-pressed"),
+    ).toBe("true");
+    first.unmount();
+
+    const second = render(singleSelect, {}, { draftKey: "pint_draft_restore" });
+    expect(
+      getButtonByText(second, "Postgres").getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("restores the current question in a multi-question form", () => {
+    const multi: InteractionPayload = {
+      questions: [
+        ...singleSelect.questions,
+        {
+          id: "q1",
+          prompt: "Which region?",
+          shortLabel: "Region",
+          multiSelect: false,
+          allowFreeText: true,
+          options: [
+            { value: "q1o0", label: "EU", description: "Europe." },
+            { value: "q1o1", label: "US", description: "United States." },
+          ],
+        },
+      ],
+    };
+    const first = render(multi, {}, { draftKey: "pint_draft_walk" });
+    fireEvent.click(getButtonByText(first, "Postgres"));
+    fireEvent.click(getButtonByText(first, "Next"));
+    expect(first.getByText("2 of 2")).toBeTruthy();
+    first.unmount();
+
+    const second = render(multi, {}, { draftKey: "pint_draft_walk" });
+    expect(second.getByText("2 of 2")).toBeTruthy();
+  });
+
+  it("does not restore a draft saved under a different key", () => {
+    const first = render(singleSelect, {}, { draftKey: "pint_draft_a" });
+    fireEvent.click(getButtonByText(first, "Postgres"));
+    first.unmount();
+
+    const second = render(singleSelect, {}, { draftKey: "pint_draft_b" });
+    expect(
+      getButtonByText(second, "Postgres").getAttribute("aria-pressed"),
+    ).toBe("false");
+  });
+
+  it("clears the draft when the request is cancelled", () => {
+    const cancel = vi.fn(async () => undefined);
+    const first = render(
+      singleSelect,
+      { cancel },
+      { draftKey: "pint_draft_c" },
+    );
+    fireEvent.click(getButtonByText(first, "Postgres"));
+    fireEvent.click(getButtonByText(first, "Cancel"));
+    first.unmount();
+
+    const second = render(singleSelect, {}, { draftKey: "pint_draft_c" });
+    expect(
+      getButtonByText(second, "Postgres").getAttribute("aria-pressed"),
+    ).toBe("false");
   });
 });

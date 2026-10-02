@@ -188,22 +188,22 @@ const piToolExecutionUpdateEventSchema = z
   })
   .passthrough();
 
-const piFileEditEditSchema = z
-  .object({
-    oldText: z.string().optional(),
-    newText: z.string().optional(),
-  })
-  .passthrough();
-
 const piFileEditArgsSchema = z
   .object({
     path: z.string().optional(),
     oldText: z.string().optional(),
     newText: z.string().optional(),
     content: z.string().optional(),
-    edits: z.array(piFileEditEditSchema).optional(),
+    edits: z.unknown().optional(),
   })
   .passthrough();
+
+const piFileEditBatchSchema = z.array(
+  z.object({
+    oldText: z.string(),
+    newText: z.string(),
+  }),
+);
 
 type PiAssistantMessage = z.infer<typeof piAssistantMessageSchema>;
 type PiAssistantErrorMessage = PiAssistantMessage & {
@@ -253,21 +253,21 @@ function classifyPiToolUse(
       return { type: "tool", tool: toolName, args: parsed.data };
     }
     const path = parsed.data.path;
-    const edits = parsed.data.edits;
-    if (edits !== undefined) {
-      const first = edits[0];
+    const parsedEdits = piFileEditBatchSchema.safeParse(parsed.data.edits);
+    if (
+      parsedEdits.success && parsedEdits.data.length > 0
+    ) {
       return {
         type: "fileChange",
-        changes: [
-          {
-            path,
-            kind: "update",
-            ...(first?.oldText === undefined ? {} : { oldText: first.oldText }),
-            ...(first?.newText === undefined ? {} : { newText: first.newText }),
-          },
-        ],
+        changes: parsedEdits.data.map((edit) => ({
+          path,
+          kind: "update",
+          oldText: edit.oldText,
+          newText: edit.newText,
+        })),
       };
     }
+
     const newText = parsed.data.newText ?? parsed.data.content;
     return {
       type: "fileChange",
@@ -740,7 +740,13 @@ export function createPiDeltaTranslator(
               kind: "provider.error",
               message: "Provider error",
               detail: lastAssistant.errorMessage,
-              settlesTurn: true,
+            },
+            {
+              kind: "turn.boundary",
+              status: "failed",
+              ...(piEvent.data.providerCheckpointId !== undefined
+                ? { providerCheckpointId: piEvent.data.providerCheckpointId }
+                : {}),
             },
           ];
         }

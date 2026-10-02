@@ -25,6 +25,8 @@ import {
   gitHostPullRequestSchema,
   clientTurnRequestIdSchema,
   gitBranchNameSchema,
+  // bb-fork(thread-start-ref): recent-commit listing for the start-commit picker.
+  workspaceCommitSummarySchema,
   jsonObjectSchema,
   jsonValueSchema,
   providerNativeRootSetSchema,
@@ -45,6 +47,8 @@ import {
   providerCliInstallActionKindSchema,
 } from "./local.js";
 import { workspaceResolutionFailureSchema } from "./workspace.js";
+// bb-fork(windows): response schema for host terminal shell enumeration.
+import { terminalShellListResponseSchema } from "./terminal-shells.js";
 import { HOST_ARTIFACT_MAX_BYTES } from "./protocol.js";
 import {
   providerHealthSchema,
@@ -453,6 +457,34 @@ const hostReadFileCommandSchema = z
     }
   });
 
+export const HOST_FILE_CHUNK_MAX_BYTES = 1024 * 1024;
+
+const hostReadFileChunkCommandSchema = z
+  .object({
+    type: z.literal("host.read_file_chunk"),
+    path: z.string().min(1),
+    rootPath: z.string().min(1),
+    offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    length: z.number().int().nonnegative().max(HOST_FILE_CHUNK_MAX_BYTES),
+    revision: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/u)
+      .nullable(),
+  })
+  .strict();
+
+const hostReadFileChunkResultSchema = z
+  .object({
+    path: z.string().min(1),
+    sizeBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    modifiedAtMs: z.number().finite(),
+    mimeType: z.string().nullable(),
+    revision: z.string().regex(/^[a-f0-9]{64}$/u),
+    offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    content: z.string().max(4 * Math.ceil(HOST_FILE_CHUNK_MAX_BYTES / 3)),
+  })
+  .strict();
+
 const hostReadFileRelativeDotfilePolicySchema = z.enum(["allow", "deny"]);
 export type HostReadFileRelativeDotfilePolicy = z.infer<
   typeof hostReadFileRelativeDotfilePolicySchema
@@ -565,6 +597,13 @@ const hostBrowseDirectoryCommandSchema = z.object({
 const hostPathsExistCommandSchema = pathsExistRequestSchema
   .extend({
     type: z.literal("host.paths_exist"),
+  })
+  .strict();
+
+// bb-fork(windows): list the shells this host can launch from Start terminal.
+const hostListTerminalShellsCommandSchema = z
+  .object({
+    type: z.literal("host.list_terminal_shells"),
   })
   .strict();
 
@@ -948,6 +987,12 @@ const workspaceDiffPatchCommandSchema = hostDaemonWorkspaceTargetSchema.extend({
   maxBytesPerFile: z.number().int().positive(),
 });
 
+// bb-fork(thread-start-ref): the newest commits of the checked-out branch.
+const workspaceCommitsCommandSchema = hostDaemonWorkspaceTargetSchema.extend({
+  type: z.literal("workspace.commits"),
+  maxCount: z.number().int().positive(),
+});
+
 const workspacePullRequestCommandSchema =
   hostDaemonWorkspaceTargetSchema.extend({
     type: z.literal("workspace.pull_request"),
@@ -1062,6 +1107,27 @@ const workspaceDiffResultSchema = z.discriminatedUnion("outcome", [
       failure: workspaceResolutionFailureSchema,
     })
     .strict(),
+]);
+
+// bb-fork(thread-start-ref): result for workspace.commits.
+const workspaceCommitsResultSchema = z.discriminatedUnion("outcome", [
+  z
+    .object({
+      outcome: z.literal("available"),
+      commits: z.array(workspaceCommitSummarySchema),
+    })
+    .strict(),
+  z
+    .object({
+      outcome: z.literal("unavailable"),
+      failure: workspaceResolutionFailureSchema,
+    })
+    .strict(),
+  z.object({
+    outcome: z.literal("not_applicable"),
+    reason: z.string().min(1),
+    message: z.string().min(1),
+  }),
 ]);
 
 const workspaceDiffFilesResultSchema = z.discriminatedUnion("outcome", [
@@ -1633,6 +1699,16 @@ export const hostDaemonCommandRegistry = {
     flushEventsBeforeResult: false,
     envLane: null,
   }),
+  // bb-fork(windows): shell enumeration for the Start terminal picker.
+  "host.list_terminal_shells": defineHostDaemonCommandDescriptor({
+    type: "host.list_terminal_shells",
+    schema: hostListTerminalShellsCommandSchema,
+    resultSchema: terminalShellListResponseSchema,
+    transport: "onlineRpc",
+    retryable: true,
+    flushEventsBeforeResult: false,
+    envLane: null,
+  }),
   "project.inspect": defineHostDaemonCommandDescriptor({
     type: "project.inspect",
     schema: projectInspectCommandSchema,
@@ -1806,6 +1882,15 @@ export const hostDaemonCommandRegistry = {
     flushEventsBeforeResult: false,
     envLane: null,
   }),
+  "host.read_file_chunk": defineHostDaemonCommandDescriptor({
+    type: "host.read_file_chunk",
+    schema: hostReadFileChunkCommandSchema,
+    resultSchema: hostReadFileChunkResultSchema,
+    transport: "onlineRpc",
+    retryable: true,
+    flushEventsBeforeResult: false,
+    envLane: null,
+  }),
   "host.read_file_relative": defineHostDaemonCommandDescriptor({
     type: "host.read_file_relative",
     schema: hostReadFileRelativeCommandSchema,
@@ -1900,6 +1985,16 @@ export const hostDaemonCommandRegistry = {
     type: "workspace.diffPatch",
     schema: workspaceDiffPatchCommandSchema,
     resultSchema: workspaceDiffPatchResultSchema,
+    transport: "onlineRpc",
+    retryable: true,
+    flushEventsBeforeResult: false,
+    envLane: "read",
+  }),
+  // bb-fork(thread-start-ref): list recent commits for the start-commit picker.
+  "workspace.commits": defineHostDaemonCommandDescriptor({
+    type: "workspace.commits",
+    schema: workspaceCommitsCommandSchema,
+    resultSchema: workspaceCommitsResultSchema,
     transport: "onlineRpc",
     retryable: true,
     flushEventsBeforeResult: false,

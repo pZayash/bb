@@ -138,6 +138,8 @@ describe("createNodeVerifiedProcessOps", () => {
       );
       expect(command).toMatch(/node/i);
     },
+    // bb-fork(windows): a WMI query through PowerShell is slow under load.
+    30_000,
   );
 
   it.runIf(process.platform === "win32")(
@@ -150,5 +152,7 @@ describe("createNodeVerifiedProcessOps", () => {
       expect(command).not.toBeNull();
       expect(command).toContain("node");
     },
+    // bb-fork(windows): a WMI query through PowerShell is slow under load.
+    30_000,
   );
 });

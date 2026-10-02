@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { toast } from "sonner";
-import { cn } from "@bb/shared-ui/lib/utils";
+import { cn } from "@/lib/utils";
 
 export type SaveIndicator = "clean" | "dirty" | "saving" | "error";
 
@@ -11,6 +17,10 @@ export interface FileToolbarProps {
   onRefresh: () => void;
   isFilesOpen: boolean;
   onToggleFiles: () => void;
+  // bb-fork(md-preview): optional Source/Preview switch for Markdown files.
+  previewToggle?: ReactNode;
+  // bb-fork(file-diff): optional diff toggle and base selector.
+  diffControls?: ReactNode;
 }
 
 export function FileToolbar({
@@ -20,6 +30,8 @@ export function FileToolbar({
   onRefresh,
   isFilesOpen,
   onToggleFiles,
+  previewToggle,
+  diffControls,
 }: FileToolbarProps) {
   return (
     <div className="flex h-9 shrink-0 items-center gap-2 bg-surface-raised px-4">
@@ -37,6 +49,8 @@ export function FileToolbar({
           <RotateIcon className={cn(isRefreshing && "animate-spin")} />
         </ToolbarButton>
       </div>
+      {previewToggle}
+      {diffControls}
       <SaveDot indicator={indicator} />
       <ToolbarButton
         label={isFilesOpen ? "Hide files" : "Show in files"}

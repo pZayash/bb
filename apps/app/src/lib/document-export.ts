@@ -76,11 +76,7 @@ export function resolveExportBaseHref(
   if (url === null || url === undefined || url.length === 0) {
     return null;
   }
-  if (
-    url.startsWith("data:") ||
-    url.startsWith("blob:") ||
-    url.includes("?")
-  ) {
+  if (url.startsWith("data:") || url.startsWith("blob:") || url.includes("?")) {
     return null;
   }
   try {
@@ -222,7 +218,8 @@ export async function buildWordExport(input: WordExportInput): Promise<Blob> {
         sourceKind: "html",
       });
     } catch {
-      // Fall back to the static document when rendering cannot be captured.
+      // bb-fork(windows): fall back to the static document when rendering
+      // bb-fork(windows): cannot be captured.
     }
   }
   return requestDocumentExport({

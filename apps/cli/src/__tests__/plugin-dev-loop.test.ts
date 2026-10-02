@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createPluginDevLoop, isIgnoredPluginDevPath } from "@bb/plugin-build";
+import {
+  createPluginDevLoop,
+  isIgnoredPluginDevPath,
+  PLUGIN_DEV_DEFER_RETRY_MS,
+} from "@bb/plugin-build";
 describe("createPluginDevLoop", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -157,6 +161,100 @@ describe("createPluginDevLoop", () => {
     await loop.settled();
     expect(deps.reloadPlugin).not.toHaveBeenCalled();
   });
+
+  it("holds the whole cycle while a user form is open, then runs it once the form closes", async () => {
+    const { calls, lines, deps } = makeDeps();
+    let reason: string | null = "a user request is still open";
+    const loop = createPluginDevLoop({ ...deps, deferReload: () => reason });
+
+    loop.handleChange("app.tsx");
+    await vi.advanceTimersByTimeAsync(300);
+    await loop.settled();
+
+    expect(calls).toEqual([]);
+    expect(deps.buildApp).not.toHaveBeenCalled();
+    expect(lines).toEqual([
+      "1 file changed · reload deferred: a user request is still open",
+    ]);
+
+    await vi.advanceTimersByTimeAsync(PLUGIN_DEV_DEFER_RETRY_MS * 2);
+    await loop.settled();
+    expect(calls).toEqual([]);
+    expect(lines).toHaveLength(1);
+
+    reason = null;
+    await vi.advanceTimersByTimeAsync(PLUGIN_DEV_DEFER_RETRY_MS);
+    await loop.settled();
+
+    expect(calls).toEqual(["build", "reload"]);
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain("reloaded hello");
+  });
+
+  it("notifies once per cycle even when both the app and the host rebuild", async () => {
+    const { deps } = makeDeps({ hasApp: true, hasHost: true });
+    const notifyChanged = vi.fn();
+    const loop = createPluginDevLoop({ ...deps, notifyChanged });
+
+    loop.handleChange("app.tsx");
+    await vi.advanceTimersByTimeAsync(300);
+    await loop.settled();
+
+    expect(notifyChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("notifies after a failed build so the UI sees the build problem", async () => {
+    const { deps } = makeDeps({ hasApp: true });
+    deps.buildApp.mockRejectedValueOnce(new Error("Unexpected token"));
+    const notifyChanged = vi.fn();
+    const loop = createPluginDevLoop({ ...deps, notifyChanged });
+
+    loop.handleChange("app.tsx");
+    await vi.advanceTimersByTimeAsync(300);
+    await loop.settled();
+
+    expect(notifyChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips an unattributed change when no source file is newer than the build", async () => {
+    const { calls, deps } = makeDeps({ hasApp: true });
+    const hasSourceChanges = vi.fn(async () => false);
+    const loop = createPluginDevLoop({ ...deps, hasSourceChanges });
+
+    loop.handleChange(".");
+    await vi.advanceTimersByTimeAsync(300);
+    await loop.settled();
+
+    expect(hasSourceChanges).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual([]);
+  });
+
+  it("runs the cycle for an unattributed change when a source file is newer", async () => {
+    const { calls, deps } = makeDeps({ hasApp: true });
+    const loop = createPluginDevLoop({
+      ...deps,
+      hasSourceChanges: async () => true,
+    });
+
+    loop.handleChange(".");
+    await vi.advanceTimersByTimeAsync(300);
+    await loop.settled();
+
+    expect(calls).toEqual(["build", "reload"]);
+  });
+
+  it("does not consult hasSourceChanges for named changes", async () => {
+    const { deps } = makeDeps({ hasApp: true });
+    const hasSourceChanges = vi.fn(async () => false);
+    const loop = createPluginDevLoop({ ...deps, hasSourceChanges });
+
+    loop.handleChange("app.tsx");
+    await vi.advanceTimersByTimeAsync(300);
+    await loop.settled();
+
+    expect(hasSourceChanges).not.toHaveBeenCalled();
+    expect(deps.buildApp).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("isIgnoredPluginDevPath", () => {
@@ -168,5 +266,14 @@ describe("isIgnoredPluginDevPath", () => {
     expect(isIgnoredPluginDevPath("app.tsx")).toBe(false);
     expect(isIgnoredPluginDevPath("src/server.ts")).toBe(false);
     expect(isIgnoredPluginDevPath("distros/notes.md")).toBe(false);
+  });
+
+  it("ignores turbo task logs and the bundled runtime so hot reload stays off during a turbo run", () => {
+    expect(
+      isIgnoredPluginDevPath(".turbo/turbo-prepare$colon$bundled.log"),
+    ).toBe(true);
+    expect(isIgnoredPluginDevPath(".turbo/turbo-typecheck.log")).toBe(true);
+    expect(isIgnoredPluginDevPath(".bundled-runtime/package.json")).toBe(true);
+    expect(isIgnoredPluginDevPath(".bundled-runtime/dist/host.js")).toBe(true);
   });
 });

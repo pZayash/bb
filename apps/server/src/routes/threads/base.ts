@@ -1,3 +1,4 @@
+import { countUnarchivedThreadDescendants } from "../../services/threads/thread-archive.js";
 import { cancelAbandonedProviderCreations } from "../../services/threads/thread-environment-providers.js";
 import {
   THREAD_SEARCH_LIMIT_PER_GROUP_DEFAULT,
@@ -5,6 +6,7 @@ import {
   countNonDeletedAssignedChildThreads,
   countThreads,
   getEnvironment,
+  getHost,
   getThread,
   getThreadSectionById,
   listThreadMentionRowsByIds,
@@ -96,7 +98,9 @@ function resolveIncludedThreadEnvironment(
     return null;
   }
   const environment = getEnvironment(deps.db, thread.environmentId);
-  return environment === null ? null : toEnvironmentResponse(environment);
+  return environment === null
+    ? null
+    : toEnvironmentResponse(deps.db, environment);
 }
 
 function buildThreadResponse(
@@ -121,6 +125,9 @@ function buildThreadResponse(
   if (args.includes.has("host")) {
     response.host = environment
       ? getNonDestroyedHostWithStatus(deps, environment.hostId)
+      : null;
+    response.environmentHostName = environment
+      ? (getHost(deps.db, environment.hostId)?.name ?? null)
       : null;
   }
   return response;
@@ -274,6 +281,7 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
     const threads = listThreadsWithPendingInteractionState(deps.db, {
       ...(query.projectId ? { projectId: query.projectId } : {}),
       ...(query.environmentId ? { environmentId: query.environmentId } : {}),
+      ...(query.hostId ? { hostId: query.hostId } : {}),
       ...(query.parentThreadId ? { parentThreadId: query.parentThreadId } : {}),
       ...(query.sourceThreadId ? { sourceThreadId: query.sourceThreadId } : {}),
       ...(query.sectionId ? { sectionId: query.sectionId } : {}),
@@ -363,18 +371,22 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
     );
   });
 
-  function getThreadChildSummary(threadId: string): ThreadChildSummaryResponse {
+  function getThreadChildSummary(thread: Thread): ThreadChildSummaryResponse {
     const nonDeletedChildCount = countNonDeletedAssignedChildThreads(deps.db, {
-      parentThreadId: threadId,
+      parentThreadId: thread.id,
     });
     return {
       nonDeletedChildCount,
+      unarchivedDescendantCount: countUnarchivedThreadDescendants(
+        deps.db,
+        thread,
+      ),
     };
   }
 
   get(routes.childSummary, (context) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
-    return context.json(getThreadChildSummary(thread.id));
+    return context.json(getThreadChildSummary(thread));
   });
 
   patch(routes.update, async (context, payload) => {
@@ -418,6 +430,14 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
     if ("parentThreadId" in payload) {
       metadataUpdate.parentThreadId = payload.parentThreadId;
     }
+    // bb-fork(parent-mute): a boolean field maps onto the mute timestamp; a
+    // repeated mute keeps the original timestamp as the mute start.
+    if ("parentNotificationsMuted" in payload) {
+      metadataUpdate.parentNotificationsMutedAt =
+        payload.parentNotificationsMuted
+          ? (thread.parentNotificationsMutedAt ?? Date.now())
+          : null;
+    }
     if ("visibility" in payload) {
       metadataUpdate.visibility = payload.visibility;
     }
@@ -453,6 +473,8 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
       payload.parentThreadId !== thread.parentThreadId
     ) {
       await handleThreadOwnershipChange(deps, {
+        // bb-fork(quiet-reparent): ownershipNotice === false asks for a quiet reparent
+        notifyParents: payload.ownershipNotice !== false,
         previousThread: thread,
         updatedThread: updated,
       });

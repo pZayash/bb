@@ -48,7 +48,7 @@ export interface DiffCumulativeTextResult {
   reset: boolean;
 }
 
-export function diffCumulativeText(
+function diffCumulativeText(
   args: DiffCumulativeTextArgs,
 ): DiffCumulativeTextResult | null {
   const previousText = args.previousText ?? "";
@@ -1408,6 +1408,11 @@ export function createDeltaAssembler(
         const parentToolCallId = mapParentRef(state, delta.key.parentRef);
         const openDelegationSummary =
           open?.item.type === "delegation" ? open.item.summary : undefined;
+        const streamedCommandOutput =
+          delta.aggregatedOutput === undefined &&
+          open?.item.type === "commandExecution"
+            ? state.commandSnapshotsByKey.get(keyStr)
+            : undefined;
         const closeFields: CloseFields = {
           status: delta.status,
           ...(delta.resultText === undefined
@@ -1415,7 +1420,9 @@ export function createDeltaAssembler(
             : { resultText: delta.resultText }),
           ...(delta.exitCode === undefined ? {} : { exitCode: delta.exitCode }),
           ...(delta.aggregatedOutput === undefined
-            ? {}
+            ? streamedCommandOutput === undefined
+              ? {}
+              : { aggregatedOutput: streamedCommandOutput }
             : { aggregatedOutput: delta.aggregatedOutput }),
           ...(delta.approvalStatus === undefined
             ? {}

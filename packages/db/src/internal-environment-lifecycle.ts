@@ -2,6 +2,7 @@ export {
   applyEnvironmentLifecycleEvent,
   applyEnvironmentLifecycleEventInTransaction,
   recordEnvironmentCurrentBranch,
+  recordEnvironmentStartRefOnce,
   recordProvisionedEnvironmentWorkspace,
 } from "./data/environments.js";
 export type {

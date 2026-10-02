@@ -29,8 +29,9 @@ function Remove-ConflictMarkers {
 }
 
 function Set-ForkProtocolVersion {
-  # The fork carries a wire delta (hostPlatformSchema gains "windows"), so the
-  # protocol version is upstream's version + 1 after every merge.
+  # The fork carries two wire deltas (hostPlatformSchema gains "windows", and
+  # workspace.commits exists only in the fork), so the protocol version is
+  # upstream's version + 2 after every merge.
   $protocolPath = "packages/host-daemon-contract/src/protocol.ts"
   $contractTestPath = "packages/host-daemon-contract/test/contract.test.ts"
   $upstreamSource = & git show "${Upstream}/${Branch}:$protocolPath"
@@ -41,8 +42,8 @@ function Set-ForkProtocolVersion {
   if (-not $match.Success) {
     throw "could not find HOST_DAEMON_PROTOCOL_VERSION in ${Upstream}/${Branch}:$protocolPath"
   }
-  $resolved = [int]$match.Groups[1].Value + 1
-  Write-Host "Resolving protocol version to $resolved (upstream $($match.Groups[1].Value) + 1)"
+  $resolved = [int]$match.Groups[1].Value + 2
+  Write-Host "Resolving protocol version to $resolved (upstream $($match.Groups[1].Value) + 2)"
 
   foreach ($path in @($protocolPath, $contractTestPath)) {
     if (-not (Test-Path $path)) { continue }
@@ -57,6 +58,21 @@ function Set-ForkProtocolVersion {
   }
 }
 
+function Invoke-PnpmInstall {
+  # bb-fork(windows): the fork's .npmrc caps pnpm's virtual-store directory
+  # names, and pnpm refuses to reuse a modules dir linked with a different
+  # value until that dir is rebuilt.
+  param([string]$Label = "pnpm install")
+  & pnpm install 2>&1 | Tee-Object -Variable installOutput | Out-Host
+  $exitCode = $LASTEXITCODE
+  if ($exitCode -ne 0 -and (($installOutput | Out-String) -match "VIRTUAL_STORE_DIR_MAX_LENGTH_DIFF")) {
+    Write-Host "Modules dir uses a different virtual-store-dir-max-length; relinking with pnpm install --force"
+    & pnpm install --force 2>&1 | Out-Host
+    $exitCode = $LASTEXITCODE
+  }
+  if ($exitCode -ne 0) { throw "$Label failed" }
+}
+
 function Resolve-Lockfile {
   $path = "pnpm-lock.yaml"
   if (-not (Test-Path $path)) { return }
@@ -64,8 +80,7 @@ function Resolve-Lockfile {
     Write-Host "Resolving $path from upstream and regenerating with pnpm install"
     Invoke-Git checkout "${Upstream}/${Branch}" -- $path
     Invoke-Git add -- $path
-    & pnpm install
-    if ($LASTEXITCODE -ne 0) { throw "pnpm install failed" }
+    Invoke-PnpmInstall
     Invoke-Git add -- $path
   }
 }
@@ -111,3 +126,4 @@ if ($conflicts) {
 }
 
 Write-Host "Merge complete. Next: pnpm exec turbo run typecheck, then regenerate the marketplace if plugin lists changed."
+Write-Host "Restart any running dev instance (pnpm dev:restart-server) so newly bundled upstream plugins are installed."

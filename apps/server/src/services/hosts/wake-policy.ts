@@ -53,6 +53,8 @@ const hostCommandWakePolicy = {
   "connect-tunnel.ensure-identity": "work",
   "host.list_commands": "work",
   "host.list_skills": "work",
+  // bb-fork(windows): shell enumeration for the Start terminal picker.
+  "host.list_terminal_shells": "never",
   "host.delete_skill": "work",
   "host.write_skill": "work",
   "host.install_global_skills": "work",
@@ -61,6 +63,7 @@ const hostCommandWakePolicy = {
   "host.list_branch_options": "work",
   "host.file_metadata": "work",
   "host.read_file": "work",
+  "host.read_file_chunk": "work",
   "host.read_file_relative": "work",
   "host.write_file": "work",
   "provider.list_models": "work",
@@ -69,6 +72,8 @@ const hostCommandWakePolicy = {
   "provider.installation.run": "work",
   "provider.usage": "work",
   "workspace.status": "work",
+  // bb-fork(thread-start-ref): reading recent commits is a read, but it still needs the host.
+  "workspace.commits": "work",
   "workspace.diff": "work",
   "workspace.diffFiles": "work",
   "workspace.diffPatch": "work",

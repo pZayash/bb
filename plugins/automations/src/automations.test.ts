@@ -374,7 +374,7 @@ describe("startup reconciliation", () => {
 
   function thread(
     threadId: string,
-    status: "idle" | "active" | "starting" | "stopping" | "error",
+    status: "idle" | "pending" | "active" | "starting" | "stopping" | "error",
     extra: { deletedAt?: number | null; archivedAt?: number | null } = {},
   ) {
     return {
@@ -439,6 +439,11 @@ describe("startup reconciliation", () => {
       {
         id: "auto_starting",
         thread: thread("thr_starting", "starting"),
+        status: "running",
+      },
+      {
+        id: "auto_pending",
+        thread: thread("thr_pending", "pending"),
         status: "running",
       },
       {
@@ -2038,57 +2043,64 @@ describe("automation CLI --script-file", () => {
   });
 });
 
-describe("bb CLI injection for script runs", () => {
-  it("prefers the env pointers over PATH and macOS install locations", () => {
-    expect(
-      bbBinaryCandidates({
-        BB_CLI: "/daemon/bundle/bb",
-        BB_CLI_DIR: "/other/dir",
-      })[0],
-    ).toBe("/daemon/bundle/bb");
-    expect(bbBinaryCandidates({ BB_CLI_DIR: "/daemon/bundle" })[0]).toBe(
-      "/daemon/bundle/bb",
-    );
-  });
+// bb-fork(windows): these cases assert POSIX absolute paths and `/`-joined
+// bb-fork(windows): candidates, while `isAbsolute`/`join` use drive letters and `\` on Windows.
+describe.skipIf(process.platform === "win32")(
+  "bb CLI injection for script runs",
+  () => {
+    it("prefers the env pointers over PATH and macOS install locations", () => {
+      expect(
+        bbBinaryCandidates({
+          BB_CLI: "/daemon/bundle/bb",
+          BB_CLI_DIR: "/other/dir",
+        })[0],
+      ).toBe("/daemon/bundle/bb");
+      expect(bbBinaryCandidates({ BB_CLI_DIR: "/daemon/bundle" })[0]).toBe(
+        "/daemon/bundle/bb",
+      );
+    });
 
-  it("expands PATH itself so every candidate is absolute", () => {
-    expect(bbBinaryCandidates({ PATH: "/usr/bin:/opt/tools" })).toEqual([
-      "/usr/bin/bb",
-      "/opt/tools/bb",
-      "/opt/homebrew/bin/bb",
-      "/usr/local/bin/bb",
-    ]);
-    expect(
-      bbBinaryCandidates({ PATH: "/usr/bin" }).every((c) => c.startsWith("/")),
-    ).toBe(true);
-  });
+    it("expands PATH itself so every candidate is absolute", () => {
+      expect(bbBinaryCandidates({ PATH: "/usr/bin:/opt/tools" })).toEqual([
+        "/usr/bin/bb",
+        "/opt/tools/bb",
+        "/opt/homebrew/bin/bb",
+        "/usr/local/bin/bb",
+      ]);
+      expect(
+        bbBinaryCandidates({ PATH: "/usr/bin" }).every((c) =>
+          c.startsWith("/"),
+        ),
+      ).toBe(true);
+    });
 
-  it("drops entries that would resolve against the wrong directory", () => {
-    expect(bbBinaryCandidates({ PATH: "/usr/bin::/bin" })).toEqual([
-      "/usr/bin/bb",
-      "/bin/bb",
-      "/opt/homebrew/bin/bb",
-      "/usr/local/bin/bb",
-    ]);
-    expect(
-      bbBinaryCandidates({ BB_CLI: "  ", BB_CLI_DIR: "", PATH: "" }),
-    ).toEqual(["/opt/homebrew/bin/bb", "/usr/local/bin/bb"]);
-    expect(
-      bbBinaryCandidates({ BB_CLI: "./bb", BB_CLI_DIR: "rel/dir", PATH: "" }),
-    ).toEqual(["/opt/homebrew/bin/bb", "/usr/local/bin/bb"]);
-  });
+    it("drops entries that would resolve against the wrong directory", () => {
+      expect(bbBinaryCandidates({ PATH: "/usr/bin::/bin" })).toEqual([
+        "/usr/bin/bb",
+        "/bin/bb",
+        "/opt/homebrew/bin/bb",
+        "/usr/local/bin/bb",
+      ]);
+      expect(
+        bbBinaryCandidates({ BB_CLI: "  ", BB_CLI_DIR: "", PATH: "" }),
+      ).toEqual(["/opt/homebrew/bin/bb", "/usr/local/bin/bb"]);
+      expect(
+        bbBinaryCandidates({ BB_CLI: "./bb", BB_CLI_DIR: "rel/dir", PATH: "" }),
+      ).toEqual(["/opt/homebrew/bin/bb", "/usr/local/bin/bb"]);
+    });
 
-  it("prepends bb's directory to PATH only when it is absolute", () => {
-    expect(scriptPathEnv("/daemon/bundle/bb", "/usr/bin:/bin")).toBe(
-      "/daemon/bundle:/usr/bin:/bin",
-    );
-    expect(scriptPathEnv("bb", "/usr/bin:/bin")).toBe("/usr/bin:/bin");
-    expect(scriptPathEnv(null, "/usr/bin:/bin")).toBe("/usr/bin:/bin");
-    expect(scriptPathEnv("/daemon/bundle/bb", undefined)).toBe(
-      "/daemon/bundle",
-    );
-  });
-});
+    it("prepends bb's directory to PATH only when it is absolute", () => {
+      expect(scriptPathEnv("/daemon/bundle/bb", "/usr/bin:/bin")).toBe(
+        "/daemon/bundle:/usr/bin:/bin",
+      );
+      expect(scriptPathEnv("bb", "/usr/bin:/bin")).toBe("/usr/bin:/bin");
+      expect(scriptPathEnv(null, "/usr/bin:/bin")).toBe("/usr/bin:/bin");
+      expect(scriptPathEnv("/daemon/bundle/bb", undefined)).toBe(
+        "/daemon/bundle",
+      );
+    });
+  },
+);
 
 async function isProcessRunning(pid: number): Promise<boolean> {
   try {
@@ -2154,7 +2166,7 @@ describe("script process containment", () => {
 });
 
 // bb-fork(windows): bash here is Git Bash, whose `pwd -P` prints MSYS paths that
-// never match the native paths asserted below; the runs themselves still pass.
+// bb-fork(windows): never match the native paths asserted below; the runs themselves still pass.
 describe.skipIf(process.platform === "win32")("script project context", () => {
   function withoutMissingBbCliWarning(
     output: string | null | undefined,

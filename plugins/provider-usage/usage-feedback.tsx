@@ -1,10 +1,14 @@
-import { Icon } from "@bb/shared-ui/icon";
-import { cn } from "@bb/shared-ui/lib/utils";
+import { Icon } from "@/components/ui/icon";
+import { cn } from "@/lib/utils";
 import type { UsageMachine, UsageProvider } from "./usage-schema.js";
 
 export const usageFeedbackMessages = {
   loading: "Loading usage…",
   noSources: "No usage sources available.",
+  noSourcesEnabled:
+    "No usage source is enabled. Enable a plugin that publishes usage limits, such as Codex, Claude Code, or Account Pooler.",
+  noProviderUsage:
+    "No provider on this machine reports usage limits. Providers that never publish usage are omitted from this list.",
   loadFailed: "Couldn’t load usage.",
   refreshFailed: "Couldn’t refresh usage. Showing the last available update.",
   unavailable: "Usage unavailable.",
@@ -14,10 +18,16 @@ export function hasReportedUsage(providers: readonly UsageProvider[]): boolean {
   return providers.some((provider) => provider.usage !== null);
 }
 
-export function emptyUsageMessage(machine: UsageMachine): string {
-  return machine.id.startsWith("source:")
-    ? "No accounts report usage yet. Configure accounts in the source plugin’s settings."
-    : "No providers report usage limits on this machine.";
+export function emptyUsageMessage(
+  machine: UsageMachine,
+  hasUsageSources: boolean,
+): string {
+  if (machine.id.startsWith("source:")) {
+    return "No accounts report usage yet. Configure accounts in the source plugin’s settings.";
+  }
+  return hasUsageSources
+    ? usageFeedbackMessages.noProviderUsage
+    : usageFeedbackMessages.noSourcesEnabled;
 }
 
 export function offlineUsageMessage(

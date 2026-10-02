@@ -15,6 +15,8 @@ import { RouteNavigationIndicator } from "./components/ui/route-navigation-indic
 import { AppNavigationUrlHost } from "./lib/url-open-routing";
 import { NativeShellReporter } from "./lib/native-shell";
 import { UiPreferencesSync } from "@/lib/ui-preferences/UiPreferencesSync";
+// bb-fork(windows): remember and restore the active thread across reloads
+import { ForkAppStateRestore } from "@/lib/fork-app-state-restore";
 import { AppFileExternalNavigationHost } from "./components/plugin/AppFileExternalNavigationHost";
 import { useAppTheme } from "./hooks/useAppTheme";
 import { useFaviconColorSync } from "./lib/favicon-color-preference";
@@ -65,8 +67,11 @@ import {
   getSettingsProjectRoutePath,
 } from "./lib/route-paths";
 import { AppCommandProvider } from "./components/commands/AppCommandProvider";
+import { WindowFindHost } from "./components/layout/WindowFindHost";
+import { DesktopZoomIndicator } from "./components/layout/DesktopZoomIndicator";
 import { ProviderCliInstallLogDialogHost } from "./components/provider-cli/provider-cli-install";
 import { ServerMoveOverlay } from "./components/machines/ServerMoveOverlay";
+import { AppUpdateHost } from "./components/app-update/AppUpdateHost";
 import { RouteLoadingSkeleton } from "./components/ui/route-loading-skeleton";
 
 const SettingsView = lazy(() =>
@@ -433,6 +438,8 @@ export function App() {
               <HashNavigationScroll />
               <NativeShellReporter />
               <UiPreferencesSync />
+              {/* bb-fork(windows): restore the last open thread after a reload */}
+              <ForkAppStateRestore />
               <Routes>
                 <Route
                   path={AUTH_CALLBACK_ROUTE_PATH}
@@ -440,8 +447,11 @@ export function App() {
                 />
                 <Route path="*" element={<AppRoutes />} />
               </Routes>
+              <WindowFindHost />
+              <DesktopZoomIndicator />
               <ProviderCliInstallLogDialogHost />
               <ServerMoveOverlay />
+              <AppUpdateHost />
             </AppFileExternalNavigationHost>
           </AppNavigationUrlHost>
         </RouteNavigationProvider>

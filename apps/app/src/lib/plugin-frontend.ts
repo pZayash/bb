@@ -40,7 +40,11 @@ import type {
 import { normalizePluginThreadRowStatus } from "@get-bb/plugin-sdk/internal/composer-customization-validation";
 import { resetCrashedPluginSlots } from "@/components/plugin/PluginSlotMount";
 import { runWithPluginDomIsolationAsync } from "./foreign-dom-mutation-guard";
-import { applyPluginCss, retainPluginCss } from "./plugin-css";
+import {
+  applyPluginCss,
+  retainPluginCss,
+  setPluginCssFailureHandler,
+} from "./plugin-css";
 import {
   collectPluginAppRegistrations,
   isPluginAppDefinition,
@@ -298,6 +302,8 @@ export async function fetchFrontendCandidates(
 export { applyPluginCss } from "./plugin-css";
 
 export const PLUGIN_FRONTEND_LOAD_CONCURRENCY = 3;
+const PLUGIN_FRONTEND_LOAD_RETRY_LIMIT = 4;
+const PLUGIN_FRONTEND_LOAD_RETRY_BASE_DELAY_MS = 1_000;
 
 export function orderPluginFrontendCandidates(
   candidates: readonly PluginFrontendCandidate[],
@@ -329,9 +335,14 @@ async function runWithConcurrencyLimit<T>(
   await Promise.all(lanes);
 }
 
+function appendPluginImportRetry(url: string, retryCount: number): string {
+  return `${url}${url.includes("?") ? "&" : "?"}bb_retry=${retryCount}`;
+}
+
 interface PluginFrontendReconcileState {
   records: Map<string, PluginFrontendRecord>;
   appliedHashes: Map<string, string>;
+  failedImportAttempts: Map<string, { hash: string; count: number }>;
   activeGenerations: Map<string, ActivePluginFrontendGeneration>;
   generationByPluginId: Map<string, number>;
   pendingControllers: Map<string, AbortController>;
@@ -344,6 +355,7 @@ export function createPluginFrontendReconcileState(): PluginFrontendReconcileSta
   return {
     records: new Map(),
     appliedHashes: new Map(),
+    failedImportAttempts: new Map(),
     activeGenerations: new Map(),
     generationByPluginId: new Map(),
     pendingControllers: new Map(),
@@ -367,6 +379,7 @@ export interface PluginFrontendReconcileDeps {
   beginSlotBatch: () => () => void;
   warn: (message: string) => void;
   routePluginId: () => string | null;
+  scheduleRetry?: (attempt: number) => void;
   mountTimeoutMs?: number;
   diagnosticsChanged?: () => void;
 }
@@ -664,14 +677,36 @@ async function reconcileCandidates(
         return;
       }
       deps.resetCrashedSlots(pluginId);
-      const loaded = await loadPluginFrontends([candidate], {
-        importModule: deps.importModule,
-        injectCss: () => {},
-        warn: deps.warn,
-      });
+      const previousAttempt = state.failedImportAttempts.get(pluginId);
+      const retryCount =
+        previous?.status === "failed" &&
+        previousAttempt?.hash === candidate.bundle.hash
+          ? previousAttempt.count + 1
+          : 0;
+      const importUrl =
+        retryCount === 0
+          ? candidate.bundle.jsUrl
+          : appendPluginImportRetry(candidate.bundle.jsUrl, retryCount);
+      const loaded = await loadPluginFrontends(
+        [
+          {
+            ...candidate,
+            bundle: { ...candidate.bundle, jsUrl: importUrl },
+          },
+        ],
+        {
+          importModule: deps.importModule,
+          injectCss: () => {},
+          warn: deps.warn,
+        },
+      );
       const record = loaded.get(pluginId);
       if (record === undefined) return;
       if (record.status === "failed") {
+        state.failedImportAttempts.set(pluginId, {
+          hash: candidate.bundle.hash,
+          count: retryCount,
+        });
         await deactivateCommittedGeneration(pluginId, state, deps);
         state.records.set(pluginId, record);
         publishDiagnostic(state, deps, {
@@ -684,8 +719,12 @@ async function reconcileCandidates(
             scriptId: null,
           },
         });
+        if (retryCount < PLUGIN_FRONTEND_LOAD_RETRY_LIMIT) {
+          deps.scheduleRetry?.(retryCount);
+        }
         return;
       }
+      state.failedImportAttempts.delete(pluginId);
       if (record.status === "needs-update") {
         await deactivateCommittedGeneration(pluginId, state, deps);
         state.records.set(pluginId, record);
@@ -840,6 +879,7 @@ export async function disposePluginFrontends(
   }
   state.records.clear();
   state.appliedHashes.clear();
+  state.failedImportAttempts.clear();
   state.activeGenerations.clear();
   state.diagnostics.clear();
   deps.diagnosticsChanged?.();
@@ -887,10 +927,19 @@ function publishBrowserDiagnostics(): void {
   for (const listener of browserDiagnosticsListeners) listener();
 }
 
+function scheduleRetryReconcile(attempt: number): void {
+  if (state.tornDown) return;
+  window.setTimeout(
+    () => schedulePluginFrontendReconcile(),
+    PLUGIN_FRONTEND_LOAD_RETRY_BASE_DELAY_MS * 2 ** attempt,
+  );
+}
+
 const PLUGIN_SLOT_BATCH_MAX_HOLD_MS = 150;
 
 const browserReconcileDeps: PluginFrontendReconcileDeps = {
   fetchCandidates: fetchFrontendCandidates,
+  scheduleRetry: (attempt) => scheduleRetryReconcile(attempt),
   importModule: (url) => import(/* @vite-ignore */ url),
   applyCss: applyPluginCss,
   retainCss: retainPluginCss,
@@ -963,6 +1012,9 @@ export function bootPluginFrontends(): Promise<void> {
   bootPromise ??= (async () => {
     installPluginRuntime();
     installPluginFrontendPageLifecycle();
+    setPluginCssFailureHandler((_pluginId, _url, attempt) =>
+      scheduleRetryReconcile(attempt),
+    );
     await reconcilePluginFrontends(state, browserReconcileDeps);
   })().catch((error: unknown) => {
     console.warn(

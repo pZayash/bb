@@ -11,6 +11,7 @@ export function PluginDiff({
   overflow,
   showLineNumbers,
   experimental_fullFileContents: fullFileContents,
+  experimental_expandUnchanged,
   className,
 }: DiffProps) {
   const normalized = useMemo(
@@ -37,6 +38,7 @@ export function PluginDiff({
       view={view}
       overflow={overflow}
       showLineNumbers={showLineNumbers}
+      expandUnchanged={experimental_expandUnchanged ?? false}
       className={className}
     />
   );

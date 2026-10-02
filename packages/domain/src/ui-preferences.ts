@@ -1,4 +1,6 @@
 import { z } from "zod";
+// bb-fork(windows): the automatic-shell sentinel is shared with the picker UI.
+import { AUTOMATIC_TERMINAL_SHELL_ID } from "./terminal-shell.js";
 
 const UI_PREFERENCE_STRING_MAX_LENGTH = 1_024;
 const UI_PREFERENCE_LIST_MAX_LENGTH = 10_000;
@@ -59,7 +61,10 @@ export const UI_PREFERENCE_KEYS = [
   "sidebar.pluginPanelOrder",
   "sidebar.visiblePluginPanels",
   "sidebar.navigationProvider",
+  "sidebar.headerProvider",
   "sidebar.threadListProvider",
+  // bb-fork(windows): shell used by Start terminal when the host offers a choice.
+  "terminal.shellId",
 ] as const;
 export type UiPreferenceKey = (typeof UI_PREFERENCE_KEYS)[number];
 const uiPreferenceKeySchema = z.enum(UI_PREFERENCE_KEYS);
@@ -85,8 +90,10 @@ function defineUiPreference<Schema extends z.ZodTypeAny>(
 export const uiPreferenceDefinitions = {
   "sidebar.organizationMode": defineUiPreference(
     sidebarOrganizationModeSchema,
-    "chronological",
-    "How the sidebar groups threads: by project, Custom (chronological), or by machine. Defaults to Custom when unset.",
+    // bb-fork(windows): the fork keeps the pre-#3742 default of By project.
+    "project",
+    // bb-fork(windows): description matches the fork default above.
+    "How the sidebar groups threads: by project, Custom (chronological), or by machine. Defaults to By project when unset.",
   ),
   "sidebar.threadGrouping.environment": defineUiPreference(
     sidebarThreadGroupingSchema,
@@ -176,14 +183,32 @@ export const uiPreferenceDefinitions = {
     "Navigation entries shown in the sidebar navigation strip; null shows every entry.",
   ),
   "sidebar.navigationProvider": defineUiPreference(
-    uiPreferenceStringSchema,
+    uiPreferenceStringSchema.transform((value) =>
+      value === "__builtin__" ? "navigation/navigation" : value,
+    ),
     "__automatic__",
-    "Plugin that renders the sidebar navigation, or __automatic__ / __builtin__.",
+    "Plugin that renders the sidebar navigation, or __automatic__ for the first installed navigation plugin other than the bundled navigation/navigation, falling back to it. Legacy __builtin__ resolves to navigation/navigation.",
+  ),
+  "sidebar.headerProvider": defineUiPreference(
+    uiPreferenceStringSchema.transform((value) =>
+      value === "__automatic__" ? "__builtin__" : value,
+    ),
+    "__builtin__",
+    "Plugin that renders controls beside the sidebar toggle, or __builtin__ for bb's own header only.",
   ),
   "sidebar.threadListProvider": defineUiPreference(
-    uiPreferenceStringSchema,
+    uiPreferenceStringSchema.transform((value) =>
+      value === "__builtin__" ? "thread-list/thread-list" : value,
+    ),
     "__automatic__",
-    "Plugin that renders the sidebar thread list, or __automatic__ / __builtin__.",
+    "Plugin that renders the sidebar thread list, or __automatic__ for the first installed thread list plugin other than the bundled thread-list/thread-list, falling back to it. Legacy __builtin__ resolves to thread-list/thread-list.",
+  ),
+  // bb-fork(windows): shell id the Start terminal action launches on a host that
+  // offers a choice; the sentinel keeps the host's own default.
+  "terminal.shellId": defineUiPreference(
+    uiPreferenceStringSchema,
+    AUTOMATIC_TERMINAL_SHELL_ID,
+    "Shell the Start terminal action launches when the host reports more than one; __automatic__ uses the host default.",
   ),
 } as const satisfies Record<UiPreferenceKey, UiPreferenceDefinition>;
 

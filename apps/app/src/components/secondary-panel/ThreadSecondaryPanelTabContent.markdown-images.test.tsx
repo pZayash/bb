@@ -10,6 +10,7 @@ import {
   WorkspaceFilePreviewTabContent,
 } from "./ThreadSecondaryPanelTabContent";
 import type { FilePreview } from "@bb/client-core";
+import { createQueryClientTestHarness } from "@/test/queryClientTestHarness";
 
 function markdownPreview(path: string, url = `/content/${path}`): FilePreview {
   return {
@@ -43,6 +44,8 @@ vi.mock("@/hooks/queries/environment-queries", () => ({
   useEnvironmentDiffFiles: vi.fn(),
   useEnvironmentFilePreview: (_environmentId: string, path: string) =>
     previewQuery(path),
+  // bb-fork(file-diff): the workspace preview tab reads work status for its diff base.
+  useEnvironmentWorkStatus: () => ({ data: undefined }),
 }));
 
 vi.mock("@/hooks/queries/project-queries", () => ({
@@ -67,8 +70,11 @@ vi.mock("@/hooks/queries/host-file-preview-query", () => ({
 
 afterEach(cleanup);
 
+// bb-fork(file-diff): the workspace preview tab reads diff data through react-query.
+const { wrapper } = createQueryClientTestHarness();
+
 function imageSrc(name: string): string | null {
-  return screen.getByRole("img", { name }).getAttribute("data-markdown-image-src");
+  return screen.getByRole("img", { name }).getAttribute("src");
 }
 
 describe("secondary-panel Markdown image routing", () => {
@@ -83,6 +89,7 @@ describe("secondary-panel Markdown image routing", () => {
         statusLabel={null}
         threadId="thr_preview"
       />,
+      { wrapper },
     );
 
     expect(imageSrc("absolute")).toBe(

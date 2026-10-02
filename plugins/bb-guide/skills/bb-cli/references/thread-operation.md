@@ -58,6 +58,10 @@
   and `Send at` columns. Several queued rows on one thread are normal. The SDK
   equivalents are `threads.queue.list` (cross-thread) and
   `threads.queuedMessages.list/send/update/delete` (one thread).
+- Failed queue rows show the failure reason and an exact recovery command.
+  Use `bb thread queue send <thread-id> <message-id>` to retry immediately,
+  including after automatic retries are exhausted. Editing does not clear a
+  failure or trigger a retry; send still respects core readiness requirements.
 - `bb thread queue send <thread-id> <message-id> --mode steer` re-attempts the
   row as a steer with the same send-now behavior: it bypasses the row's schedule
   and plugin waits, while core waits still apply. During provisioning it reports
@@ -93,6 +97,11 @@ hostId, providerId, projectId, parentThreadId, groupBy })`.
 <thread-id>`. `--json` reports `delivery` as `sent` or `queued`. If the thread
   fails while the message is queued (its provider exited), the message waits
   until somebody retries the thread.
+- `bb thread archive` is not a hard stop. For 30 seconds after archiving, a
+  thread keeps its terminals and a mid-turn thread keeps running, so
+  `bb thread unarchive` inside that window leaves everything in place; bb stops
+  the thread and closes its terminals once the grace elapses. Use
+  `bb thread stop <thread-id>` when the run must end now.
 
 ## Inspecting Results
 
@@ -193,3 +202,11 @@ For review or fix pipelines, get the environment ID from
   same scope, size, and title. It does not replay the original launch command.
 
 Clearing a thread's parent with `bb thread update --clear-parent-thread` inherits the former parent's section unless the update explicitly supplies a section. Children released by environment archiving also inherit their former parent's section.
+
+<!-- bb-fork(quiet-reparent): quiet reparent is a fork feature -->
+
+A parent change normally runs a system turn on the old and new parent (`ownership-removed` / `ownership-assigned`); `--no-ownership-notice` reparents quietly.
+
+<!-- bb-fork(parent-mute): parent notification mute is a fork feature -->
+
+`bb thread update --parent-notifications muted` keeps the parent link while silencing the child's outcome and blocker notifications; `--parent-notifications on` restores them. This is the way to work inside a child thread without waking the parent.

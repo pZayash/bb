@@ -525,6 +525,114 @@ describe("discoverProviderCommands over declared roots", () => {
     expect(byName(commands, "linked-file")).toBeUndefined();
   });
 
+  it("follows a project-origin symlinked skill directory inside the workspace", async () => {
+    const fixture = await makeWorkspaceFixture();
+    const skillsRoot = path.join(fixture.cwd, ".agent", "skills");
+    await mkdir(skillsRoot, { recursive: true });
+
+    const insideTarget = path.join(
+      fixture.cwd,
+      "harness",
+      "cursor",
+      "skills",
+      "explore",
+    );
+    await writeFileEnsuringDir(
+      path.join(insideTarget, "SKILL.md"),
+      skillFile("explore", "Explore the codebase"),
+    );
+    await symlink(insideTarget, path.join(skillsRoot, "explore"), "dir");
+
+    const commands = await discover(fixture, fixture.cwd);
+
+    expect(byName(commands, "explore")).toEqual({
+      name: "explore",
+      source: "skill",
+      origin: "project",
+      description: "Explore the codebase",
+      argumentHint: null,
+    });
+  });
+
+  it("follows a project-origin symlinked SKILL.md inside the workspace", async () => {
+    const fixture = await makeWorkspaceFixture();
+    const skillDirectory = path.join(
+      fixture.cwd,
+      ".agent",
+      "skills",
+      "print-export-to-file",
+    );
+    await mkdir(skillDirectory, { recursive: true });
+
+    const insideSkillFile = path.join(
+      fixture.cwd,
+      "harness",
+      "print-export-to-file.md",
+    );
+    await writeFileEnsuringDir(
+      insideSkillFile,
+      skillFile("print-export-to-file", "Print the export to a file"),
+    );
+    await symlink(insideSkillFile, path.join(skillDirectory, "SKILL.md"));
+
+    const commands = await discover(fixture, fixture.cwd);
+
+    expect(byName(commands, "print-export-to-file")).toEqual({
+      name: "print-export-to-file",
+      source: "skill",
+      origin: "project",
+      description: "Print the export to a file",
+      argumentHint: null,
+    });
+  });
+
+  it("follows only workspace-internal project-origin symlinks nested in a recursive root", async () => {
+    const fixture = await makeWorkspaceFixture();
+    const skillsRoot = path.join(fixture.cwd, ".agent", "skills");
+    await mkdir(skillsRoot, { recursive: true });
+
+    const insideTarget = path.join(
+      fixture.cwd,
+      "harness",
+      "cursor",
+      "skills",
+      "caveman",
+    );
+    await writeFileEnsuringDir(
+      path.join(insideTarget, "SKILL.md"),
+      skillFile("caveman", "Caveman mode"),
+    );
+    await symlink(insideTarget, path.join(skillsRoot, "caveman"), "dir");
+
+    const outsideTarget = path.join(tempRoot, "outside-nested-skill");
+    await writeFileEnsuringDir(
+      path.join(outsideTarget, "SKILL.md"),
+      skillFile("outside-nested"),
+    );
+    await symlink(
+      outsideTarget,
+      path.join(skillsRoot, "outside-nested"),
+      "dir",
+    );
+
+    const commands = await discover(
+      fixture,
+      fixture.cwd,
+      nativeRoots({
+        skills: { project: [declared(".agent/skills", { recursive: true })] },
+      }),
+    );
+
+    expect(byName(commands, "caveman")).toEqual({
+      name: "caveman",
+      source: "skill",
+      origin: "project",
+      description: "Caveman mode",
+      argumentHint: null,
+    });
+    expect(byName(commands, "outside-nested")).toBeUndefined();
+  });
+
   it("follows user-origin symlinked skill directories and skill files", async () => {
     const fixture = await makeWorkspaceFixture();
     const skillsRoot = path.join(fixture.homeDir, ".agent", "skills");

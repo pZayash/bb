@@ -128,21 +128,21 @@ describe("thread pruning sweep", () => {
       const now = vi
         .spyOn(performance, "now")
         .mockImplementation(() => elapsed);
-      const debug = vi
-        .spyOn(harness.deps.logger, "debug")
+      const trace = vi
+        .spyOn(harness.deps.logger, "trace")
         .mockImplementation((_fields, message) => {
           if (message === "Thread pruning policy advanced") elapsed = 51;
         });
       try {
         await runThreadPruningSweep(harness.deps, THREAD_PRUNING_SWEEP_LIMITS);
         expect(
-          debug.mock.calls.filter(
+          trace.mock.calls.filter(
             (call) => call[1] === "Thread pruning policy advanced",
           ),
         ).toHaveLength(1);
       } finally {
         now.mockRestore();
-        debug.mockRestore();
+        trace.mockRestore();
       }
     });
   });
@@ -157,14 +157,14 @@ describe("thread pruning sweep", () => {
         .mockReturnValueOnce(0)
         .mockReturnValue(75);
       const warn = vi.spyOn(harness.deps.logger, "warn");
-      const debug = vi.spyOn(harness.deps.logger, "debug");
+      const trace = vi.spyOn(harness.deps.logger, "trace");
       try {
         await runThreadPruningSweep(harness.deps, THREAD_PRUNING_SWEEP_LIMITS);
         expect(warn).toHaveBeenCalledWith(
           expect.objectContaining({ advanceElapsedMs: 75 }),
           "Slow thread pruning advance",
         );
-        expect(debug).toHaveBeenCalledWith(
+        expect(trace).toHaveBeenCalledWith(
           expect.objectContaining({
             advances: 1,
             maxAdvanceMs: 75,
@@ -175,7 +175,7 @@ describe("thread pruning sweep", () => {
       } finally {
         now.mockRestore();
         warn.mockRestore();
-        debug.mockRestore();
+        trace.mockRestore();
       }
     });
   });
@@ -185,9 +185,9 @@ describe("thread pruning sweep", () => {
       const first = seed(harness, 0);
       for (let i = 0; i < 100; i++)
         seedThread(harness.deps, { projectId: first.projectId });
-      const debug = vi.spyOn(harness.deps.logger, "debug");
+      const trace = vi.spyOn(harness.deps.logger, "trace");
       await runThreadPruningSweep(harness.deps, UNTIMED_SWEEP_LIMITS);
-      const steps = debug.mock.calls.filter(
+      const steps = trace.mock.calls.filter(
         (call) => call[1] === "Thread pruning policy advanced",
       );
       expect(steps.length).toBeLessThanOrEqual(64);
@@ -201,7 +201,7 @@ describe("thread pruning sweep", () => {
       expect(getNextThreadPruningPolicy(harness.db, new Set())).not.toBe(
         before,
       );
-      debug.mockRestore();
+      trace.mockRestore();
     });
   });
 });

@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { DiffPresentation } from "@/components/code/code-rendering";
 import type { WorkspaceDiffTarget } from "@bb/domain";
@@ -26,6 +26,7 @@ import {
 import type {
   EnvironmentFilePreviewSource,
   FilePreview,
+  FilePreviewDiffIntent,
   FilePreviewLineRange,
   WorkspaceFilePreviewStatusLabel,
 } from "@bb/client-core";
@@ -36,6 +37,14 @@ import { clearDiffFileCardStates } from "./git-diff/diffFilesStore";
 import { buildGitDiffIdentity } from "./git-diff/gitDiffPanelHelpers";
 import { useDiffFileContentsRequester } from "./git-diff/useDiffFileContentsRequester";
 import { SecondaryPanelFilePreview } from "./ThreadStorageFilePreview";
+import type { FilePreviewDiffSlot } from "./FilePreview";
+// bb-fork(file-diff): diff mode for workspace file tabs.
+import { FileDiffToggle } from "./file-diff/FileDiffToggle.fork";
+import { FileDiffView } from "./file-diff/FileDiffView.fork";
+import { useFileDiff } from "./file-diff/useFileDiff.fork";
+// bb-fork(file-diff-view): remember an open diff per workspace file.
+import { useFileDiffTabView } from "@/lib/file-diff-tab-view.fork";
+import type { GitDiffDisplayMode } from "./GitDiffToolbar";
 import {
   buildMarkdownFileImageRouting,
   buildMarkdownLeaseImageRouting,
@@ -49,6 +58,7 @@ interface GitDiffTabContentProps {
   target: WorkspaceDiffTarget | undefined;
   isPanelOpen: boolean;
   gitDiffPresentation: DiffPresentation;
+  fileFilter: string;
   onClearPendingGitDiffIntent?: () => void;
   onOpenFileInEditor?: (path: string) => void;
   onOpenFilePreview?: (path: string) => void;
@@ -63,6 +73,8 @@ interface WorkspaceFilePreviewTabContentProps {
   copyPath?: string | null;
   environmentId?: string | null;
   lineRange: FilePreviewLineRange | null;
+  // bb-fork(file-diff-open): set when the open request asked for the diff view.
+  diffIntent?: FilePreviewDiffIntent | null;
   markdownLinkRouting?: MarkdownLinkRouting;
   onSelectionAddToChat?: (text: string) => void;
   onOpenInEditor?: (path: string) => void;
@@ -167,6 +179,7 @@ export function GitDiffTabContent({
   target,
   isPanelOpen,
   gitDiffPresentation,
+  fileFilter,
   onClearPendingGitDiffIntent,
   onOpenFileInEditor,
   onOpenFilePreview,
@@ -294,6 +307,7 @@ export function GitDiffTabContent({
         target={target}
         diffIdentity={diffIdentity}
         files={diffFilesResponse.files}
+        fileFilter={fileFilter}
         initialPatches={diffFilesResponse.initialPatches}
         filesUpdatedAt={diffFilesUpdatedAt}
         presentation={gitDiffPresentation}
@@ -314,6 +328,7 @@ export function GitDiffTabContent({
 export function WorkspaceFilePreviewTabContent({
   activePath,
   copyPath = null,
+  diffIntent = null,
   environmentId,
   isPanelOpen,
   lineRange,
@@ -324,6 +339,50 @@ export function WorkspaceFilePreviewTabContent({
   statusLabel,
   threadId,
 }: WorkspaceFilePreviewTabContentProps) {
+  // bb-fork(file-diff): per-tab diff mode for Git-backed workspace files.
+  // bb-fork(file-diff-view): an open diff survives the panel remounting.
+  const { setStoredView, storedView } = useFileDiffTabView({
+    environmentId,
+    path: activePath,
+  });
+  const [isDiffActiveOverride, setIsDiffActiveOverride] = useState<
+    boolean | null
+  >(null);
+  const isDiffActive =
+    isDiffActiveOverride ??
+    (diffIntent != null || storedView?.isActive === true);
+  // bb-fork(file-diff-open): the requested view wins until the user picks one.
+  const [requestedViewModeOverride, setRequestedViewModeOverride] = useState<
+    GitDiffDisplayMode | null | undefined
+  >(undefined);
+  const requestedViewMode =
+    requestedViewModeOverride === undefined
+      ? (diffIntent?.view ?? storedView?.view ?? null)
+      : requestedViewModeOverride;
+  const diffRequestId = diffIntent?.requestId ?? null;
+  const diffBase = diffIntent?.base ?? storedView?.base;
+  const diffView = diffIntent?.view ?? storedView?.view;
+  useEffect(() => {
+    setIsDiffActiveOverride(null);
+    setRequestedViewModeOverride(undefined);
+    if (diffRequestId !== null) {
+      setStoredView({
+        ...(diffIntent?.base === undefined ? {} : { base: diffIntent.base }),
+        isActive: true,
+        ...(diffIntent?.view === undefined ? {} : { view: diffIntent.view }),
+      });
+    }
+    // oxlint-disable-next-line react/exhaustive-deps
+  }, [activePath, diffRequestId]);
+  const fileDiffController = useFileDiff({
+    enabled: isDiffActive,
+    environmentId,
+    intentKey: diffRequestId,
+    path: activePath,
+    sinceThreadStartIntent: diffBase === "thread_start",
+  });
+  const canShowFileDiff =
+    fileDiffController.availability.status !== "unavailable";
   const environmentQuery = useEnvironment(environmentId ?? null, {
     enabled:
       environmentId !== null &&
@@ -374,11 +433,45 @@ export function WorkspaceFilePreviewTabContent({
     threadId,
   ]);
 
+  // bb-fork(file-diff): only text files have a diff worth showing.
+  const fileDiff: FilePreviewDiffSlot | null =
+    canShowFileDiff && workspaceFilePreviewQuery.data?.kind === "text"
+      ? {
+          content: isDiffActive ? (
+            <FileDiffView
+              controller={fileDiffController}
+              onRequestedViewModeUsed={() =>
+                setRequestedViewModeOverride(null)
+              }
+              onSelectionAddToChat={onSelectionAddToChat}
+              requestedViewMode={requestedViewMode}
+            />
+          ) : null,
+          isActive: isDiffActive,
+          toggle: (
+            <FileDiffToggle
+              isActive={isDiffActive}
+              onToggle={() => {
+                const nextIsActive = !isDiffActive;
+                setRequestedViewModeOverride(null);
+                setIsDiffActiveOverride(nextIsActive);
+                setStoredView({
+                  ...(diffBase === undefined ? {} : { base: diffBase }),
+                  isActive: nextIsActive,
+                  ...(diffView === undefined ? {} : { view: diffView }),
+                });
+              }}
+            />
+          ),
+        }
+      : null;
+
   return (
     <SecondaryPanelFilePreview
       {...filePreviewQueryProps(workspaceFilePreviewQuery)}
       activePath={activePath}
       copyPath={copyPath}
+      fileDiff={fileDiff}
       htmlPreviewUrl={
         threadId && source?.kind === "working-tree"
           ? buildThreadWorktreeRawContentUrl(threadId, activePath)

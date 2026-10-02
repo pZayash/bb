@@ -25,6 +25,7 @@ import { useUnarchiveThread } from "@/hooks/mutations/thread-state-mutations";
 import { splitLayoutAtom } from "@/lib/split-layout/atoms";
 import type { SplitLayout } from "@/lib/split-layout";
 import { PaneContext } from "./PaneContext";
+import { RouteNavigationProvider } from "@/components/ui/app-route-anchor";
 import { SplitThreadArea } from "./SplitThreadArea";
 
 const ARCHIVED_AT = 1_700_000_000_000;
@@ -175,10 +176,12 @@ function renderArchiveScenario(initialArchivedAt: number | null = null) {
     <JotaiProvider store={store}>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={["/threads/thr-b"]}>
-          <SplitThreadArea />
-          <LocationProbe />
-          <ArchiveHarness threadId="thr-b" />
-          <UnarchiveHarness />
+          <RouteNavigationProvider>
+            <SplitThreadArea />
+            <LocationProbe />
+            <ArchiveHarness threadId="thr-b" />
+            <UnarchiveHarness />
+          </RouteNavigationProvider>
         </MemoryRouter>
       </QueryClientProvider>
     </JotaiProvider>,
@@ -205,7 +208,9 @@ describe("SplitThreadArea archive pruning", () => {
 
     fireEvent.click(screen.getByTestId("unarchive"));
     await waitFor(() => expect(archivedAtOf(queryClient, "thr-b")).toBeNull());
-    await act(async () => pendingArchive!.reject(new Error("unarchive failed")));
+    await act(async () =>
+      pendingArchive!.reject(new Error("unarchive failed")),
+    );
 
     await waitFor(() =>
       expect(archivedAtOf(queryClient, "thr-b")).toBe(ARCHIVED_AT),

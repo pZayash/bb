@@ -69,6 +69,81 @@ Native Windows drive-letter and UNC paths are accepted at the app/server
 boundary on native Windows hosts. In the WSL2 flow they are still rejected so
 unsupported input fails clearly.
 
+## Long checkout paths
+
+Node.js 22.19+ resolves a package's `#imports` through a native package-scope
+lookup that cannot read a `package.json` at a path of 260 characters or more
+(Windows `MAX_PATH`) and silently reports it as missing. In a deep checkout or
+worktree this breaks every tool that loads Vite 8 before doing any work:
+
+```
+TypeError [ERR_PACKAGE_IMPORT_NOT_DEFINED]: Package import specifier
+"#module-sync-enabled" is not defined imported from
+…\node_modules\.pnpm\vite@…\node_modules\vite\dist\node\chunks\node.js
+```
+
+`vitest`, `vite build`, `pnpm exec turbo run build --filter=@bb/app`, and the
+`scripts/windows/install.ps1` build all fail this way, while `tsc`, `oxlint`,
+`oxfmt`, and `node --import tsx` keep working, because plain `node_modules`
+resolution reads long paths fine.
+
+The fork's root `.npmrc` sets `virtual-store-dir-max-length=50`, which caps the
+`node_modules/.pnpm/<pkg>@<version>` entry name (pnpm keeps the package's own
+directory name intact) and leaves room for the checkout path. Two
+consequences:
+
+- An existing checkout was linked with pnpm's default of 120 and must be
+  relinked once with `pnpm install --force`; a plain `pnpm install` fails with
+  `VIRTUAL_STORE_DIR_MAX_LENGTH_DIFF`. `scripts/windows/merge-upstream.ps1`
+  retries with `--force` when it hits that error.
+- The limit is not gone, only moved: a checkout root longer than about 158
+  characters, or a repository directory name near the 200-byte worktree cap,
+  can still exceed it. Keep dev checkouts and `BB_DATA_DIR` short;
+  `scripts/windows/check.ps1` warns when the checkout path is too long.
+
+Verify with `pnpm exec vitest --version` from any package (it fails immediately
+when the limit is hit) and `pnpm exec turbo run test --filter=@bb/templates --force`.
+
+## Fork app behavior
+
+Two fork-owned deltas change app behavior on every platform:
+
+- An unset `sidebar.organizationMode` preference defaults to By project
+  (`project`); upstream defaults it to Custom (`chronological`). The preference
+  stays server-backed, so an explicit choice, `bb settings ui set`, and
+  `bb settings ui reset` behave as documented.
+- The app remembers the last opened thread in browser storage
+  (`bb.fork.lastThread`) and reopens it when a load lands on the new-thread
+  screen (`/`). It validates the remembered thread against the cached sidebar
+  bootstrap first, and never redirects after an in-session navigation. This
+  keeps the active chat across dev-instance reloads, which upstream loses
+  because it keeps the route only in the URL and in-memory history.
+
+## Terminal shells
+
+On native Windows the fork starts terminals in a shell the machine actually has,
+and lets you choose among them:
+
+- Detection order is PowerShell 7 (`pwsh.exe`, from `PATH` then
+  `%ProgramFiles%\PowerShell\7` and the `WindowsApps` alias), Windows
+  PowerShell, then Git Bash (`<Git install>\bin\bash.exe`, found beside a
+  `git.exe` on `PATH` or under the standard Git for Windows locations). The
+  first detected shell is the machine default; a machine with none fails the
+  launch with one clear message.
+- The Start terminal row in the side panel carries a **Shell** picker once the
+  machine reports more than one shell, and the last choice is remembered as the
+  `terminal.shellId` UI preference. A stored id that the current machine no
+  longer offers falls back to that machine's default instead of failing.
+- Git Bash starts as its own launcher does (`bash.exe --login -i`); PowerShell
+  keeps `-NoLogo` and `-NoLogo -Command`. A command terminal on Git Bash uses the
+  generic posix `-lc` arguments.
+- `bb terminal shells --machine <id-or-name>` prints the ids, labels, paths, and
+  the default; `bb terminal create --shell <id>` picks one. `terminal restart`
+  still replaces a terminal with the machine default shell.
+- Non-Windows hosts report no shell list, so the picker stays hidden and the
+  existing posix resolution (`SHELL`, `/bin/zsh`, `/bin/bash`, `/bin/sh`) is
+  unchanged.
+
 ## Source development on native Windows
 
 `pnpm dev` runs the whole stack natively: Vite serves the app with hot module
@@ -101,6 +176,19 @@ their dev supervisors, so iterating needs no production build.
 - Terminals, providers, plugin host workers, and the bundled `bb` CLI behave as
   they do on a supervisor-managed host; the fork only changes how the dev server
   and the dev host daemon start and restart.
+- The dev server hot-reloads builtin plugin sources. While a plugin is showing an
+  open user form (an `AskUserQuestion` card, a secret request), its rebuild and
+  reload are held back and retried every few seconds so the form survives; the
+  request is answered normally instead of being interrupted mid-answer. If the
+  page still reloads (HMR, a manual reload, a server restart), a question form
+  restores the answers already chosen from a per-tab draft keyed by interaction
+  id, so a long multi-question form resumes where it was left off.
+
+- After an upstream merge, restart the dev server (`pnpm dev:restart-server`)
+  before judging the UI. A bundled plugin that upstream added is reconciled
+  only at server startup, so until the restart it stays uninstalled and the app
+  shows placeholders such as `No thread list plugin is enabled.` even though the
+  threads themselves are intact.
 
 The dev flow stays a maintainer surface rather than a shipped product path:
 native Windows ships through the supervisor ([README.windows.md](../README.windows.md))

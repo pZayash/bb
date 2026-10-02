@@ -6,7 +6,8 @@ import { z } from "zod";
 const WINDOWS_DRIVE_ABSOLUTE_PATH_PATTERN = /^[A-Za-z]:[\\/]/u;
 const WINDOWS_UNC_ABSOLUTE_PATH_PATTERN = /^[\\/]{2}/u;
 
-function isHostAbsolutePath(path: string): boolean {
+// bb-fork(windows): shared with the provider path validators in the server.
+export function isHostAbsolutePath(path: string): boolean {
   return (
     path.startsWith("/") ||
     WINDOWS_DRIVE_ABSOLUTE_PATH_PATTERN.test(path) ||

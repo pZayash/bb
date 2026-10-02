@@ -168,6 +168,34 @@ describe("BbDiff", () => {
     });
   });
 
+  it("rebuilds the whole file when the caller asks for both complete sides", async () => {
+    render(
+      <BbDiff
+        file={fixture()}
+        patchText={PATCH}
+        view="split"
+        overflow="scroll"
+        showLineNumbers
+        expandUnchanged
+        fullFileContents={FULL_FILE_CONTENTS}
+      />,
+    );
+    await screen.findByTestId("pierre-file-diff");
+
+    const fullFileLineCount =
+      FULL_FILE_CONTENTS.new.content.split("\n").length - 1;
+    const fileDiff = pierre.lastFileDiff as {
+      hunks: { additionCount: number; additionStart: number }[];
+      isPartial: boolean;
+    };
+    expect(fileDiff.isPartial).toBe(false);
+    expect(fileDiff.hunks).toHaveLength(1);
+    expect(fileDiff.hunks[0]).toMatchObject({
+      additionCount: fullFileLineCount,
+      additionStart: 1,
+    });
+  });
+
   it("rejects full contents that do not match the patch", async () => {
     const file = fixture();
     render(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PromptMentionResource } from "@bb/domain";
+import type { PromptInput, PromptMentionResource } from "@bb/domain";
 import {
   appendQuoteAndAttachmentsToDraft,
   appendQuoteToDraftText,
@@ -289,6 +289,22 @@ describe("prompt draft helpers", () => {
           mimeType: "text/markdown",
         },
       ],
+    });
+  });
+
+  it("ignores missing or malformed prompt input instead of throwing", () => {
+    expect(promptInputToDraft(undefined)).toEqual(emptyPromptDraftState());
+    expect(promptInputToDraft(null)).toEqual(emptyPromptDraftState());
+    const malformed = [
+      null,
+      "nope",
+      { type: "unknown" },
+      { type: "text", text: "kept", mentions: [] },
+    ] as unknown as PromptInput[];
+    expect(promptInputToDraft(malformed)).toEqual({
+      text: "kept",
+      mentions: [],
+      attachments: [],
     });
   });
 });

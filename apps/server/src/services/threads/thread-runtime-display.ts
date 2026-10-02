@@ -4,8 +4,10 @@ import {
   getSessionById,
   listActiveBackgroundTaskCountsByThreadIds,
   listLatestThreadStateEventRowsByThreadIds,
+  listLastStoredTurnRequestEvents,
   listLatestSessionsForHosts,
   listOpenTurnInputAcceptedRowsByThreadIds,
+  listProjectExecutionDefaultsByProjectIds,
   listStoredClientTurnRequestRowsByKeys,
   type DbConnection,
   type HostDaemonSessionRow,
@@ -15,6 +17,7 @@ import {
 } from "@bb/db";
 import { LEGACY_CODEX_GOAL_EXTENSION_KIND } from "@bb/domain";
 import type {
+  ReasoningLevel,
   Thread,
   ThreadActivityState,
   ThreadChangeMetadata,
@@ -34,10 +37,17 @@ import { DAEMON_ACTIVE_WORK_DISCONNECT_GRACE_MS } from "../../constants.js";
 import type { NotificationHub } from "../../ws/hub.js";
 import { resolveProviderPlanCommand } from "../providers/provider-plan-command.js";
 import type { ProviderRegistryService } from "../providers/provider-registry.js";
-import { listQueuedThreadMessageCountsByThreadIds } from "@bb/db";
+import {
+  getThreadDraft,
+  listQueuedThreadMessageCountsByThreadIds,
+} from "@bb/db";
 import { resolveEnvironmentWorkspaceDisplayKind } from "../environments/environment-response.js";
 import { canThreadSpawnChild } from "./thread-parent.js";
+import { parseStoredTurnRequestEvent } from "./thread-events.js";
+import { canRestoreThreadEnvironment } from "./thread-environment-restore.js";
+import { parseStoredThreadDraft } from "./thread-draft.js";
 import { toThreadEventWithMeta } from "./timeline.js";
+import { intendedThreadHostId } from "./dispatch-attempt.js";
 
 type ThreadRuntimeDisplayHub = Pick<
   NotificationHub,
@@ -85,7 +95,9 @@ interface ToThreadListEntryResponseFromLatestSessionArgs {
   activity: ThreadActivityState;
   hostConnected: boolean;
   latestSession: HostDaemonSessionRow | null;
+  model: string | null;
   now?: number;
+  reasoningLevel: ReasoningLevel | null;
   queuedWork: ThreadQueuedWork;
   thread: ThreadWithPendingInteractionState;
 }
@@ -169,6 +181,8 @@ function toPublicThread(thread: Thread): Thread {
     sectionId: thread.sectionId,
     status: thread.status,
     parentThreadId: thread.parentThreadId,
+    // bb-fork(parent-mute): keep the mute state on the public thread copy
+    parentNotificationsMutedAt: thread.parentNotificationsMutedAt,
     sourceThreadId: thread.sourceThreadId,
     lifecycleOwnerThreadId: thread.lifecycleOwnerThreadId,
     originKind: thread.originKind,
@@ -355,11 +369,18 @@ export function toThreadResponseFromThread(
       listActiveBackgroundTaskCountsByThreadIds(deps.db, {
         threadIds: [args.thread.id],
       })[0]?.activeBackgroundAgentCount ?? 0,
+    canRestoreEnvironment: canRestoreThreadEnvironment(deps, {
+      thread: args.thread,
+    }),
     canSpawnChild: canThreadSpawnChild(deps, { thread: args.thread }),
     queuedMessageCount:
       listQueuedThreadMessageCountsByThreadIds(deps.db, {
         threadIds: [args.thread.id],
       })[0]?.queuedMessageCount ?? 0,
+    draft: parseStoredThreadDraft({
+      id: args.thread.id,
+      draft: getThreadDraft(deps.db, args.thread.id),
+    }),
   };
 }
 
@@ -536,6 +557,61 @@ function buildThreadQueuedWorkByThreadId(
   return result;
 }
 
+interface ThreadExecutionResolution {
+  model: string | null;
+  reasoningLevel: ReasoningLevel | null;
+}
+
+// bb-fork(windows): the sidebar shows the model and its reasoning level, so the
+// bb-fork(windows): row needs both resolved the way the next turn resolves them.
+function buildThreadExecutionByThreadId(
+  deps: ThreadRuntimeDisplayDeps,
+  threads: readonly ThreadWithPendingInteractionState[],
+): Map<string, ThreadExecutionResolution> {
+  const executionByThreadId = new Map<string, ThreadExecutionResolution>();
+  if (threads.length === 0) {
+    return executionByThreadId;
+  }
+  const defaultsByProjectId = listProjectExecutionDefaultsByProjectIds(
+    deps.db,
+    { projectIds: [...new Set(threads.map((thread) => thread.projectId))] },
+  );
+  const lastExecutionByThreadId = new Map<string, ThreadExecutionResolution>();
+  for (const row of listLastStoredTurnRequestEvents(deps.db, {
+    threadIds: threads.map((thread) => thread.id),
+  })) {
+    try {
+      const execution = parseStoredTurnRequestEvent(row).execution;
+      lastExecutionByThreadId.set(row.threadId, {
+        model: execution.model,
+        reasoningLevel: execution.reasoningLevel,
+      });
+    } catch {
+      continue;
+    }
+  }
+  for (const thread of threads) {
+    const projectDefault = defaultsByProjectId.get(thread.projectId);
+    const projectApplies = projectDefault?.providerId === thread.providerId;
+    const lastExecution = lastExecutionByThreadId.get(thread.id);
+    const model =
+      thread.modelOverride ??
+      lastExecution?.model ??
+      (projectApplies ? projectDefault?.model : undefined);
+    const reasoningLevel =
+      thread.reasoningLevelOverride ??
+      lastExecution?.reasoningLevel ??
+      (projectApplies ? projectDefault?.reasoningLevel : undefined);
+    if (model !== undefined || reasoningLevel !== undefined) {
+      executionByThreadId.set(thread.id, {
+        model: model ?? null,
+        reasoningLevel: reasoningLevel ?? null,
+      });
+    }
+  }
+  return executionByThreadId;
+}
+
 export function toThreadListEntryResponses(
   deps: ThreadPromptBannerDeps,
   args: ToThreadListEntryResponsesArgs,
@@ -567,9 +643,16 @@ export function toThreadListEntryResponses(
     deps,
     args.threads,
   );
+  const executionByThreadId = buildThreadExecutionByThreadId(
+    deps,
+    args.threads,
+  );
   return args.threads.map((thread) => {
-    return toThreadListEntryResponseFromLatestSession({
+    const execution = executionByThreadId.get(thread.id);
+    const entry = toThreadListEntryResponseFromLatestSession({
       activity: activityByThreadId.get(thread.id) ?? EMPTY_THREAD_ACTIVITY,
+      model: execution?.model ?? null,
+      reasoningLevel: execution?.reasoningLevel ?? null,
       queuedWork: queuedWorkByThreadId.get(thread.id) ?? "none",
       hostConnected:
         thread.environmentHostId !== null &&
@@ -581,6 +664,13 @@ export function toThreadListEntryResponses(
       now: args.now,
       thread,
     });
+    return thread.environmentHostId === null &&
+      (thread.status === "pending" || thread.status === "starting")
+      ? {
+          ...entry,
+          environmentHostId: intendedThreadHostId(deps, thread.id),
+        }
+      : entry;
   });
 }
 
@@ -591,6 +681,8 @@ function toThreadListEntryResponseFromLatestSession(
   return {
     ...thread,
     activity: args.activity,
+    model: args.model,
+    reasoningLevel: args.reasoningLevel,
     queuedWork: args.queuedWork,
     pinSortKey: args.thread.pinSortKey,
     environmentBranchName: args.thread.environmentBranchName,

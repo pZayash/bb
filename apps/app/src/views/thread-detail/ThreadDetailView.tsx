@@ -8,7 +8,7 @@ import {
 } from "react";
 import { nanoid } from "nanoid";
 import { useSystemProviderInfo } from "@/hooks/queries/system-queries";
-import { useNavigate } from "react-router-dom";
+import { useImmediateRouteNavigate } from "@/components/ui/app-route-anchor";
 import { useAtom } from "jotai";
 import { useDesktopBrowserReveal } from "@/lib/use-desktop-browser-reveal";
 import { atomWithStorage } from "jotai/utils";
@@ -78,7 +78,6 @@ import {
   useThread,
   useThreadDetailBootstrap,
   useThreadPendingInteractions,
-  useThreadQueuedMessages,
   type ProjectThreadSubsetFilters,
 } from "../../hooks/queries/thread-queries";
 import { isTransientReadError } from "@/hooks/queries/query-helpers";
@@ -128,6 +127,16 @@ import {
   selectWorkspaceChangedFilesSection,
   type WorkspaceChangedFileSelection,
 } from "@/components/workspace/workspace-change-summary";
+// bb-fork(thread-start-ref): the start-commit view lists both sides of the range.
+import {
+  buildThreadStartChangedFilesSection,
+  emptyThreadStartChangedFilesSection,
+  THREAD_START_CHANGES_LABEL,
+} from "@/components/workspace/thread-start-changes.fork";
+// bb-fork(thread-start-view): the chosen comparison survives switching threads.
+import { useThreadStartCommitView } from "@/lib/thread-start-view.fork";
+// bb-fork(thread-start-ref): pick the commit the thread compares from.
+import { StartCommitPicker } from "@/components/workspace/StartCommitPicker.fork";
 import { getThreadDisplayTitle } from "@/lib/thread-title";
 import { hasThreadProvisioningFailure } from "@/lib/thread-provisioning-failure";
 import {
@@ -181,6 +190,7 @@ import {
   useThreadStorageViewer,
 } from "@/components/secondary-panel/useThreadStorageViewer";
 import { getThreadConversationCollapsedAtom } from "@/components/secondary-panel/threadSecondaryPanelAtoms";
+import { useQuietReparentPreference } from "@/components/secondary-panel/quiet-reparent.fork";
 import { BrowserTabLifecycleObserver } from "@/components/secondary-panel/BrowserTabDeck";
 import {
   LazyBrowserTabDeck,
@@ -253,6 +263,10 @@ import type {
   SecondaryPanelRenderableTab,
 } from "@/components/secondary-panel/ThreadSecondaryPanel";
 import { useEnvironmentMergeBase } from "@/components/secondary-panel/git-diff/useEnvironmentMergeBase";
+// bb-fork(windows): shell picked beside the Start terminal action.
+import { useTerminalShellChoice } from "@/components/secondary-panel/useTerminalShellChoice";
+import { TerminalShellSelector } from "@/components/secondary-panel/TerminalShellSelector";
+import { terminalShellStart } from "@/components/secondary-panel/terminalShellStart";
 import { useThreadGitActions } from "./useThreadGitActions";
 import { useSendSideChatMessageToMain } from "./useSendSideChatMessageToMain";
 import { useThreadReadTracking } from "@/hooks/useThreadReadTracking";
@@ -378,6 +392,7 @@ function getPullRequestMergeLoadingTitle(
 
 interface ThreadDetailViewPageProps {
   surface: "page";
+  onRequestClose?: (() => void) | null;
 }
 
 interface ThreadDetailViewPaneProps extends ThreadRoutePathArgs {
@@ -499,7 +514,11 @@ function ThreadDetailNotFound() {
   );
 }
 
-function RoutedThreadDetailView() {
+function RoutedThreadDetailView({
+  onRequestClose,
+}: {
+  onRequestClose?: (() => void) | null;
+}) {
   const { projectId, threadId } = useRouteState();
 
   if (!projectId || !threadId) {
@@ -507,7 +526,7 @@ function RoutedThreadDetailView() {
   }
 
   return (
-    <DefaultPaneContextProvider>
+    <DefaultPaneContextProvider onRequestClose={onRequestClose}>
       <ThreadDetailViewInternal projectId={projectId} threadId={threadId} />
     </DefaultPaneContextProvider>
   );
@@ -517,14 +536,14 @@ export function ThreadDetailView(props: ThreadDetailViewProps) {
   if (props.surface === "pane") {
     return <ThreadDetailViewInternal {...props} />;
   }
-  return <RoutedThreadDetailView />;
+  return <RoutedThreadDetailView onRequestClose={props.onRequestClose} />;
 }
 
 function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
   const { projectId, threadId } = props;
   const { isFocused, navigateInPane, onRequestClose, isBoundedPane } =
     usePaneContext();
-  const navigate = useNavigate();
+  const navigate = useImmediateRouteNavigate();
   useFixedPanelTabsStorageMaintenance();
   const systemConfigQuery = useSystemConfig();
   const threadDetailBootstrapQuery = useThreadDetailBootstrap(threadId);
@@ -548,13 +567,19 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     staleTime: 5_000,
   });
   const environment = environmentQuery.data;
+  const hostLifecycle =
+    environment === undefined || environment.hostLifecycle === "active"
+      ? null
+      : environment.hostLifecycle;
+  const executionUnavailable =
+    hostLifecycle !== null || environment?.status === "destroyed";
   const gitDiffTabStatus = resolveGitDiffTabStatus({
     environmentId: thread?.environmentId ?? null,
     environmentIsGitRepo: environment?.isGitRepo,
     environmentLoadFailed: environmentQuery.isError,
     environmentOwnsPath: environment?.managed,
     hasResolvedThread: thread !== undefined,
-    threadArchived: thread?.archivedAt != null,
+    threadArchived: thread?.archivedAt != null || executionUnavailable,
   });
   const threadFixedViewTabs = useMemo(
     () => [
@@ -652,10 +677,6 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
   );
   const hasPendingInteraction =
     getLatestPendingInteraction(pendingInteractions) !== null;
-  const { data: queuedMessagesForEditEligibility = [] } =
-    useThreadQueuedMessages(thread?.id ?? "", {
-      enabled: threadQueryState.status === "ready" && Boolean(thread?.id),
-    });
   const unreadDividerState = useThreadUnreadDividerState({
     routeThreadId: threadId,
     thread,
@@ -1035,7 +1056,6 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     !createQueuedMessage.isPending &&
     !editMessage.isPending &&
     !(timelineLoading && timelineRows.length === 0) &&
-    queuedMessagesForEditEligibility.length === 0 &&
     activeWorkflows.length === 0 &&
     thread.activeBackgroundAgentCount === 0 &&
     activeBackgroundCommands.length === 0;
@@ -1204,15 +1224,21 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     isSideChatThread && threadSourceThreadId !== null
       ? sendSideChatMessageToMain
       : undefined;
-  const canUseGitUi = gitDiffTabStatus === "eligible";
+  const canUseGitUi = !executionUnavailable && gitDiffTabStatus === "eligible";
   const canCreateTerminal =
+    !executionUnavailable &&
     thread?.environmentId !== null &&
     thread?.environmentId !== undefined &&
     environment?.status === "ready" &&
     connectedHostIds.has(environment.hostId);
+  // bb-fork(windows): the shell this thread's terminals launch.
+  const terminalShellChoice = useTerminalShellChoice(
+    environment?.hostId ?? null,
+  );
   const createThreadInEnvironment = useCreateThreadInEnvironment({
     projectId,
     environmentId: thread?.environmentId ?? "",
+    sectionId: thread?.sectionId ?? null,
   });
   const { providers: registeredEnvironmentProviders } =
     useSystemEnvironmentProviders();
@@ -1246,6 +1272,18 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     setThreadSecondaryPanel,
     threadId,
   });
+
+  // bb-fork(thread-start-ref): compare the thread against the commit it started from.
+  const threadStartRef = environment?.startRef ?? null;
+  // bb-fork(thread-start-view): the chosen view survives switching threads.
+  const [isSinceThreadStart, setIsSinceThreadStart] = useThreadStartCommitView(
+    environment?.id,
+  );
+  const isComputedSinceThreadStart =
+    isSinceThreadStart && threadStartRef !== null;
+  const compareRef = isComputedSinceThreadStart
+    ? threadStartRef
+    : requestedMergeBaseBranch;
   const {
     closePanel: closeWorkspacePanel,
     openCommitDiff: openGitDiffCommitDestination,
@@ -1620,6 +1658,8 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
         threadId,
         cols: DEFAULT_TERMINAL_COLS,
         rows: DEFAULT_TERMINAL_ROWS,
+        // bb-fork(windows): launch the shell picked beside the action.
+        ...terminalShellStart(terminalShellChoice.shellIdForLaunch),
       })
       .then((session) => {
         closeTab(newTab.id);
@@ -1634,6 +1674,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     createTerminal,
     openCompactDrawer,
     setActiveFixedTerminal,
+    terminalShellChoice.shellIdForLaunch,
     threadId,
   ]);
   useAppCommandHandler("terminal.open", () => {
@@ -1751,9 +1792,34 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     },
     [openSecondaryPanelDiffFile, openWorkspaceFile],
   );
+  // bb-fork(file-diff-open): the changed-files list opens the split diff directly.
+  const handleChangedFileDiffClick = useCallback(
+    (selection: WorkspaceChangedFileSelection) => {
+      const openTarget = resolveWorkspaceChangedFileOpenTarget(selection);
+      openWorkspaceFile({
+        diffIntent: {
+          base:
+            selection.section.label.startsWith(THREAD_START_CHANGES_LABEL)
+              ? "thread_start"
+              : "merge_base",
+          requestId: nanoid(),
+          view: "split",
+        },
+        lineRange: null,
+        path: selection.file.path,
+        source:
+          openTarget.kind === "preview"
+            ? openTarget.source
+            : { kind: "working-tree" },
+        statusLabel:
+          openTarget.kind === "preview" ? openTarget.statusLabel : null,
+      });
+    },
+    [openWorkspaceFile],
+  );
   const workStatusQuery = useEnvironmentWorkStatus(
     thread?.environmentId,
-    requestedMergeBaseBranch,
+    compareRef,
     {
       enabled: canUseGitUi && environment !== undefined,
     },
@@ -1862,8 +1928,12 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
   );
   const workspaceBranch = workspaceStatus?.branch;
   const workspaceChangedFilesSection = useMemo(
-    () => selectWorkspaceChangedFilesSection(workspaceStatus),
-    [workspaceStatus],
+    () =>
+      // bb-fork(thread-start-ref): the start-commit view lists both sides of the range.
+      isComputedSinceThreadStart
+        ? buildThreadStartChangedFilesSection(workspaceStatus)
+        : selectWorkspaceChangedFilesSection(workspaceStatus),
+    [isComputedSinceThreadStart, workspaceStatus],
   );
   const workingTreeChangedFilesSection = useMemo(() => {
     if (
@@ -1874,10 +1944,24 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     }
     return workspaceChangedFilesSection;
   }, [workspaceChangedFilesSection]);
+  // bb-fork(thread-start-ref): the empty card keeps the start-commit control reachable.
+  const bannerChangedFilesSection = useMemo(
+    () =>
+      workspaceChangedFilesSection ??
+      emptyThreadStartChangedFilesSection(
+        isComputedSinceThreadStart,
+        threadStartRef,
+      ),
+    [isComputedSinceThreadStart, threadStartRef, workspaceChangedFilesSection],
+  );
   const { isLocalDaemonHost } = useHostDaemon();
   const threadEnvironmentIsLocal = environment
     ? isLocalDaemonHost(environment.hostId)
     : false;
+  const removedEnvironmentHostName =
+    environment !== undefined && environment.hostLifecycle !== "active"
+      ? (threadDetailBootstrapQuery.data?.environmentHostName ?? null)
+      : null;
   const environmentDisplayHostContext = useMemo<EnvironmentDisplayHostContext>(
     () => ({
       locality: threadEnvironmentIsLocal ? "local" : "remote",
@@ -1886,16 +1970,27 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
             name: threadEnvironmentHost.name,
             connected: threadEnvironmentHost.status === "connected",
           }
-        : null,
+        : removedEnvironmentHostName
+          ? {
+              name: removedEnvironmentHostName,
+              connected: false,
+            }
+          : null,
     }),
-    [threadEnvironmentIsLocal, threadEnvironmentHost],
+    [
+      removedEnvironmentHostName,
+      threadEnvironmentIsLocal,
+      threadEnvironmentHost,
+    ],
   );
   const workspacePreviewRootPath = environment?.path ?? null;
-  const threadOpenContext = resolveEnvironmentOpenContext({
-    environment,
-    serverOrigin: window.location.origin,
-    threadEnvironmentIsLocal,
-  });
+  const threadOpenContext = executionUnavailable
+    ? null
+    : resolveEnvironmentOpenContext({
+        environment,
+        serverOrigin: window.location.origin,
+        threadEnvironmentIsLocal,
+      });
   const {
     canOpenPreferredDirectoryTarget,
     canOpenPreferredFileTarget,
@@ -2006,6 +2101,14 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     updateEnvironment,
     workspaceStatus,
   });
+  // bb-fork(thread-start-ref): picking a merge-base branch leaves the start-commit view.
+  const handleBannerMergeBaseBranchChange = useCallback(
+    (branch: string) => {
+      setIsSinceThreadStart(false);
+      handleMergeBaseBranchChange(branch);
+    },
+    [handleMergeBaseBranchChange, setIsSinceThreadStart],
+  );
   const gitActions = useThreadGitActions({
     environment,
     requestEnvironmentAction,
@@ -2017,6 +2120,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     parentThread?.title && parentThread.title.trim().length > 0
       ? parentThread.title
       : parentThreadId;
+  const [quietReparent, setQuietReparent] = useQuietReparentPreference();
   const handleAssignParent = useCallback(
     (nextParentThreadId: string | null) => {
       if (!thread || updateThread.isPending) {
@@ -2026,6 +2130,22 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
       updateThread.mutate({
         id: thread.id,
         parentThreadId: nextParentThreadId,
+        // bb-fork(quiet-reparent): the quiet switch rides the same PATCH
+        ...(quietReparent ? { ownershipNotice: false } : {}),
+      });
+    },
+    [thread, updateThread, quietReparent],
+  );
+  // bb-fork(parent-mute): mute/unmute child->parent notifications in place
+  const handleSetParentNotificationsMuted = useCallback(
+    (next: boolean) => {
+      if (!thread || updateThread.isPending) {
+        return;
+      }
+
+      updateThread.mutate({
+        id: thread.id,
+        parentNotificationsMuted: next,
       });
     },
     [thread, updateThread],
@@ -2221,11 +2341,13 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     canOpenPreferredFileTarget,
     openPathInPreferredFileTarget,
   ]);
-  const workspaceOpenPath = resolveThreadWorkspaceOpenPath({
-    canOpenWorkspace: canOpenPreferredDirectoryTarget,
-    environment,
-    hasWorkspaceOpenTargets: directoryOpenTargets.length > 0,
-  });
+  const workspaceOpenPath = executionUnavailable
+    ? null
+    : resolveThreadWorkspaceOpenPath({
+        canOpenWorkspace: canOpenPreferredDirectoryTarget,
+        environment,
+        hasWorkspaceOpenTargets: directoryOpenTargets.length > 0,
+      });
   usePublishThreadPanelOpener(handleOpenTimelinePluginPanel, isFocused);
   useAppCommandHandler("workspace.openPreferred", () => {
     if (!isFocused) return false;
@@ -2393,13 +2515,13 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     ? getEnvironmentSummaryChrome({
         display: threadEnvironmentDisplay,
         providerLookup: threadEnvironmentProviderLookup,
-        environmentName: environment?.name ?? null,
         hasMultipleMachines,
         host: resolvedThreadEnvironmentHost,
         machineProviders: registeredMachineProviders,
       })
     : undefined;
   const isThreadOnReusableEnvironment =
+    !executionUnavailable &&
     environment !== undefined &&
     environment.status === "ready" &&
     environment.path !== null;
@@ -2414,7 +2536,8 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     : undefined;
   const isWorkspaceDeleted = environment?.status === "destroyed";
   const threadEnvironmentGoneStatus =
-    environment?.status === "destroyed" ? environment.status : null;
+    hostLifecycle ??
+    (environment?.status === "destroyed" ? environment.status : null);
   const threadGitStatusDisplay = getGitStatusDisplay(workspaceStatus, {
     mergeBaseBranch: effectiveMergeBaseBranch,
     showBranchComparison: showBranchComparisonUi,
@@ -2450,14 +2573,15 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
           },
         }))
       : [];
-  const responsiveGitActions: ThreadActionsMenuResponsiveAction[] =
-    gitActions.threadHeaderGitActions.map((action) => ({
-      icon: "GitBranch" as const,
-      label: action.label,
-      onSelect: () => {
-        gitActions.threadGitActionDialog.onOpen(action.target);
-      },
-    }));
+  const responsiveGitActions: ThreadActionsMenuResponsiveAction[] = (
+    executionUnavailable ? [] : gitActions.threadHeaderGitActions
+  ).map((action) => ({
+    icon: "GitBranch" as const,
+    label: action.label,
+    onSelect: () => {
+      gitActions.threadGitActionDialog.onOpen(action.target);
+    },
+  }));
   const responsiveHeaderActions = [
     ...responsiveWorkspaceActions,
     ...responsiveGitActions,
@@ -2508,7 +2632,9 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
           projectId={thread.projectId}
         />
       }
-      threadHeaderGitActions={gitActions.threadHeaderGitActions}
+      threadHeaderGitActions={
+        executionUnavailable ? [] : gitActions.threadHeaderGitActions
+      }
       threadId={thread.id}
       threadTitle={threadTitle}
       workspaceOpenButton={workspaceOpenButton}
@@ -2517,6 +2643,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
   const composerFooter = (
     <ThreadDetailPromptArea
       activeBackgroundAgentCount={thread.activeBackgroundAgentCount}
+      serverDraft={thread.draft}
       canUseGitUi={canUseGitUi}
       contextWindowUsage={contextWindowUsage}
       environmentCheckout={threadCheckoutDisplay}
@@ -2532,6 +2659,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
       environmentProviderName={
         composerEnvironmentChrome?.environmentProviderName
       }
+      canRestoreEnvironment={thread.canRestoreEnvironment}
       environmentGoneStatus={threadEnvironmentGoneStatus}
       environmentHostId={environment?.hostId}
       isEnvironmentActionPending={requestEnvironmentAction.isPending}
@@ -2541,13 +2669,29 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
       onPullRequestReady={handlePullRequestReady}
       pullRequestMergeMethod={pullRequestMergeMethod}
       onChangedFileClick={handleChangedFileClick}
+      onChangedFileDiffClick={handleChangedFileDiffClick}
       projectId={projectId}
       resolveMentionLink={resolveMentionLink}
       workspaceChangedFilesSection={
-        canUseGitUi ? workspaceChangedFilesSection : null
+        canUseGitUi ? bannerChangedFilesSection : null
       }
       workspaceStatusPending={
         canUseGitUi && (environmentQuery.isLoading || workStatusQuery.isLoading)
+      }
+      threadStartControl={
+        canUseGitUi && environment !== undefined ? (
+          <StartCommitPicker
+            environmentId={environment.id}
+            isActive={isComputedSinceThreadStart}
+            isSaving={updateEnvironment.isPending}
+            onSelect={(ref) => {
+              setIsSinceThreadStart(true);
+              updateEnvironment.mutate({ id: environment.id, startRef: ref });
+            }}
+            onToggle={() => setIsSinceThreadStart(!isSinceThreadStart)}
+            startRef={threadStartRef}
+          />
+        ) : null
       }
       contextBannerMergeBase={
         canUseGitUi && showMergeBase && promptBannerMergeBaseBranch
@@ -2557,7 +2701,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
               options: mergeBaseBranchOptions,
               remoteOptions: mergeBaseRemoteBranchOptions,
               optionsLoading: isLoadingMergeBaseBranchOptions,
-              onChange: handleMergeBaseBranchChange,
+              onChange: handleBannerMergeBaseBranchChange,
               onPickerOpenChange: handleMergeBasePickerOpenChange,
               onSearchQueryChange: setMergeBaseBranchSearchQuery,
             }
@@ -2604,6 +2748,8 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
             onAutoFocusHandled={handleTerminalAutoFocusHandled}
             onOpenLink={handleOpenTimelineLink}
             onSelectionAddToChat={handleSelectionAddToChat}
+            // bb-fork(windows): replacement terminals use the picked shell.
+            shellIdForLaunch={terminalShellChoice.shellIdForLaunch}
             syncThreadId={thread.id}
             target={{ kind: "thread", threadId: thread.id }}
             terminalId={tab.terminalId}
@@ -2633,6 +2779,17 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
                 : undefined
             }
             pluginActions={pluginPanelActions}
+            // bb-fork(windows): the shell picker beside Start terminal.
+            startTerminalTrailing={
+              <TerminalShellSelector
+                defaultShell={terminalShellChoice.defaultShell}
+                disabled={createTerminal.isPending}
+                isLoading={terminalShellChoice.isLoading}
+                onChange={terminalShellChoice.setSelectedShellId}
+                selectedShellId={terminalShellChoice.selectedShellId}
+                shells={terminalShellChoice.shells}
+              />
+            }
           />
         );
       case "workspace-file-preview": {
@@ -2644,6 +2801,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
           <LazyWorkspaceFilePreviewTabContent
             activePath={tab.path}
             copyPath={copyPath}
+            diffIntent={tab.diffIntent ?? null}
             environmentId={tab.environmentId}
             isPanelOpen={isSecondaryPanelOpen}
             lineRange={tab.lineRange}
@@ -2912,6 +3070,11 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
                 updateThread.isPending || updateEnvironment.isPending,
               storage: metadataStorage,
               onAssignParent: handleAssignParent,
+              quietReparent,
+              onQuietReparentChange: setQuietReparent,
+              // bb-fork(parent-mute): mute toggle in the Parent row
+              onParentNotificationsMutedChange:
+                handleSetParentNotificationsMuted,
               onParentSelectorOpenChange: handleParentSelectorOpenChange,
               onRetryParentThreads: handleRetryParentThreads,
               onMergeBaseBranchChange: handleMergeBaseBranchChange,
@@ -2949,7 +3112,7 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
               onSelectionAddToChat: handleSelectionAddToChat,
               pendingGitDiffCommitSha,
               pendingGitDiffScrollPath,
-              requestedMergeBaseBranch,
+              requestedMergeBaseBranch: compareRef,
               onPanelFocus: touchFixedPanelTabsState,
             }}
             timeline={{

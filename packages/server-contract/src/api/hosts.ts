@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { jsonValueSchema, permissionModeSchema } from "@bb/domain";
+import {
+  hostTypeSchema,
+  jsonValueSchema,
+  permissionModeSchema,
+} from "@bb/domain";
 import {
   pathsExistRequestSchema,
   providerCliInstallEventSchema,
@@ -11,6 +15,8 @@ import {
   type ProviderCliInstallRequest,
   type ProviderCliStatusResponse,
 } from "@bb/host-daemon-contract/local";
+// bb-fork(windows): shell enumeration for the Start terminal picker.
+import { type TerminalShellListResponse } from "@bb/host-daemon-contract";
 
 export const hostDirectoryQuerySchema = z.object({
   path: z.string().min(1).optional(),
@@ -68,6 +74,15 @@ export type HostEnrollmentCommandResponse = z.infer<
   typeof hostEnrollmentCommandResponseSchema
 >;
 
+export const hostReconnectResponseSchema = z
+  .object({
+    command: z.string().min(1),
+    expiresAt: z.number().int().positive(),
+    hostId: z.string().min(1),
+  })
+  .strict();
+export type HostReconnectResponse = z.infer<typeof hostReconnectResponseSchema>;
+
 export const createHostJoinCodeResponseSchema = z.object({
   joinCode: z.string().min(1),
   hostId: z.string().min(1),
@@ -108,6 +123,9 @@ export type HostPathsExistRequest = PathsExistRequest;
 
 export type HostPathsExistResponse = PathsExistResponse;
 
+// bb-fork(windows): shells the host can launch from the Start terminal picker.
+export type HostTerminalShellsResponse = TerminalShellListResponse;
+
 export const hostPickFolderRequestSchema = z
   .object({
     clientHostId: z.string().min(1),
@@ -128,5 +146,6 @@ export type HostProviderCliInstallEvent = ProviderCliInstallEvent;
 
 export const hostListQuerySchema = z.object({
   includeCreating: z.enum(["true", "false"]).optional(),
+  type: hostTypeSchema.optional(),
 });
 export type HostListQuery = z.input<typeof hostListQuerySchema>;

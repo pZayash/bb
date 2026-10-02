@@ -10,7 +10,6 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "../../src/errors.js";
 import {
   assertValidParentThread,
-  isAgentDelegatedChildThread,
   isParentNotifiableChildThread,
 } from "../../src/services/threads/thread-parent.js";
 
@@ -249,30 +248,14 @@ describe("thread parent validation", () => {
   });
 });
 
-describe("isAgentDelegatedChildThread", () => {
-  it("is true for a thread with a parent", () => {
-    expect(
-      isAgentDelegatedChildThread({
-        parentThreadId: "thr_parent",
-      }),
-    ).toBe(true);
-  });
-
-  it("is false for a fork-style root", () => {
-    expect(
-      isAgentDelegatedChildThread({
-        parentThreadId: null,
-      }),
-    ).toBe(false);
-  });
-});
-
 describe("isParentNotifiableChildThread", () => {
   it("is true for a hidden delegated child", () => {
     expect(
       isParentNotifiableChildThread({
         originKind: null,
         parentThreadId: "thr_parent",
+        // bb-fork(parent-mute): unmuted child
+        parentNotificationsMutedAt: null,
       }),
     ).toBe(true);
   });
@@ -282,21 +265,28 @@ describe("isParentNotifiableChildThread", () => {
       isParentNotifiableChildThread({
         originKind: "fork",
         parentThreadId: "thr_parent",
+        parentNotificationsMutedAt: null,
       }),
     ).toBe(false);
   });
 
-  it("is false for a source-derived fork and for a root thread", () => {
-    expect(
-      isParentNotifiableChildThread({
-        originKind: "fork",
-        parentThreadId: "thr_parent",
-      }),
-    ).toBe(false);
+  it("is false for a root thread", () => {
     expect(
       isParentNotifiableChildThread({
         originKind: null,
         parentThreadId: null,
+        parentNotificationsMutedAt: null,
+      }),
+    ).toBe(false);
+  });
+
+  // bb-fork(parent-mute): muting keeps the parent link but silences the child
+  it("is false for a delegated child whose parent notifications are muted", () => {
+    expect(
+      isParentNotifiableChildThread({
+        originKind: null,
+        parentThreadId: "thr_parent",
+        parentNotificationsMutedAt: 1_700_000_000_000,
       }),
     ).toBe(false);
   });

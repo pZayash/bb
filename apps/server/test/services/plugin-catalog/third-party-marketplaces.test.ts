@@ -145,9 +145,11 @@ describe("third-party marketplaces", () => {
 
   async function useGitUrlRewrite(url: string, repo: string): Promise<void> {
     const configFile = join(dataDir, "gitconfig");
+    // bb-fork(windows): gitconfig treats `\` as an escape, so double it.
+    const configPath = repo.replaceAll("\\", "\\\\");
     await writeFile(
       configFile,
-      `[url "${repo}"]\n\tinsteadOf = ${url}\n`,
+      `[url "${configPath}"]\n\tinsteadOf = ${url}\n`,
       "utf8",
     );
     const previous = process.env.GIT_CONFIG_GLOBAL;
@@ -869,7 +871,7 @@ describe("third-party marketplaces", () => {
     });
   });
 
-  it("refuses an oversize local manifest before reading it", async () => {
+  it("adds a local manifest larger than 1 MiB", async () => {
     const directory = await mkdtemp(join(tmpdir(), "bb-marketplace-big-"));
     cleanup.push(directory);
     const padded = manifest("acme-plugins", [
@@ -881,10 +883,11 @@ describe("third-party marketplaces", () => {
     );
     const catalog = service({ fetch: marketplaceFetch({}) });
 
-    await expect(catalog.addMarketplace(`path:${directory}`)).rejects.toThrow(
-      /marketplace manifest exceeds/u,
-    );
-    expect(getPluginMarketplace(db, "acme-plugins")).toBeUndefined();
+    await catalog.addMarketplace(`path:${directory}`);
+    expect(getPluginMarketplace(db, "acme-plugins")?.lastError).toBeNull();
+    expect(await catalog.search("Acme Notes")).toEqual([
+      expect.objectContaining({ entryId: "notes" }),
+    ]);
   });
 
   it("binds an npm install to the exact version it confirmed", async () => {

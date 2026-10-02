@@ -282,6 +282,7 @@ function createFakeWorkspace(path: string): HostWorkspace {
       truncated: false,
     })),
     diffPatch: vi.fn(async () => []),
+    listCommits: vi.fn(async () => []),
     getPullRequest: vi.fn(async () => ({ outcome: "none" as const })),
     commit: vi.fn(async () => ({
       commitSha: "commit-1",
@@ -562,6 +563,33 @@ describe("TerminalManager", () => {
     expect(
       harness.runtimeManager.get("env-1")?.terminals.has("term-command"),
     ).toBe(true);
+
+    const wideCommand = "调".repeat(100);
+    await harness.manager.handleMessage({
+      type: "terminal.open",
+      contributedEnv: [],
+      requestId: "open-wide-command",
+      terminalId: "term-wide-command",
+      threadId: "thr-1",
+      target: {
+        kind: "workspace",
+        environmentId: "env-1",
+        workspaceContext: {
+          workspacePath: "/tmp/terminal-workspace",
+        },
+      },
+      cols: 100,
+      rows: 30,
+      start: { mode: "command", command: wideCommand },
+    });
+    expect(harness.messages).toContainEqual(
+      expect.objectContaining({
+        type: "terminal.opened",
+        terminalId: "term-wide-command",
+        title: `${"调".repeat(38)}...`,
+      }),
+    );
+
     await harness.runtimeManager.replaceBaseShellEnv({ BB_BASE_ENV: "2" });
     expect(harness.runtimeManager.get("env-1")).toBeDefined();
     expect(harness.runtime.shutdown).not.toHaveBeenCalled();
@@ -1813,6 +1841,67 @@ describe("TerminalManager", () => {
           "No PowerShell was found on this machine. Install PowerShell 7 (pwsh) or use the built-in Windows PowerShell.",
       },
     ]);
+  });
+
+  // bb-fork(windows): the Start terminal picker's shell id must reach resolution.
+  it("passes a requested shell id to shell resolution", async () => {
+    const requestedShellIds: Array<string | undefined> = [];
+    const harness = createHarnessWithShell({
+      resolveShell: async (shellId) => {
+        requestedShellIds.push(shellId);
+        return "C:\\Program Files\\Git\\bin\\bash.exe";
+      },
+    });
+    const workspacePath = await makeTempDir("bb-terminal-manager-shellid-");
+
+    await harness.manager.handleMessage({
+      type: "terminal.open",
+      contributedEnv: [],
+      requestId: "open-1",
+      terminalId: "term-1",
+      threadId: "thr-1",
+      target: {
+        kind: "workspace",
+        environmentId: "env-1",
+        workspaceContext: { workspacePath },
+      },
+      cols: 100,
+      rows: 30,
+      start: { mode: "shell", shellId: "git-bash" },
+    });
+
+    expect(requestedShellIds).toEqual(["git-bash"]);
+    expect(harness.adapter.spawned[0]!.args.args).toEqual(["--login", "-i"]);
+  });
+
+  it("keeps a default shell start and a command start free of a shell id", async () => {
+    const requestedShellIds: Array<string | undefined> = [];
+    const harness = createHarnessWithShell({
+      resolveShell: async (shellId) => {
+        requestedShellIds.push(shellId);
+        return "/bin/zsh";
+      },
+    });
+    const workspacePath = await makeTempDir("bb-terminal-manager-noshellid-");
+
+    await harness.manager.handleMessage({
+      type: "terminal.open",
+      contributedEnv: [],
+      requestId: "open-1",
+      terminalId: "term-1",
+      threadId: "thr-1",
+      target: {
+        kind: "workspace",
+        environmentId: "env-1",
+        workspaceContext: { workspacePath },
+      },
+      cols: 100,
+      rows: 30,
+      start: { mode: "command", command: "echo hi" },
+    });
+
+    expect(requestedShellIds).toEqual([undefined]);
+    expect(harness.adapter.spawned[0]!.args.args).toEqual(["-lc", "echo hi"]);
   });
 
   it("runs commands in one persistent shell from the workspace cwd", async () => {

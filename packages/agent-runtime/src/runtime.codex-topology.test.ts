@@ -42,6 +42,24 @@ interface CodexTopologyRuntime {
   launch(digest: string): AgentRuntimeBridgeLaunch;
 }
 
+// bb-fork(windows): a just-shut-down runtime can still hold files in the dir.
+async function removeWorkspaceDir(dir: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      const retryable =
+        code === "EBUSY" || code === "EPERM" || code === "ENOTEMPTY";
+      if (!retryable || attempt >= 20) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+}
+
 describe("codex process topology", () => {
   let workspaceDir: string;
   const runtimes: AgentRuntime[] = [];
@@ -52,7 +70,7 @@ describe("codex process topology", () => {
 
   afterEach(async () => {
     await Promise.all(runtimes.splice(0).map((runtime) => runtime.shutdown()));
-    rmSync(workspaceDir, { recursive: true, force: true });
+    await removeWorkspaceDir(workspaceDir);
   });
 
   function createCodexTopologyRuntime(
@@ -376,6 +394,31 @@ describe("codex process topology", () => {
     expect(topology.exited()).toBe(1);
     expect(runtime.listRunningProviders()).toEqual([]);
     expect(topology.bridgeExits).toEqual([{ expected: true }]);
+  }, 30_000);
+
+  it("refuses to resume a provider thread that another hosted thread already owns", async () => {
+    const topology = createCodexTopologyRuntime();
+    const { runtime } = topology;
+
+    const providerThreadId1 = await startCodexThread(runtime, "t1");
+
+    await expect(
+      runtime.resumeThread({
+        environmentId: "env-1",
+        projectId: "p1",
+        providerId: "codex",
+        providerThreadId: providerThreadId1,
+        threadId: "t2",
+        options: fullRuntimeOptions,
+      }),
+    ).rejects.toThrow(
+      `provider thread "${providerThreadId1}" is already hosted by thread "t1"`,
+    );
+    expect(runtime.hasThread("t2")).toBe(false);
+    expect(runtime.getProviderSession("t1")?.providerThreadId).toBe(
+      providerThreadId1,
+    );
+    expect(topology.spawned()).toBe(1);
   }, 30_000);
 
   it("sweeps every app-server child when the bridge dies unexpectedly", async () => {

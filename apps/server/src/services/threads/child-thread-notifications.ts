@@ -2,10 +2,21 @@ import type {
   PromptInput,
   SystemMessageSubject,
   ThreadEventTurnStatus,
+  ChildThreadOutcome,
 } from "@bb/domain";
 import { listActiveBackgroundTaskCountsByThreadIds } from "@bb/db";
 import { renderTemplate } from "@bb/templates";
 import type { LoggedPendingInteractionWorkSessionDeps } from "../../types.js";
+// bb-fork(parent-notify-tail): excerpt helpers keep the tail of a trimmed child report
+import {
+  buildChildThreadBatchOutputSegments,
+  buildChildThreadNotificationExcerpt,
+  CHILD_THREAD_BATCH_FULL_OUTPUT_GUIDANCE,
+  CHILD_THREAD_EMPTY_OUTPUT_TEXT,
+  childThreadBatchOutputExcerptLimit,
+  childThreadFullOutputGuidance,
+  parentSystemSegmentsTextLength,
+} from "./child-thread-notification-excerpt.fork.js";
 import {
   buildParentSystemInputFromTemplateSlot,
   buildParentSystemThreadMention,
@@ -29,6 +40,8 @@ export interface ChildThreadTurnNotificationBatchItem {
   childThread: ChildThreadNotificationSource;
   terminalOutput: string | null;
   turnStatus: ThreadEventTurnStatus;
+  failureContext?: string;
+  interruption?: ChildThreadOutcome["interruption"];
 }
 
 interface ChildThreadTurnNotificationBatch {
@@ -62,6 +75,8 @@ interface QueueChildThreadTurnNotificationArgs {
   childThread: ChildThreadNotificationSource;
   parentThreadId: string;
   turnStatus: ThreadEventTurnStatus;
+  failureContext?: string;
+  interruption?: ChildThreadOutcome["interruption"];
 }
 
 interface QueueChildThreadNeedsAttentionNotificationArgs {
@@ -78,10 +93,6 @@ const CHILD_THREAD_TERMINAL_OUTPUT_EXCERPT_CHAR_LIMIT = 4_000;
 const CHILD_THREAD_OUTPUT_TRUNCATION_MARKER = "\n\n[... output truncated ...]";
 const CHILD_THREAD_INSPECTION_GUIDANCE =
   "Review the thread before deciding next steps.";
-const CHILD_THREAD_INTERRUPTED_GUIDANCE =
-  "If the user stopped it manually, do not resume, restart, retry, replace, or continue the work unless the user explicitly asks.";
-const CHILD_THREAD_BATCH_INTERRUPTED_GUIDANCE =
-  "If the user stopped any interrupted thread manually, do not resume, restart, retry, replace, or continue the work unless the user explicitly asks.";
 const CHILD_THREAD_NEEDS_ATTENTION_FALLBACK_SUMMARY =
   "It is blocked on a pending interaction.";
 const CHILD_THREAD_RUNNING_WORKFLOW_GUIDANCE =
@@ -93,14 +104,18 @@ const childThreadTurnNotificationBatches = new Map<
   ChildThreadTurnNotificationBatch
 >();
 
-function childThreadTurnStatusLabel(turnStatus: ThreadEventTurnStatus): string {
+function childThreadTurnStatusLabel(
+  item: ChildThreadTurnNotificationBatchItem,
+): string {
+  if (item.failureContext) return item.failureContext;
+  const { turnStatus } = item;
   switch (turnStatus) {
     case "completed":
       return "completed";
     case "failed":
       return "failed";
     case "interrupted":
-      return "was interrupted";
+      return `was interrupted${childThreadInterruptionCauseText(item.interruption)}`;
     default: {
       const exhaustiveCheck: never = turnStatus;
       return exhaustiveCheck;
@@ -108,19 +123,31 @@ function childThreadTurnStatusLabel(turnStatus: ThreadEventTurnStatus): string {
   }
 }
 
-function truncateChildThreadOutput(text: string, limit: number): string {
-  if (text.length <= limit) {
-    return text;
+function childThreadInterruptionCauseText(
+  interruption: ChildThreadOutcome["interruption"],
+): string {
+  if (!interruption) return "";
+  if (interruption.cause === "host-connection-lost")
+    return " because its host connection was lost";
+  switch (interruption.reason) {
+    case "host-daemon-restarted":
+      return " because its host daemon restarted";
+    case "host-removed":
+      return " because its host was removed";
+    case "provider-turn-idle":
+      return " because its provider turn went idle";
+    case "manual-stop":
+      return "";
   }
+}
 
-  const retainedLength = Math.max(
-    0,
-    limit - CHILD_THREAD_OUTPUT_TRUNCATION_MARKER.length,
-  );
-  if (retainedLength === 0) {
-    return CHILD_THREAD_OUTPUT_TRUNCATION_MARKER.trimStart();
-  }
-  return `${text.slice(0, retainedLength).trimEnd()}${CHILD_THREAD_OUTPUT_TRUNCATION_MARKER}`;
+function truncateChildThreadOutput(text: string, limit: number): string {
+  // bb-fork(parent-notify-tail): keep the head and the tail so a trailing ask survives
+  return buildChildThreadNotificationExcerpt({
+    limit,
+    text,
+    truncationMarker: CHILD_THREAD_OUTPUT_TRUNCATION_MARKER,
+  });
 }
 
 function formatChildThreadCompletionOutputExcerpt(
@@ -128,7 +155,8 @@ function formatChildThreadCompletionOutputExcerpt(
 ): string {
   const trimmedOutput = output?.trim();
   if (!trimmedOutput) {
-    return "No final output was recorded.";
+    // bb-fork(parent-notify-tail): shared with the batched excerpt fallback
+    return CHILD_THREAD_EMPTY_OUTPUT_TEXT;
   }
   return truncateChildThreadOutput(
     trimmedOutput,
@@ -168,11 +196,13 @@ function buildSingleChildThreadTurnStatusSegments(
         workflowClause === ""
           ? ""
           : `\n\n${CHILD_THREAD_RUNNING_WORKFLOW_GUIDANCE}`;
+      // bb-fork(parent-notify-tail): name the way to read the untrimmed message
+      const fullOutputGuidance = `\n\n${childThreadFullOutputGuidance(line.item.childThread.id)}`;
       return [
         { kind: "mention", mention: line.mention },
         {
           kind: "text",
-          text: ` completed${workflowClause}:\n\n${formatChildThreadCompletionOutputExcerpt(line.item.terminalOutput)}${workflowGuidance}`,
+          text: ` completed${workflowClause}:\n\n${formatChildThreadCompletionOutputExcerpt(line.item.terminalOutput)}${workflowGuidance}${fullOutputGuidance}`,
         },
       ];
     }
@@ -181,7 +211,7 @@ function buildSingleChildThreadTurnStatusSegments(
         { kind: "mention", mention: line.mention },
         {
           kind: "text",
-          text: ` failed.\n\n${CHILD_THREAD_INSPECTION_GUIDANCE}`,
+          text: ` ${line.item.failureContext ?? "failed"}.\n\n${CHILD_THREAD_INSPECTION_GUIDANCE}`,
         },
       ];
     case "interrupted":
@@ -189,7 +219,7 @@ function buildSingleChildThreadTurnStatusSegments(
         { kind: "mention", mention: line.mention },
         {
           kind: "text",
-          text: ` was interrupted.\n\n${CHILD_THREAD_INSPECTION_GUIDANCE}\n\n${CHILD_THREAD_INTERRUPTED_GUIDANCE}`,
+          text: ` ${childThreadTurnStatusLabel(line.item)}.\n\n${CHILD_THREAD_INSPECTION_GUIDANCE}`,
         },
       ];
     default: {
@@ -206,11 +236,13 @@ function buildChildThreadBatchStatusLineSegments(
   const workflowClause = formatChildThreadRunningWorkflowClause(
     line.item.activeWorkflowCount,
   );
+  // bb-fork(parent-notify-tail): a completed row now introduces its excerpt
+  const statusSuffix = line.item.turnStatus === "completed" ? ":" : ".";
   return [
     { kind: "mention", mention: line.mention },
     {
       kind: "text",
-      text: ` ${childThreadTurnStatusLabel(line.item.turnStatus)}${workflowClause}.`,
+      text: ` ${childThreadTurnStatusLabel(line.item)}${workflowClause}${statusSuffix}`,
     },
   ];
 }
@@ -249,19 +281,30 @@ function buildChildThreadTurnStatusBatchSegments(
   args.lines.forEach((line, index) => {
     segments.push({ kind: "text", text: index === 0 ? "\n\n- " : "\n- " });
     segments.push(...buildChildThreadBatchStatusLineSegments({ line }));
+    // bb-fork(parent-notify-tail): completed rows carry a budgeted head+tail excerpt
+    if (line.item.turnStatus === "completed") {
+      segments.push(
+        ...buildChildThreadBatchOutputSegments({
+          limit: childThreadBatchOutputExcerptLimit({
+            usedLength: parentSystemSegmentsTextLength(segments),
+          }),
+          output: line.item.terminalOutput,
+          truncationMarker: CHILD_THREAD_OUTPUT_TRUNCATION_MARKER,
+        }),
+      );
+    }
   });
-  if (args.lines.some((line) => line.item.turnStatus === "interrupted")) {
-    segments.push({
-      kind: "text",
-      text: `\n\n${CHILD_THREAD_BATCH_INTERRUPTED_GUIDANCE}`,
-    });
-  }
   if (args.lines.some((line) => line.item.activeWorkflowCount > 0)) {
     segments.push({
       kind: "text",
       text: `\n\n${CHILD_THREAD_BATCH_RUNNING_WORKFLOW_GUIDANCE}`,
     });
   }
+  // bb-fork(parent-notify-tail): one bounded line names where trimmed output lives
+  segments.push({
+    kind: "text",
+    text: `\n\n${CHILD_THREAD_BATCH_FULL_OUTPUT_GUIDANCE}`,
+  });
   return segments;
 }
 
@@ -289,16 +332,30 @@ function childThreadSubject(
 function childThreadTurnStatusBatchTaxonomy(
   items: ChildThreadTurnNotificationBatchItem[],
 ): ParentSystemMessageTaxonomy {
+  const outcomes: ChildThreadOutcome[] = items.map((item) => ({
+    threadId: item.childThread.id,
+    status: item.turnStatus,
+    ...(item.interruption ? { interruption: item.interruption } : {}),
+  }));
   const single = items.length === 1 ? items[0] : undefined;
   if (single) {
     return {
       systemMessageKind: childOutcomeSystemMessageKind(single.turnStatus),
-      systemMessageSubject: childThreadSubject(single.childThread),
+      systemMessageSubject: {
+        kind: "thread",
+        threadId: single.childThread.id,
+        threadName: parentSystemThreadLabel(single.childThread),
+        outcomes,
+      },
     };
   }
   return {
     systemMessageKind: "child-outcome-batch",
-    systemMessageSubject: { kind: "thread-batch", count: items.length },
+    systemMessageSubject: {
+      kind: "thread-batch",
+      count: items.length,
+      outcomes,
+    },
   };
 }
 
@@ -406,18 +463,29 @@ function queueChildThreadTurnNotificationBatchItem(
     childThread: args.childThread,
     terminalOutput: getChildThreadCompletionOutput(deps, args),
     turnStatus: args.turnStatus,
+    ...(args.failureContext ? { failureContext: args.failureContext } : {}),
+    ...(args.interruption ? { interruption: args.interruption } : {}),
   };
   const existingBatch = childThreadTurnNotificationBatches.get(
     args.parentThreadId,
   );
   if (existingBatch) {
     const existingIndex = existingBatch.items.findIndex(
-      (entry) => entry.childThread.id === args.childThread.id,
+      (entry) =>
+        entry.childThread.id === args.childThread.id &&
+        entry.failureContext === args.failureContext,
     );
     if (existingIndex === -1) {
       existingBatch.items.push(item);
     } else {
-      existingBatch.items[existingIndex] = item;
+      const previous = existingBatch.items[existingIndex];
+      existingBatch.items[existingIndex] =
+        item.turnStatus === "interrupted" &&
+        !item.interruption &&
+        previous?.turnStatus === "interrupted" &&
+        previous.interruption
+          ? { ...item, interruption: previous.interruption }
+          : item;
     }
     clearTimeout(existingBatch.timer);
     existingBatch.timer = scheduleChildThreadTurnNotificationBatchFlush(

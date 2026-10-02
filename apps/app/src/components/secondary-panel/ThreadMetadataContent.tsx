@@ -68,6 +68,7 @@ import { useThreads } from "@/hooks/queries/thread-queries";
 import { buildParentSelectorOptions } from "@/views/thread-detail/threadParentSelectorOptions";
 import { getThreadRoutePath } from "@/lib/route-paths";
 import { getThreadDisplayTitle } from "@/lib/thread-title";
+import { ThreadTitle } from "@/components/thread/ThreadTitleMentions";
 import {
   PULL_REQUEST_STATE_DISPLAY,
   getPullRequestAttentionDisplay,
@@ -80,6 +81,8 @@ import { PullRequestStateIcon } from "@/components/pull-request/PullRequestStatu
 import { GithubFaviconIcon } from "@/components/pull-request/GithubFaviconIcon";
 import { useUrlAnchorClickHandler } from "@/lib/url-open-routing";
 import { ParentThreadPicker } from "@/components/pickers/ParentThreadPicker";
+import { Checkbox } from "@bb/shared-ui/checkbox";
+import { ParentNotificationsMuteToggle } from "./parent-notifications-mute.fork";
 
 interface ParentSelectorRowProps {
   thread: Thread;
@@ -96,6 +99,11 @@ interface ParentSelectorRowProps {
   onParentSelectorOpenChange: (open: boolean) => void;
   onRetryParentThreads: () => void;
   defaultOpen?: boolean;
+  // bb-fork(quiet-reparent): quiet switch; absent = no quiet control
+  quietReparent?: boolean;
+  onQuietReparentChange?: (next: boolean) => void;
+  // bb-fork(parent-mute): mute toggle; absent = no mute control
+  onParentNotificationsMutedChange?: (next: boolean) => void;
 }
 
 export function ParentSelectorRow({
@@ -113,6 +121,9 @@ export function ParentSelectorRow({
   onParentSelectorOpenChange,
   onRetryParentThreads,
   defaultOpen,
+  quietReparent,
+  onQuietReparentChange,
+  onParentNotificationsMutedChange,
 }: ParentSelectorRowProps) {
   const parentThreadId = thread.parentThreadId ?? undefined;
   const parentSelectorOptions = useMemo(
@@ -139,54 +150,93 @@ export function ParentSelectorRow({
       label={<DetailRowIconLabel icon="UserRound">Parent</DetailRowIconLabel>}
       valueClassName="min-w-0"
     >
-      {parentThreadId ? (
-        <div
-          className={cn(
-            "inline-flex max-w-full min-w-0 items-center gap-1 text-foreground",
-            COARSE_POINTER_TEXT_SM_CLASS,
-          )}
-        >
-          <Link
-            to={getThreadRoutePath({
-              projectId: parentThreadProjectId ?? projectId,
-              threadId: parentThreadId,
-            })}
+      <div className="flex min-w-0 flex-col items-start gap-1">
+        {parentThreadId ? (
+          <div
             className={cn(
-              "min-w-0 truncate text-foreground no-underline transition-[text-decoration-color] duration-150 hover:underline hover:underline-offset-2",
+              "inline-flex max-w-full min-w-0 items-center gap-1 text-foreground",
               COARSE_POINTER_TEXT_SM_CLASS,
             )}
           >
-            {selectedParentOptionLabel ?? "Parent thread"}
-          </Link>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-3.5 shrink-0 rounded-full p-0 text-muted-foreground hover:bg-transparent hover:text-foreground [&_[data-icon-root]]:size-3 max-md:pointer-coarse:h-9 max-md:pointer-coarse:w-9 max-md:pointer-coarse:[&_[data-icon-root]]:size-5"
+            <Link
+              to={getThreadRoutePath({
+                projectId: parentThreadProjectId ?? projectId,
+                threadId: parentThreadId,
+              })}
+              className={cn(
+                "block min-w-0 text-foreground no-underline transition-[text-decoration-color] duration-150 hover:underline hover:underline-offset-2",
+                COARSE_POINTER_TEXT_SM_CLASS,
+              )}
+            >
+              <ThreadTitle
+                title={selectedParentOptionLabel ?? "Parent thread"}
+                tooltip
+              />
+            </Link>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-3.5 shrink-0 rounded-full p-0 text-muted-foreground hover:bg-transparent hover:text-foreground [&_[data-icon-root]]:size-3 max-md:pointer-coarse:h-9 max-md:pointer-coarse:w-9 max-md:pointer-coarse:[&_[data-icon-root]]:size-5"
+              disabled={updateThreadPending}
+              onClick={() => {
+                onAssignParent(null);
+              }}
+              aria-label="Clear parent thread"
+            >
+              <Icon name="X" />
+            </Button>
+            {/* bb-fork(parent-mute): mute toggle beside the clear button */}
+            {onParentNotificationsMutedChange ? (
+              <ParentNotificationsMuteToggle
+                disabled={updateThreadPending}
+                muted={thread.parentNotificationsMutedAt !== null}
+                onChange={onParentNotificationsMutedChange}
+              />
+            ) : null}
+          </div>
+        ) : (
+          <ParentThreadPicker
+            value={parentSelectorValue}
+            options={parentSelectorOptions}
+            isLoading={isLoadingParentThreads}
+            isError={isParentThreadsError}
             disabled={updateThreadPending}
-            onClick={() => {
-              onAssignParent(null);
+            onChange={(value) => {
+              onAssignParent(value === "none" ? null : value);
             }}
-            aria-label="Clear parent thread"
+            onOpenChange={onParentSelectorOpenChange}
+            onRetry={onRetryParentThreads}
+            defaultOpen={defaultOpen}
+          />
+        )}
+        {onQuietReparentChange ? (
+          <label
+            className={cn(
+              "inline-flex items-center gap-1.5 text-muted-foreground",
+              COARSE_POINTER_TEXT_SM_CLASS,
+            )}
           >
-            <Icon name="X" />
-          </Button>
-        </div>
-      ) : (
-        <ParentThreadPicker
-          value={parentSelectorValue}
-          options={parentSelectorOptions}
-          isLoading={isLoadingParentThreads}
-          isError={isParentThreadsError}
-          disabled={updateThreadPending}
-          onChange={(value) => {
-            onAssignParent(value === "none" ? null : value);
-          }}
-          onOpenChange={onParentSelectorOpenChange}
-          onRetry={onRetryParentThreads}
-          defaultOpen={defaultOpen}
-        />
-      )}
+            <Checkbox
+              checked={quietReparent === true}
+              disabled={updateThreadPending}
+              onCheckedChange={(next) => onQuietReparentChange(next === true)}
+              aria-label="Quiet reparent"
+            />
+            Quiet reparent
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex items-center">
+                  <Icon name="Info" className="size-3" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                Reparent without a system turn on the old or new parent
+              </TooltipContent>
+            </Tooltip>
+          </label>
+        ) : null}
+      </div>
     </DetailRow>
   );
 }
@@ -216,10 +266,9 @@ function ForksRow({ thread, projectId }: ForksRowProps) {
         renderItem={(fork) => (
           <Link
             to={getThreadRoutePath({ projectId, threadId: fork.id })}
-            className="block min-w-0 truncate text-xs text-foreground no-underline transition-[text-decoration-color] duration-150 hover:underline hover:underline-offset-2"
-            title={getThreadDisplayTitle(fork)}
+            className="block min-w-0 text-xs text-foreground no-underline transition-[text-decoration-color] duration-150 hover:underline hover:underline-offset-2"
           >
-            {getThreadDisplayTitle(fork)}
+            <ThreadTitle title={getThreadDisplayTitle(fork)} tooltip />
           </Link>
         )}
       />
@@ -241,6 +290,7 @@ export function EnvironmentRow({
   const createThreadInEnvironment = useCreateThreadInEnvironment({
     projectId: thread.projectId,
     environmentId: environment?.id ?? "",
+    sectionId: thread.sectionId,
   });
   const { providers } = useSystemEnvironmentProviders();
   const { providers: machineProviders } = useSystemMachineProviders();
@@ -264,8 +314,8 @@ export function EnvironmentRow({
   const infoDisplay = getEnvironmentWorkspaceInfoDisplay({
     display,
     providerLookup,
-    environmentName: environment.name,
     hostName: environmentDisplayHost.identity?.name ?? null,
+    locality: environmentDisplayHost.locality,
   });
   const displayHost = environmentHost ?? {
     name:
@@ -273,7 +323,9 @@ export function EnvironmentRow({
     type: "persistent" as const,
     machineProviderId: null,
   };
-  const showCreateThreadButton = isReusableEnvironment(environment);
+  const showCreateThreadButton =
+    environment.hostLifecycle === "active" &&
+    isReusableEnvironment(environment);
   return (
     <DetailRow
       label={
@@ -302,9 +354,11 @@ export function EnvironmentRow({
           <span
             className="inline-flex min-w-0 shrink-0 items-center gap-1.5 text-muted-foreground"
             title={`On ${environmentDisplayHost.identity.name} (${
-              environmentDisplayHost.identity.connected
-                ? "connected"
-                : "offline"
+              environment.hostLifecycle !== "active"
+                ? "unavailable"
+                : environmentDisplayHost.identity.connected
+                  ? "connected"
+                  : "offline"
             })`}
           >
             <span>·</span>
@@ -312,7 +366,8 @@ export function EnvironmentRow({
               host={displayHost}
               machineProvider={machineProvider}
             />
-            {environmentDisplayHost.identity.connected ? null : (
+            {environmentDisplayHost.identity.connected ||
+            environment.hostLifecycle !== "active" ? null : (
               <span>(offline)</span>
             )}
           </span>
@@ -902,6 +957,11 @@ export interface ThreadMetadataContentProps {
   onMergeBaseBranchSearchQueryChange?: (query: string) => void;
   onChangedFileClick?: (selection: WorkspaceChangedFileSelection) => void;
   onCommitClick?: (sha: string) => void;
+  // bb-fork(quiet-reparent): quiet switch; absent = no quiet control
+  quietReparent?: boolean;
+  onQuietReparentChange?: (next: boolean) => void;
+  // bb-fork(parent-mute): mute toggle; absent = no mute control
+  onParentNotificationsMutedChange?: (next: boolean) => void;
 }
 
 export function hasAnyThreadMetadata(
@@ -1027,6 +1087,9 @@ export function ThreadMetadataContent(props: ThreadMetadataContentProps) {
     onMergeBaseBranchSearchQueryChange,
     onChangedFileClick,
     onCommitClick,
+    quietReparent,
+    onQuietReparentChange,
+    onParentNotificationsMutedChange,
   } = props;
 
   return (
@@ -1045,6 +1108,9 @@ export function ThreadMetadataContent(props: ThreadMetadataContentProps) {
         onAssignParent={onAssignParent}
         onParentSelectorOpenChange={onParentSelectorOpenChange}
         onRetryParentThreads={onRetryParentThreads}
+        quietReparent={quietReparent}
+        onQuietReparentChange={onQuietReparentChange}
+        onParentNotificationsMutedChange={onParentNotificationsMutedChange}
       />
       <ForksRow thread={thread} projectId={projectId} />
       <EnvironmentRow
@@ -1056,36 +1122,46 @@ export function ThreadMetadataContent(props: ThreadMetadataContentProps) {
         failed={environmentProvisioningFailure}
       />
       <WorkspacePathRow environment={environment} />
-      <BranchRow workspaceStatus={workspaceStatus} />
-      <MergeBaseRow
-        workspaceStatus={workspaceStatus}
-        selectedMergeBaseBranch={selectedMergeBaseBranch}
-        mergeBaseBranchRef={mergeBaseBranchRef}
-        mergeBaseBranchOptions={mergeBaseBranchOptions}
-        mergeBaseRemoteBranchOptions={mergeBaseRemoteBranchOptions}
-        isLoadingMergeBaseBranchOptions={isLoadingMergeBaseBranchOptions}
-        onMergeBaseBranchChange={onMergeBaseBranchChange}
-        onMergeBasePickerOpenChange={onMergeBasePickerOpenChange}
-        onMergeBaseBranchSearchQueryChange={onMergeBaseBranchSearchQueryChange}
-      />
-      <GitStatusRow
-        thread={thread}
-        environment={environment}
-        workspaceStatus={workspaceStatus}
-        workspaceStatusError={workspaceStatusError}
-        workspaceUnavailable={workspaceUnavailable}
-        selectedMergeBaseBranch={selectedMergeBaseBranch}
-      />
+      {environment !== null && environment.hostLifecycle !== "active" ? null : (
+        <>
+          <BranchRow workspaceStatus={workspaceStatus} />
+          <MergeBaseRow
+            workspaceStatus={workspaceStatus}
+            selectedMergeBaseBranch={selectedMergeBaseBranch}
+            mergeBaseBranchRef={mergeBaseBranchRef}
+            mergeBaseBranchOptions={mergeBaseBranchOptions}
+            mergeBaseRemoteBranchOptions={mergeBaseRemoteBranchOptions}
+            isLoadingMergeBaseBranchOptions={isLoadingMergeBaseBranchOptions}
+            onMergeBaseBranchChange={onMergeBaseBranchChange}
+            onMergeBasePickerOpenChange={onMergeBasePickerOpenChange}
+            onMergeBaseBranchSearchQueryChange={
+              onMergeBaseBranchSearchQueryChange
+            }
+          />
+          <GitStatusRow
+            thread={thread}
+            environment={environment}
+            workspaceStatus={workspaceStatus}
+            workspaceStatusError={workspaceStatusError}
+            workspaceUnavailable={workspaceUnavailable}
+            selectedMergeBaseBranch={selectedMergeBaseBranch}
+          />
+        </>
+      )}
       <PullRequestRow pullRequest={pullRequest} />
       <ArchivedRow thread={thread} />
-      <ThreadCommitsRow
-        workspaceStatus={workspaceStatus}
-        onCommitClick={onCommitClick}
-      />
-      <ChangedFilesRow
-        workspaceStatus={workspaceStatus}
-        onChangedFileClick={onChangedFileClick}
-      />
+      {environment !== null && environment.hostLifecycle !== "active" ? null : (
+        <>
+          <ThreadCommitsRow
+            workspaceStatus={workspaceStatus}
+            onCommitClick={onCommitClick}
+          />
+          <ChangedFilesRow
+            workspaceStatus={workspaceStatus}
+            onChangedFileClick={onChangedFileClick}
+          />
+        </>
+      )}
       {storage ? <ThreadStorageRow {...storage} /> : null}
     </ThreadMetadataCard>
   );

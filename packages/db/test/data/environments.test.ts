@@ -9,12 +9,13 @@ import {
   listRetiredLoadedEnvironmentIdsOnHost,
   markHostEnvironmentsDestroyed,
   recordEnvironmentCurrentBranch,
+  recordEnvironmentStartRefOnce,
   recordProvisionedEnvironmentWorkspace,
   updateEnvironmentMetadata,
 } from "../../src/data/environments.js";
 import { environments } from "../../src/schema.js";
 import { createProject } from "../../src/data/projects.js";
-import { upsertHost } from "../../src/data/hosts.js";
+import { updateHost, upsertHost } from "../../src/data/hosts.js";
 import { createMigratedConnection } from "../helpers/migrated-connection.js";
 
 function setup() {
@@ -40,6 +41,32 @@ function createNotifierSpy(): DbNotifier {
 }
 
 describe("environments", () => {
+  it("notifies a host's environments only when its removal state changes", () => {
+    const { db, host, project } = setup();
+    const environment = createEnvironment(db, noopNotifier, {
+      projectId: project.id,
+      hostId: host.id,
+      path: "/tmp/removal-notify",
+      providerOwnsPath: false,
+      status: "ready",
+    });
+    const notifier = createNotifierSpy();
+
+    updateHost(db, notifier, host.id, { name: "Renamed" });
+    expect(notifier.notifyEnvironment).not.toHaveBeenCalled();
+
+    updateHost(db, notifier, host.id, { phase: "removing" });
+    updateHost(db, notifier, host.id, { teardownStatus: "running" });
+    updateHost(db, notifier, host.id, { teardownStatus: "failed" });
+    updateHost(db, notifier, host.id, { destroyedAt: 1 });
+
+    expect(vi.mocked(notifier.notifyEnvironment).mock.calls).toEqual([
+      [environment.id, ["status-changed"]],
+      [environment.id, ["status-changed"]],
+      [environment.id, ["status-changed"]],
+    ]);
+  });
+
   it("marks every environment on a removed host as destroyed history", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(25_000);
@@ -231,6 +258,34 @@ describe("environments", () => {
     ]);
   });
 
+  it("notifies when the pinned start commit changes", () => {
+    const { db, host, project } = setup();
+    const environment = createEnvironment(db, noopNotifier, {
+      providerOwnsPath: false,
+      projectId: project.id,
+      hostId: host.id,
+      branchName: "main",
+      defaultBranch: "main",
+      status: "ready",
+    });
+    const notifier = createNotifierSpy();
+
+    const updated = updateEnvironmentMetadata(db, notifier, environment.id, {
+      startRef: "abc1234567890",
+    });
+
+    expect(updated).toMatchObject({ startRef: "abc1234567890" });
+    expect(notifier.notifyEnvironment).toHaveBeenCalledWith(environment.id, [
+      "metadata-changed",
+    ]);
+
+    vi.mocked(notifier.notifyEnvironment).mockClear();
+    updateEnvironmentMetadata(db, notifier, environment.id, {
+      startRef: "abc1234567890",
+    });
+    expect(notifier.notifyEnvironment).not.toHaveBeenCalled();
+  });
+
   it("records the current branch observed for an environment", () => {
     const { db, host, project } = setup();
     const environment = createEnvironment(db, noopNotifier, {
@@ -262,6 +317,45 @@ describe("environments", () => {
     expect(notifier.notifyEnvironment).toHaveBeenCalledWith(environment.id, [
       "metadata-changed",
     ]);
+  });
+
+  it("pins the start commit once and never overwrites it", () => {
+    const { db, host, project } = setup();
+    const environment = createEnvironment(db, noopNotifier, {
+      providerOwnsPath: false,
+      projectId: project.id,
+      hostId: host.id,
+      branchName: "main",
+      defaultBranch: "main",
+      status: "ready",
+    });
+    const notifier = createNotifierSpy();
+
+    expect(
+      recordEnvironmentStartRefOnce(db, notifier, environment.id, "abc1234567890"),
+    ).toMatchObject({ startRef: "abc1234567890" });
+
+    const second = recordEnvironmentStartRefOnce(
+      db,
+      notifier,
+      environment.id,
+      "def4567890123",
+    );
+    expect(second).toBeNull();
+    expect(
+      db
+        .select({ startRef: environments.startRef })
+        .from(environments)
+        .where(eq(environments.id, environment.id))
+        .get(),
+    ).toEqual({ startRef: "abc1234567890" });
+
+    expect(
+      recordEnvironmentStartRefOnce(db, notifier, environment.id, null),
+    ).toBeNull();
+    expect(
+      recordEnvironmentStartRefOnce(db, notifier, "env_missing", "abc"),
+    ).toBeNull();
   });
 
   it("clears the current branch when a detached checkout is observed", () => {

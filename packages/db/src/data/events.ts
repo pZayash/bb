@@ -1394,12 +1394,6 @@ function resolvedItemPruningCandidates(
     FROM events WHERE id IN (${pruningCandidates(args, types)}) ORDER BY sequence`);
 }
 
-export interface PruneThreadEventsBeforeSequenceArgs extends PruningWindow {
-  sequenceCutoff: number;
-  threadId: string;
-  types: readonly ThreadEventType[];
-}
-
 export interface PruneContextWindowUsageEventsArgs extends PruningWindow {
   threadId: string;
 }
@@ -3939,28 +3933,50 @@ export function getLastStoredTurnRequestEvent(
   );
 }
 
-export function pruneThreadEventsBeforeSequenceInTransaction(
+export interface ListLastStoredTurnRequestEventsArgs {
+  threadIds: readonly string[];
+}
+
+export function listLastStoredTurnRequestEvents(
   db: DbQueryConnection,
-  args: PruneThreadEventsBeforeSequenceArgs,
-): number {
-  if (args.sequenceCutoff <= 0 || args.types.length === 0) {
-    return 0;
-  }
-
-  const result = db
-    .delete(events)
-    .where(
-      and(
-        eq(events.threadId, args.threadId),
-        sql`${events.id} IN (${pruningCandidates(args, args.types)})`,
-        lte(events.sequence, args.sequenceCutoff),
-        isBeforeLatestThreadEvent(args.threadId),
-        inArray(events.type, [...args.types]),
-      ),
-    )
-    .run();
-
-  return result.changes;
+  args: ListLastStoredTurnRequestEventsArgs,
+): StoredTurnRequestEventRow[] {
+  return queryInSqliteVariableBatches({
+    dedupeKey: (threadId) => threadId,
+    fixedVariableCount: 0,
+    queryBatch: (threadIds) => {
+      const threadIdList = sql.join(
+        threadIds.map((threadId) => sql`${threadId}`),
+        sql`, `,
+      );
+      return db.all<StoredTurnRequestEventRow>(sql`
+        SELECT data, sequence, thread_id AS threadId, type
+        FROM (
+          SELECT
+            data,
+            sequence,
+            thread_id,
+            type,
+            ROW_NUMBER() OVER (
+              PARTITION BY thread_id
+              ORDER BY sequence DESC
+            ) AS turnRequestRank
+          FROM events
+          WHERE thread_id IN (${threadIdList})
+            AND (
+              type = 'client/turn/requested'
+              OR (
+                type IN ('client/thread/start', 'client/turn/start')
+                AND json_type(data, '$.input') IS NOT NULL
+              )
+            )
+        )
+        WHERE turnRequestRank = 1
+      `);
+    },
+    values: args.threadIds,
+    variableCountPerValue: 1,
+  });
 }
 
 function pruneUsageSnapshots(
@@ -4216,15 +4232,6 @@ function runPruningBatch(
   const removed = db.transaction(work, { behavior: "immediate" });
   if (removed > 0) bumpThreadEventRewriteGeneration(args.threadId);
   return removed;
-}
-
-export function pruneThreadEventsBeforeSequence(
-  db: DbConnection,
-  args: PruneThreadEventsBeforeSequenceArgs,
-): number {
-  return runPruningBatch(db, args, (tx) =>
-    pruneThreadEventsBeforeSequenceInTransaction(tx, args),
-  );
 }
 
 export function pruneContextWindowUsageEvents(

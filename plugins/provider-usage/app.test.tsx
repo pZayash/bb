@@ -11,6 +11,7 @@ import {
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -24,11 +25,19 @@ function threadOnMachine(
     projectId: "project-one",
     title: "Active thread",
     titleFallback: null,
+    displayTitle: "Active thread",
     parentThreadId: null,
+    lifecycleOwnerThreadId: null,
+    sourceThreadId: null,
     sectionId: null,
     originKind: null,
     originPluginId: null,
     providerId: "codex",
+    model: null,
+    reasoningLevel: null,
+    status: "idle",
+    runtimeStatus: "idle",
+    queuedWork: "none",
     hasPendingInteraction: false,
     activity: {
       workflows: 0,
@@ -41,7 +50,12 @@ function threadOnMachine(
     indicatorLabel: null,
     isUnread: false,
     isPinned: false,
+    pinnedAt: null,
+    pinSortKey: null,
     isArchived: false,
+    archivedAt: null,
+    href: "/projects/project-one/threads/thread-active",
+    isHidden: false,
     environment: null,
     host: { id: hostId, name: hostName },
     createdAt: 1,
@@ -92,6 +106,7 @@ describe("provider usage footer disclosure", () => {
           JSON.stringify({
             ok: true,
             result: {
+              hasUsageSources: true,
               machines: [
                 {
                   id: "host-m4",
@@ -260,6 +275,9 @@ describe("provider usage footer disclosure", () => {
     expect(slot.getByRole("heading", { name: "Codex" })).toBeTruthy();
     expect(slot.getByText("codex@example.com")).toBeTruthy();
     expect(slot.getByText("97%")).toBeTruthy();
+    expect(localStorage.getItem("bb.test-plugin.selected-machine.v1")).toBe(
+      "host-m5",
+    );
 
     fireEvent.pointerDown(machinePicker, { button: 0 });
     fireEvent.click(slot.getByRole("menuitemradio", { name: "M4" }));
@@ -468,6 +486,7 @@ it.each([
       Response.json({
         ok: true,
         result: {
+          hasUsageSources: true,
           machines: [
             {
               id: "source:pool",
@@ -500,3 +519,43 @@ it.each([
   }
   await mounted.lifecycle.dispose();
 });
+
+it.each([
+  [true, "No provider on this machine reports usage limits."],
+  [false, "No usage source is enabled."],
+] as const)(
+  "explains an empty machine with hasUsageSources=%s",
+  async (hasUsageSources, expected) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          ok: true,
+          result: {
+            hasUsageSources,
+            machines: [
+              {
+                id: "host-m4",
+                displayName: "M4",
+                status: "connected",
+                providers: [],
+                error: null,
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    const app = await loadPluginApp(() => import("./app"));
+    const mounted = await mountPluginContentScripts(app, {
+      pluginId: "provider-usage",
+    });
+    const item = app.experimentalSidebarFooterItems[0];
+    if (item?.kind !== "disclosure") throw new Error("missing disclosure");
+    const slot = renderSlot(item, { dismiss: vi.fn() });
+    await waitFor(() =>
+      expect(slot.getByText(expected, { exact: false })).toBeTruthy(),
+    );
+    await mounted.lifecycle.dispose();
+  },
+);

@@ -224,8 +224,12 @@ const systemChildOutcomeBatchMessage = buildMessage(
     updates: [
       "Child thread updates:",
       "",
-      "- @thread:thr_ux3h8sxg65 completed.",
-      "- @thread:thr_cpf5sq7pyr completed.",
+      "- @thread:thr_ux3h8sxg65 completed:",
+      "",
+      "Rendered rich thread names in the timeline and kept the sidebar in sync.",
+      "- @thread:thr_cpf5sq7pyr completed:",
+      "",
+      "Stop retry now clears the in-flight marker; regression coverage added.",
       "- @thread:thr_h4u3fgr6be failed.",
     ].join("\n"),
   }),
@@ -359,15 +363,13 @@ const parentChildSystemMessageFixtures = [
   },
   {
     label: "interrupted",
-    hint: "single child thread interruption carries the manual-stop guidance",
+    hint: "single child thread interruption explains its recorded cause",
     message: buildMessage(
       renderTemplate("systemMessageChildThreadOutcomeBatch", {
         updates: [
-          "@thread:thr_docs was interrupted.",
+          "@thread:thr_docs was interrupted because its host connection was lost.",
           "",
           "Review the thread before deciding next steps.",
-          "",
-          "If the user stopped it manually, do not resume, restart, retry, replace, or continue the work unless the user explicitly asks.",
         ].join("\n"),
       }),
       [
@@ -389,11 +391,11 @@ const parentChildSystemMessageFixtures = [
         updates: [
           "Child thread updates:",
           "",
-          "- @thread:thr_schema completed.",
-          "- @thread:thr_rebase failed.",
-          "- @thread:thr_docs was interrupted.",
+          "- @thread:thr_schema completed:",
           "",
-          "If the user stopped any interrupted thread manually, do not resume, restart, retry, replace, or continue the work unless the user explicitly asks.",
+          "Migrated the thread ownership queries to targeted joins and added regression coverage. Validation passed for @bb/server.",
+          "- @thread:thr_rebase failed.",
+          "- @thread:thr_docs was interrupted because its host daemon restarted.",
         ].join("\n"),
       }),
       [

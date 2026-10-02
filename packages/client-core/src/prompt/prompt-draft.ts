@@ -1,4 +1,5 @@
 import {
+  promptInputSchema,
   promptTextMentionSchema,
   type PromptInput,
   type PromptTextMention,
@@ -306,14 +307,17 @@ export function promptDraftToInput(draft: PromptDraftState): PromptInput[] {
 }
 
 export function promptInputToDraft(
-  input: readonly PromptInput[],
+  input: readonly PromptInput[] | null | undefined,
 ): PromptDraftState {
   const textSegments: string[] = [];
   const mentions: PromptTextMention[] = [];
   const attachments: PromptDraftState["attachments"] = [];
   let textOffset = 0;
 
-  for (const chunk of input) {
+  for (const raw of Array.isArray(input) ? input : []) {
+    const parsed = promptInputSchema.safeParse(raw);
+    if (!parsed.success) continue;
+    const chunk = parsed.data;
     if (chunk.type === "text") {
       if (chunk.text.trim().length > 0) {
         if (textSegments.length > 0) {

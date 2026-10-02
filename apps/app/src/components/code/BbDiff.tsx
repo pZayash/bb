@@ -12,6 +12,8 @@ import {
   buildDiffLineSelectionText,
 } from "@/components/git-diff/git-diff-patch-text";
 import { enrichGitDiffFileForContext } from "@/components/git-diff/git-diff-parsing";
+// bb-fork(file-diff): whole-file rendering for the file diff view.
+import { buildFullFileDiff } from "./full-file-diff.fork";
 import { useResolvedCodeThemePair } from "@/lib/code-theme";
 import { usePreferredTheme } from "@/hooks/useTheme";
 import { cn } from "@bb/shared-ui/lib/utils";
@@ -31,6 +33,7 @@ function BbDiff({
   view,
   overflow,
   showLineNumbers,
+  expandUnchanged = false,
   className,
   onSelectionAddToChat,
 }: BbDiffProps) {
@@ -47,13 +50,28 @@ function BbDiff({
     ) {
       return file;
     }
+    if (expandUnchanged) {
+      return buildFullFileDiff({
+        fileDiff: file,
+        oldFile: { name: oldPath, contents: oldContent },
+        newFile: { name: newPath, contents: newContent },
+      });
+    }
     return enrichGitDiffFileForContext({
       fileDiff: file,
       oldFile: { name: oldPath, contents: oldContent },
       newFile: { name: newPath, contents: newContent },
       patchText: patchText ?? buildFileDiffPatchText(file),
     });
-  }, [file, newContent, newPath, oldContent, oldPath, patchText]);
+  }, [
+    expandUnchanged,
+    file,
+    newContent,
+    newPath,
+    oldContent,
+    oldPath,
+    patchText,
+  ]);
   const expansionLineCount =
     resolvedFile !== file && resolvedFile.isPartial === false
       ? DEFAULT_DIFF_EXPANSION_LINE_COUNT

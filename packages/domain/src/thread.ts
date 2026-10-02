@@ -93,7 +93,7 @@ const workspaceFileStatusSchema = z.object({
 });
 export type WorkspaceFileStatus = z.infer<typeof workspaceFileStatusSchema>;
 
-const workspaceCommitSummarySchema = z.object({
+export const workspaceCommitSummarySchema = z.object({
   sha: z.string(),
   shortSha: z.string(),
   subject: z.string(),
@@ -403,6 +403,8 @@ export const threadSchema = z.object({
   sectionId: z.string().nullable(),
   status: threadStatusSchema,
   parentThreadId: z.string().nullable(),
+  // bb-fork(parent-mute): null = parent notifications on, timestamp = muted since
+  parentNotificationsMutedAt: z.number().nullable(),
   lifecycleOwnerThreadId: z.string().nullable(),
   sourceThreadId: z.string().nullable(),
   originKind: threadOriginKindSchema.nullable(),
@@ -441,6 +443,16 @@ export const threadListEntrySchema = threadWithRuntimeSchema.extend({
   activity: threadActivityStateSchema,
   queuedWork: threadQueuedWorkSchema,
   pinSortKey: z.string().nullable(),
+  /**
+   * The model the thread's next turn would run on, resolved the way the next
+   * turn resolves it: the thread's override, else the model of its last turn,
+   * else the project's default when that default names the same provider.
+   * Null when none of those has ever been set.
+   */
+  model: z.string().nullable(),
+  // bb-fork(windows): reasoning level resolved for the thread's next turn, shown
+  // bb-fork(windows): beside the model in the sidebar. Null when nothing has ever set one.
+  reasoningLevel: reasoningLevelSchema.nullable(),
   hasPendingInteraction: z.boolean(),
   environmentHostId: z.string().nullable(),
   environmentName: z.string().nullable(),

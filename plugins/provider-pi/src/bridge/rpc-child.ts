@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { PassThrough, Writable, type Readable } from "node:stream";
 // bb-fork(windows): cmd-shim launches and the named-pipe channel live in a
-// fork module; this file keeps only the integration seams.
+// bb-fork(windows): fork module; this file keeps only the integration seams.
 import {
   escalateWindowsShellChildKill,
   planPiChildKill,
@@ -125,7 +125,8 @@ export class PiRpcChild {
     });
     const launch = resolvePiLaunch(process.env);
     // bb-fork(windows): a pi launched through a cmd.exe shim cannot inherit
-    // the fd 3/4 channel, so it talks to the bridge over a named pipe.
+    // bb-fork(windows): the fd 3/4 channel, so it talks to the bridge over a
+    // bb-fork(windows): named pipe.
     const windowsChild = planWindowsShellChild({
       command: launch.command,
       env: args.env,
@@ -287,7 +288,7 @@ export class PiRpcChild {
     }
     this.endWriters();
     // bb-fork(windows): signals do not reach grandchildren of cmd.exe, so
-    // shell children escalate to taskkill immediately.
+    // bb-fork(windows): shell children escalate to taskkill immediately.
     const plan = planPiChildKill({
       windowsShellChild: this.windowsChannel !== null,
       platform: process.platform,

@@ -4,7 +4,6 @@ import { threadScope, turnScope } from "@bb/domain";
 import type { DeltaItemShape, ThreadDelta } from "../thread-delta.js";
 import {
   createDeltaAssembler,
-  diffCumulativeText,
   type DeltaAssembler,
 } from "./delta-assembler.js";
 import { createBridgeDeltaEventCollector } from "../testing/bridge-delta-assembly.js";
@@ -487,11 +486,19 @@ describe("delta assembler", () => {
         delta: "FIRST\n",
       }),
     ]);
+    expect(first[0]).not.toHaveProperty("reset");
     expect(
       assemble(assembler, {
         kind: "command.outputSnapshot",
         key: { providerItemId: "tc-1" },
         text: "FIRST\n",
+      }),
+    ).toEqual([]);
+    expect(
+      assemble(assembler, {
+        kind: "command.outputSnapshot",
+        key: { providerItemId: "tc-1" },
+        text: "",
       }),
     ).toEqual([]);
     const appended = assemble(assembler, {
@@ -897,37 +904,6 @@ describe("delta assembler", () => {
     expect(turnIdOf(a[0])).not.toBe(turnIdOf(b[0]));
     expect(assembler.getOpenTurnId("thr_a")).toBe(turnIdOf(a[0]));
     expect(assembler.getOpenTurnId("thr_b")).toBe(turnIdOf(b[0]));
-  });
-});
-
-describe("diffCumulativeText", () => {
-  it("returns the full text on the first snapshot", () => {
-    expect(diffCumulativeText({ nextText: "A\n" })).toEqual({
-      delta: "A\n",
-      nextText: "A\n",
-      reset: false,
-    });
-  });
-
-  it("returns only the appended suffix", () => {
-    expect(
-      diffCumulativeText({ previousText: "A\n", nextText: "A\nB\n" }),
-    ).toEqual({ delta: "B\n", nextText: "A\nB\n", reset: false });
-  });
-
-  it("returns null for identical or empty snapshots", () => {
-    expect(diffCumulativeText({ previousText: "A\n", nextText: "A\n" })).toBe(
-      null,
-    );
-    expect(diffCumulativeText({ previousText: "A\n", nextText: "" })).toBe(
-      null,
-    );
-  });
-
-  it("flags a reset when the snapshot restarted", () => {
-    expect(
-      diffCumulativeText({ previousText: "A\nB\n", nextText: "C\n" }),
-    ).toEqual({ delta: "C\n", nextText: "C\n", reset: true });
   });
 });
 
@@ -2636,6 +2612,86 @@ describe("delta assembler text-delta batching", () => {
         reset: true,
       }),
     ]);
+  });
+
+  it("closes a snapshot-streamed command with the last snapshot as aggregated output", () => {
+    const assembler = createAssembler();
+    assemble(assembler, { kind: "turn.open" }, bashOpen("cmd-1"));
+    const key = { providerItemId: "cmd-1" };
+    assemble(assembler, {
+      kind: "command.outputSnapshot",
+      key,
+      text: "line 1\n",
+    });
+    assemble(assembler, {
+      kind: "command.outputSnapshot",
+      key,
+      text: "line 1\nline 2\n",
+    });
+
+    const events = assemble(assembler, {
+      kind: "item.close",
+      key,
+      status: "completed",
+      exitCode: 0,
+      item: { type: "command", command: "npm test", cwd: "/repo" },
+    });
+    const completed = events.find((event) => event.type === "item/completed");
+    expect(completed).toMatchObject({
+      item: expect.objectContaining({
+        type: "commandExecution",
+        aggregatedOutput: "line 1\nline 2\n",
+      }),
+    });
+  });
+
+  it("prefers an explicit aggregated output over the streamed snapshot", () => {
+    const assembler = createAssembler();
+    assemble(assembler, { kind: "turn.open" }, bashOpen("cmd-1"));
+    const key = { providerItemId: "cmd-1" };
+    assemble(assembler, {
+      kind: "command.outputSnapshot",
+      key,
+      text: "streamed\n",
+    });
+
+    const events = assemble(assembler, {
+      kind: "item.close",
+      key,
+      status: "completed",
+      exitCode: 0,
+      aggregatedOutput: "final\n",
+      item: { type: "command", command: "npm test", cwd: "/repo" },
+    });
+    const completed = events.find((event) => event.type === "item/completed");
+    expect(completed).toMatchObject({
+      item: expect.objectContaining({ aggregatedOutput: "final\n" }),
+    });
+  });
+
+  it("does not invent aggregated output for incremental output deltas", () => {
+    const assembler = createAssembler();
+    assemble(assembler, { kind: "turn.open" }, bashOpen("cmd-1"));
+    const key = { providerItemId: "cmd-1" };
+    assemble(assembler, {
+      kind: "item.outputDelta",
+      key,
+      channel: "command",
+      text: "line 1\n",
+    });
+
+    const events = assemble(assembler, {
+      kind: "item.close",
+      key,
+      status: "completed",
+      exitCode: 0,
+      item: { type: "command", command: "npm test", cwd: "/repo" },
+    });
+    const completed = events.find((event) => event.type === "item/completed");
+    if (completed?.type !== "item/completed") {
+      throw new Error("expected item/completed");
+    }
+    expect(completed.item).not.toHaveProperty("aggregatedOutput");
   });
 
   it("session.reset flushes buffered text instead of dropping it", () => {

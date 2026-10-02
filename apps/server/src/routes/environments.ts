@@ -30,7 +30,10 @@ import {
 } from "../constants.js";
 import { ApiError } from "../errors.js";
 import { requestEnvironmentRemoval } from "../services/environments/environment-engine.js";
-import { toEnvironmentResponse } from "../services/environments/environment-response.js";
+import {
+  toEnvironmentResponse,
+  toEnvironmentResponses,
+} from "../services/environments/environment-response.js";
 import {
   requireEnvironment,
   requireReadyEnvironment,
@@ -61,6 +64,7 @@ import {
   type WorkspaceCommandTarget,
 } from "../services/environments/workspace-command-target.js";
 import {
+  callEnvironmentCommits,
   callEnvironmentWorkspaceStatus,
   callEnvironmentWorkspaceStatusForWork,
 } from "../services/environments/workspace-status.js";
@@ -288,18 +292,23 @@ export function registerEnvironmentRoutes(app: Hono, deps: AppDeps): void {
       offset: query?.offset,
     });
     return context.json(
-      listEnvironments(deps.db, {
-        ...(query?.projectId ? { projectId: query.projectId } : {}),
-        ...(query?.hostId ? { hostId: query.hostId } : {}),
-        ...(query?.environmentProviderId
-          ? { environmentProviderId: query.environmentProviderId }
-          : {}),
-        ...(query?.instanceKey ? { instanceKey: query.instanceKey } : {}),
-        ...(query?.path === undefined ? {} : { path: query.path }),
-        ...(limit === undefined ? {} : { limit }),
-        ...(offset === undefined ? {} : { offset }),
-        statuses: query?.status ? [query.status] : LISTED_ENVIRONMENT_STATUSES,
-      }).map(toEnvironmentResponse),
+      toEnvironmentResponses(
+        deps.db,
+        listEnvironments(deps.db, {
+          ...(query?.projectId ? { projectId: query.projectId } : {}),
+          ...(query?.hostId ? { hostId: query.hostId } : {}),
+          ...(query?.environmentProviderId
+            ? { environmentProviderId: query.environmentProviderId }
+            : {}),
+          ...(query?.instanceKey ? { instanceKey: query.instanceKey } : {}),
+          ...(query?.path === undefined ? {} : { path: query.path }),
+          ...(limit === undefined ? {} : { limit }),
+          ...(offset === undefined ? {} : { offset }),
+          statuses: query?.status
+            ? [query.status]
+            : LISTED_ENVIRONMENT_STATUSES,
+        }),
+      ),
     );
   });
 
@@ -334,6 +343,7 @@ export function registerEnvironmentRoutes(app: Hono, deps: AppDeps): void {
   get(routes.get, (context) =>
     context.json(
       toEnvironmentResponse(
+        deps.db,
         requireEnvironment(deps.db, context.req.param("id")),
       ),
     ),
@@ -350,7 +360,7 @@ export function registerEnvironmentRoutes(app: Hono, deps: AppDeps): void {
     if (!updated) {
       throw new ApiError(404, "environment_not_found", "Environment not found");
     }
-    return context.json(toEnvironmentResponse(updated));
+    return context.json(toEnvironmentResponse(deps.db, updated));
   });
 
   post(routes.archiveThreads, (context) => {
@@ -397,6 +407,40 @@ export function registerEnvironmentRoutes(app: Hono, deps: AppDeps): void {
     return context.json({
       outcome: "available",
       workspace: result.workspaceStatus,
+    });
+  });
+
+  // bb-fork(thread-start-ref): recent commits for the start-commit picker.
+  get(routes.commits, async (context) => {
+    const environment = requireReadyEnvironment(
+      deps.db,
+      context.req.param("id"),
+    );
+    if (!environment.isGitRepo) {
+      return context.json({
+        outcome: "not_applicable",
+        reason: "non_git_environment",
+        message: "Commits are not available for non-git environments",
+      });
+    }
+    const target = requireWorkspaceCommandTarget(environment);
+    const result = await callEnvironmentCommits(deps, { environment, target });
+    if (result.outcome === "not_applicable") {
+      return context.json({
+        outcome: "not_applicable" as const,
+        reason: "non_git_environment" as const,
+        message: result.message,
+      });
+    }
+    if (result.outcome === "unavailable") {
+      return context.json({
+        outcome: "unavailable",
+        failure: result.failure,
+      });
+    }
+    return context.json({
+      outcome: "available",
+      commits: result.commits,
     });
   });
 

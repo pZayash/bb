@@ -104,14 +104,11 @@ export interface ThreadTimelineFromEventsResult {
   rows: TimelineRow[];
 }
 
-interface ThreadTimelineSourceSeqRange {
-  sourceSeqEnd: number;
-  sourceSeqStart: number;
-}
-
-interface BuildThreadTimelineTurnDetailsFromEventsOptions extends ThreadTimelineSourceSeqRange {
+interface BuildThreadTimelineTurnDetailsFromEventsOptions {
   completedTurnDisplay: CompletedTurnDisplay;
   includeDiagnosticOperations: boolean;
+  sourceSeqStart: number;
+  turnId: string;
   providerDisplayName?: string;
   threadStatus: Thread["status"];
   threadName: string;
@@ -1216,6 +1213,28 @@ export function buildThreadTimelineFromEvents(
   };
 }
 
+function findTurnSummaryStartingAt(
+  plan: readonly TimelineRowPlan[],
+  turnId: string,
+  sourceSeqStart: number,
+): Extract<TimelineRowPlan, { kind: "summary" }> | undefined {
+  let match: Extract<TimelineRowPlan, { kind: "summary" }> | undefined;
+  let matchSeq = Infinity;
+  for (const item of plan) {
+    if (item.kind !== "summary" || item.row.turnId !== turnId) continue;
+    for (const message of item.messages) {
+      if (
+        message.sourceSeqStart >= sourceSeqStart &&
+        message.sourceSeqStart < matchSeq
+      ) {
+        match = item;
+        matchSeq = message.sourceSeqStart;
+      }
+    }
+  }
+  return match;
+}
+
 export function buildThreadTimelineTurnDetailsFromEvents(
   args: BuildThreadTimelineTurnDetailsFromEventsArgs,
 ): ThreadTimelineTurnDetailsFromEventsResult {
@@ -1237,13 +1256,12 @@ export function buildThreadTimelineTurnDetailsFromEvents(
     options.completedTurnDisplay,
     options.rowIdPrefix,
   );
-  const matchingSummary = plan.find(
-    (item) =>
-      item.kind === "summary" &&
-      item.row.sourceSeqStart === args.options.sourceSeqStart &&
-      item.row.sourceSeqEnd === args.options.sourceSeqEnd,
+  const matchingSummary = findTurnSummaryStartingAt(
+    plan,
+    args.options.turnId,
+    args.options.sourceSeqStart,
   );
-  if (matchingSummary?.kind === "summary") {
+  if (matchingSummary) {
     return {
       kind: "matched",
       rows: matchingSummary.messages.flatMap((message) =>

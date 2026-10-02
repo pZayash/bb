@@ -104,6 +104,8 @@ export function makeThreadResponse(
     sectionId: null,
     status: "idle",
     parentThreadId: null,
+    // bb-fork(parent-mute): default = parent notifications on
+    parentNotificationsMutedAt: null,
     lifecycleOwnerThreadId: null,
     sourceThreadId: null,
     originKind: null,
@@ -118,8 +120,10 @@ export function makeThreadResponse(
     updatedAt: 0,
     runtime: { displayStatus: "idle", hostReconnectGraceExpiresAt: null },
     activeBackgroundAgentCount: 0,
+    canRestoreEnvironment: false,
     canSpawnChild: true,
     queuedMessageCount: 0,
+    draft: null,
     ...overrides,
   };
 }
@@ -240,10 +244,12 @@ export function makeMessageDispatchHookContext(
     baseBranch: null,
     defaultBranch: "main",
     mergeBaseBranch: null,
+    startRef: null,
     environmentProviderId: null,
     environmentProviderSelection: null,
     environmentProviderInstanceKey: null,
     lifecycle: { phase: "active", retireAt: null, teardown: null },
+    hostLifecycle: "active",
     managed: false,
     workspaceProvisionType: null,
     status: "ready",

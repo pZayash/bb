@@ -56,6 +56,15 @@ const threadDeltaParamsSchema = z.object({
   deltas: z.array(z.record(z.string(), z.unknown())),
 });
 
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export interface StartFakePiBridgeOptions {
   prefix: string;
   sessionDir?: (workspaceDir: string) => string;
@@ -187,6 +196,10 @@ export async function startFakePiBridge(
     },
     async teardown() {
       await experimental_closeAllForTests();
+      await bridge.waitFor(
+        () => bridge.readProcessLog().spawned.every((pid) => !isRunning(pid)),
+        "fake Pi processes to exit",
+      );
       harness.restore();
       vi.unstubAllEnvs();
       await removeWorkspaceDir(workspaceDir);

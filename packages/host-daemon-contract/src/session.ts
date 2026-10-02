@@ -4,8 +4,6 @@ import {
   serverMovedMessageSchema,
   serverMoveProgressMessageSchema,
 } from "./server-move.js";
-import type { Hono } from "hono";
-import { hc } from "hono/client";
 import {
   discoveredWorkspacePropertiesSchema,
   ENVIRONMENT_CHANGE_KINDS,
@@ -15,6 +13,7 @@ import {
   terminalColsSchema,
   terminalDataBase64Schema,
   terminalRowsSchema,
+  terminalShellIdSchema,
   threadEventSchema,
   toolCallRequestSchema,
   toolCallResponseSchema,
@@ -422,6 +421,8 @@ const hostDaemonOnlineRpcResponseSuccessSchema = z.discriminatedUnion(
     onlineRpcResponseSuccessSchemaFor("host.remove_path"),
     onlineRpcResponseSuccessSchemaFor("host.browse_directory"),
     onlineRpcResponseSuccessSchemaFor("host.paths_exist"),
+    // bb-fork(windows): shell enumeration for the Start terminal picker.
+    onlineRpcResponseSuccessSchemaFor("host.list_terminal_shells"),
     onlineRpcResponseSuccessSchemaFor("project.inspect"),
     onlineRpcResponseSuccessSchemaFor("project.clone_default_path"),
     onlineRpcResponseSuccessSchemaFor("host.pick_folder"),
@@ -441,6 +442,7 @@ const hostDaemonOnlineRpcResponseSuccessSchema = z.discriminatedUnion(
     onlineRpcResponseSuccessSchemaFor("host.list_branch_options"),
     onlineRpcResponseSuccessSchemaFor("host.inspect_git_source"),
     onlineRpcResponseSuccessSchemaFor("host.read_file"),
+    onlineRpcResponseSuccessSchemaFor("host.read_file_chunk"),
     onlineRpcResponseSuccessSchemaFor("host.read_file_relative"),
     onlineRpcResponseSuccessSchemaFor("host.write_file"),
     onlineRpcResponseSuccessSchemaFor("provider.list_models"),
@@ -452,6 +454,8 @@ const hostDaemonOnlineRpcResponseSuccessSchema = z.discriminatedUnion(
     onlineRpcResponseSuccessSchemaFor("workspace.diff"),
     onlineRpcResponseSuccessSchemaFor("workspace.diffFiles"),
     onlineRpcResponseSuccessSchemaFor("workspace.diffPatch"),
+    // bb-fork(thread-start-ref): recent commits for the start-commit picker.
+    onlineRpcResponseSuccessSchemaFor("workspace.commits"),
     onlineRpcResponseSuccessSchemaFor("workspace.pull_request"),
     onlineRpcResponseSuccessSchemaFor("server_move.inspect"),
     onlineRpcResponseSuccessSchemaFor("server_move.probe"),
@@ -540,6 +544,9 @@ const hostDaemonTerminalOpenMessageSchema = z
         z
           .object({
             mode: z.literal("shell"),
+            // bb-fork(windows): optional host shell id resolved by the daemon; a
+            // missing or stale id falls back to the daemon default shell.
+            shellId: terminalShellIdSchema.optional(),
           })
           .strict(),
         z
@@ -921,8 +928,6 @@ export type HostDaemonInternalSchema = {
   };
 };
 
-type HostDaemonInternalRoutes = Hono<{}, HostDaemonInternalSchema, "/">;
-
 function parseProtocolHeader(protocolHeader: string | undefined): string[] {
   if (!protocolHeader) {
     return [];
@@ -950,16 +955,4 @@ export function hasHostDaemonWebSocketProtocol(
   return parseProtocolHeader(protocolHeader).includes(
     HOST_DAEMON_WEBSOCKET_PROTOCOL,
   );
-}
-
-export function createHostDaemonClient(baseUrl: string, hostKey: string) {
-  const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
-  const internalBaseUrl = normalizedBaseUrl.endsWith("/internal")
-    ? normalizedBaseUrl
-    : `${normalizedBaseUrl}/internal`;
-  return hc<HostDaemonInternalRoutes>(internalBaseUrl, {
-    headers: {
-      authorization: `Bearer ${hostKey}`,
-    },
-  });
 }

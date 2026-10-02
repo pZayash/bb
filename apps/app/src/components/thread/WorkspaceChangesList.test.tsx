@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   WORKSPACE_CHANGES_LIST_MAX_ROWS,
   WorkspaceChangesList,
@@ -39,5 +39,23 @@ describe("WorkspaceChangesList", () => {
       screen.getByText(`${(1234).toLocaleString()} more files not shown`),
     ).toBeTruthy();
     expect(screen.queryByTitle(files[files.length - 1]!.path)).toBeNull();
+  });
+
+  it("offers a diff action per row only when the caller handles it", () => {
+    const onOpenDiffClick = vi.fn();
+    const files = makeFiles(1);
+    const { rerender } = render(
+      <WorkspaceChangesList files={files} onOpenDiffClick={onOpenDiffClick} />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `Open split diff for ${files[0]!.path}`,
+      }),
+    );
+    expect(onOpenDiffClick).toHaveBeenCalledWith(files[0]);
+
+    rerender(<WorkspaceChangesList files={files} />);
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
   });
 });

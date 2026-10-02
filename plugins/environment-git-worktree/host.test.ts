@@ -255,25 +255,78 @@ describe("worktree host entry", () => {
     },
   );
 
-  it("creates a bounded worktree path for a long repository name", async () => {
-    const repositoryName = "repository".repeat(24);
-    const { sourcePath, dataDir } =
-      await createSourceRepository(repositoryName);
+  // bb-fork(windows): a 200-byte leaf plus the data dir exceeds MAX_PATH, so
+  // spawning git with that cwd fails with ENOENT.
+  it.skipIf(process.platform === "win32")(
+    "creates a bounded worktree path for a long repository name",
+    async () => {
+      const repositoryName = "repository".repeat(24);
+      const { sourcePath, dataDir } =
+        await createSourceRepository(repositoryName);
+      const harness = createHarness(dataDir);
+      const result = await harness.experimental_call(
+        "create",
+        createInput({
+          operationId: "long-name",
+          sourcePath,
+          pathKey: "long-name",
+          branchName: "bb/long-name",
+        }),
+      );
+      expect(result.status).toBe("created");
+      if (result.status !== "created") throw new Error(result.message);
+      expect(Buffer.byteLength(basename(result.path), "utf8")).toBe(200);
+      expect(basename(result.path)).toMatch(/-[a-f0-9]{16}$/u);
+      expect(existsSync(join(result.path, "README.md"))).toBe(true);
+      await harness.experimental_dispose();
+    },
+  );
+
+  // bb-fork: a worker killed mid `worktree add` leaves a locked admin record
+  // bb-fork: with no directory behind it. The next attempt for the same branch
+  // bb-fork: used to die here with a bare "git status --porcelain failed".
+  it("drops a locked worktree record whose directory is gone", async () => {
+    const { sourcePath, dataDir } = await createSourceRepository();
     const harness = createHarness(dataDir);
-    const result = await harness.experimental_call(
+    const first = await harness.experimental_call(
       "create",
       createInput({
-        operationId: "long-name",
+        operationId: "stale-record-first",
         sourcePath,
-        pathKey: "long-name",
-        branchName: "bb/long-name",
+        pathKey: "stale-record-1",
+        branchName: "bb/stale-record",
       }),
     );
-    expect(result.status).toBe("created");
-    if (result.status !== "created") throw new Error(result.message);
-    expect(Buffer.byteLength(basename(result.path), "utf8")).toBe(200);
-    expect(basename(result.path)).toMatch(/-[a-f0-9]{16}$/u);
-    expect(existsSync(join(result.path, "README.md"))).toBe(true);
+    expect(first.status).toBe("created");
+    if (first.status !== "created") throw new Error(first.message);
+    await git(
+      sourcePath,
+      "worktree",
+      "lock",
+      "--reason",
+      "initializing",
+      first.path,
+    );
+    await rm(first.path, { recursive: true, force: true });
+
+    const second = await harness.experimental_call(
+      "create",
+      createInput({
+        operationId: "stale-record-second",
+        sourcePath,
+        pathKey: "stale-record-2",
+        branchName: "bb/stale-record",
+      }),
+    );
+    expect(second.status).toBe("created");
+    if (second.status !== "created") throw new Error(second.message);
+    expect(existsSync(join(second.path, "README.md"))).toBe(true);
+    expect(await git(sourcePath, "worktree", "list")).not.toContain(
+      first.path,
+    );
+    expect(await git(sourcePath, "branch", "--list", "bb/stale-record")).toContain(
+      "bb/stale-record",
+    );
     await harness.experimental_dispose();
   });
 
@@ -514,44 +567,49 @@ describe("worktree host entry", () => {
     await harness.experimental_dispose();
   });
 
-  it("leaves teardown to core, kills workspace processes, and prunes the path-key parent", async () => {
-    const { root, sourcePath, dataDir } = await createSourceRepository();
-    await writeFile(
-      join(sourcePath, ".bb-env-teardown.sh"),
-      `#!/usr/bin/env bash\necho teardown-ran > ${join(root, "teardown.marker")}\necho tearing-down\n`,
-    );
-    await git(sourcePath, "add", ".");
-    await git(sourcePath, "commit", "-m", "add teardown script");
-    const harness = createHarness(dataDir);
-    const created = await harness.experimental_call(
-      "create",
-      createInput({
-        operationId: "create",
-        sourcePath,
+  // bb-fork(windows): `experimental_killProcessesWithCwdUnder` is POSIX-only, so
+  // the lingering process is not reaped before the path is pruned.
+  it.skipIf(process.platform === "win32")(
+    "leaves teardown to core, kills workspace processes, and prunes the path-key parent",
+    async () => {
+      const { root, sourcePath, dataDir } = await createSourceRepository();
+      await writeFile(
+        join(sourcePath, ".bb-env-teardown.sh"),
+        `#!/usr/bin/env bash\necho teardown-ran > ${join(root, "teardown.marker")}\necho tearing-down\n`,
+      );
+      await git(sourcePath, "add", ".");
+      await git(sourcePath, "commit", "-m", "add teardown script");
+      const harness = createHarness(dataDir);
+      const created = await harness.experimental_call(
+        "create",
+        createInput({
+          operationId: "create",
+          sourcePath,
+          pathKey: "thr_6",
+          branchName: "bb/teardown-thr_6",
+        }),
+      );
+      if (created.status !== "created") throw new Error(created.message);
+      const lingering = spawn("sleep", ["300"], {
+        cwd: created.path,
+        detached: true,
+        stdio: "ignore",
+      });
+      lingering.unref();
+      const removed = await harness.experimental_call("remove", {
+        operationId: "remove",
         pathKey: "thr_6",
-        branchName: "bb/teardown-thr_6",
-      }),
-    );
-    if (created.status !== "created") throw new Error(created.message);
-    const lingering = spawn("sleep", ["300"], {
-      cwd: created.path,
-      detached: true,
-      stdio: "ignore",
-    });
-    lingering.unref();
-    const removed = await harness.experimental_call("remove", {
-      operationId: "remove",
-      pathKey: "thr_6",
-      path: created.path,
-    });
-    const lingeringAlive = isPidAlive(lingering.pid ?? 0);
-    lingering.kill("SIGKILL");
-    expect(removed).toEqual({ status: "removed" });
-    expect(lingeringAlive).toBe(false);
-    expect(progressText(harness)).not.toContain("tearing-down");
-    expect(existsSync(join(root, "teardown.marker"))).toBe(false);
-    expect(existsSync(created.path)).toBe(false);
-    expect(await readdir(join(dataDir, "worktrees"))).toEqual([]);
-    await harness.experimental_dispose();
-  });
+        path: created.path,
+      });
+      const lingeringAlive = isPidAlive(lingering.pid ?? 0);
+      lingering.kill("SIGKILL");
+      expect(removed).toEqual({ status: "removed" });
+      expect(lingeringAlive).toBe(false);
+      expect(progressText(harness)).not.toContain("tearing-down");
+      expect(existsSync(join(root, "teardown.marker"))).toBe(false);
+      expect(existsSync(created.path)).toBe(false);
+      expect(await readdir(join(dataDir, "worktrees"))).toEqual([]);
+      await harness.experimental_dispose();
+    },
+  );
 });

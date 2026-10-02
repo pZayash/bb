@@ -1,5 +1,9 @@
 import { Command } from "commander";
-import { PERSONAL_PROJECT_ID, type Thread } from "@bb/domain";
+import {
+  PERSONAL_PROJECT_ID,
+  type Thread,
+  type ThreadListEntry,
+} from "@bb/domain";
 import { action } from "../../action.js";
 import { createCliBbSdk } from "../../client.js";
 import { resolveExplicitIdFlag } from "../../context-env.js";
@@ -9,9 +13,15 @@ import {
   truncateCell,
 } from "../../table.js";
 import { outputJson } from "../helpers.js";
+import {
+  resolveMachineHostId,
+  resolveMachineTargetOption,
+} from "../machine.js";
 
 interface ThreadListCommandOptions {
   environment?: string;
+  machine?: string;
+  host?: string;
   project?: string;
   parentThread?: string;
   archived?: boolean;
@@ -30,6 +40,11 @@ export function registerListCommand(
     .description("List threads")
     .option("--project <id>", "Filter by project ID (defaults to all projects)")
     .option("--environment <id>", "Filter by environment ID")
+    .option(
+      "--machine <id-or-name>",
+      "Filter by machine ID or active machine name",
+    )
+    .option("--host <id-or-name>", "Alias for --machine")
     .option("--parent-thread <id>", "Filter by parent thread ID")
     .option("--section <id>", "Filter by thread section ID")
     .option("--unsectioned", "Show only threads outside sections")
@@ -51,6 +66,19 @@ export function registerListCommand(
           flagName: "--environment",
           value: opts.environment,
         });
+        const machineTarget = resolveMachineTargetOption(opts);
+        const hostId =
+          machineTarget === undefined
+            ? undefined
+            : machineTarget.trim().startsWith("host_")
+              ? resolveExplicitIdFlag({
+                  flagName: "--machine",
+                  value: machineTarget,
+                })
+              : await resolveMachineHostId({
+                  serverUrl: getUrl(),
+                  target: machineTarget,
+                });
         if (opts.section && opts.unsectioned) {
           throw new Error("Cannot combine --section with --unsectioned.");
         }
@@ -61,6 +89,7 @@ export function registerListCommand(
         const threads = await sdk.threads.list({
           ...(projectId ? { projectId } : {}),
           ...(environmentId ? { environmentId } : {}),
+          ...(hostId ? { hostId } : {}),
           ...(parentThreadId ? { parentThreadId } : {}),
           ...(opts.archived ? { archived: true } : {}),
           ...(sectionId ? { sectionId } : {}),
@@ -84,7 +113,7 @@ export function registerListCommand(
 const MAX_TITLE_WIDTH = 60;
 
 function printThreadTable(
-  threads: Thread[],
+  threads: ThreadListEntry[],
   projectNames: ReadonlyMap<string, string>,
 ): void {
   const rows = threads.map((thread) => [
@@ -92,11 +121,12 @@ function printThreadTable(
     truncateCell(formatThreadListTitle(thread), MAX_TITLE_WIDTH),
     formatThreadListProject(thread, projectNames),
     formatThreadListStatus(thread),
+    formatThreadListModel(thread),
   ]);
   printBorderlessTable(
     {
-      head: ["ID", "Title", "Project", "Status"],
-      colWidths: columnWidths(rows, [4, 5, 7, 12]),
+      head: ["ID", "Title", "Project", "Status", "Model"],
+      colWidths: columnWidths(rows, [4, 5, 7, 12, 5]),
     },
     rows,
   );
@@ -116,6 +146,13 @@ function formatThreadListProject(
 ): string {
   if (thread.projectId === PERSONAL_PROJECT_ID) return "-";
   return projectNames.get(thread.projectId) ?? thread.projectId;
+}
+
+function formatThreadListModel(thread: ThreadListEntry): string {
+  // bb-fork(windows): the sidebar shows the reasoning level beside the model, so
+  // bb-fork(windows): the table's model cell carries it too.
+  const model = thread.model ?? "-";
+  return thread.reasoningLevel ? `${model} (${thread.reasoningLevel})` : model;
 }
 
 function formatThreadListStatus(thread: Thread): string {

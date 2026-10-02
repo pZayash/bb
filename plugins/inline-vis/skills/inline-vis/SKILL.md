@@ -36,7 +36,7 @@ equivalent. For a read-only thread-storage artifact, write the document to
   fonts, media, fetches, and WebSockets are also allowed subject to normal
   browser CORS, mixed-content, and remote-server policies. Scripts execute in an
   opaque-origin iframe and cannot access the bb page, cookies, or storage.
-  Markdown uses BB's renderer with raw HTML disabled.
+  Markdown uses BB's renderer with sanitized HTML support.
 - Users can export the preview: save the source (HTML or Markdown), convert to
   Word (.docx), or print (with "Save as PDF" in the dialog). For a real,
   selectable-text PDF from a Markdown document, use the fork plugin

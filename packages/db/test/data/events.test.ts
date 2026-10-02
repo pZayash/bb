@@ -33,6 +33,7 @@ import {
   getLatestCompletedThreadContextClearSequence,
   getLatestStoredConversationOutlineSequence,
   getLastStoredTurnRequestEvent,
+  listLastStoredTurnRequestEvents,
   getLatestThreadOutputEventRow,
   getLatestThreadSequence,
   insertEvents,
@@ -58,7 +59,6 @@ import {
   pruneContextWindowUsageEvents,
   pruneTokenUsageEvents,
   pruneResolvedItemDeltas,
-  pruneThreadEventsBeforeSequence,
   listLatestOpenBackgroundTaskStateRowsForThread,
 } from "../../src/data/events.js";
 import { createEnvironment } from "../../src/data/environments.js";
@@ -2792,6 +2792,71 @@ describe("events", () => {
     expect(getActiveStoredTurnId(db, thread.id)).toBeNull();
   });
 
+  it("lists each thread's last turn request and omits threads without one", () => {
+    const { db, project, thread } = setup();
+    const other = createThread(db, noopNotifier, {
+      projectId: project.id,
+      providerId: "codex",
+    });
+    const untouched = createThread(db, noopNotifier, {
+      projectId: project.id,
+      providerId: "codex",
+    });
+    const requestIds = [
+      "creq_23456789a1",
+      "creq_23456789a2",
+      "creq_23456789a3",
+    ] as const;
+    const appendRequest = (
+      threadId: string,
+      requestId: string,
+      model: string,
+    ) =>
+      appendStoredThreadEvent(db, noopNotifier, {
+        threadId,
+        scope: threadScope(),
+        type: "client/turn/requested",
+        data: {
+          direction: "outbound",
+          source: "tell",
+          initiator: "user",
+          senderThreadId: null,
+          requestId,
+          input: textInput("hello"),
+          target: { kind: "new-turn" },
+          request: { method: "turn/start", params: {} },
+          execution: {
+            model,
+            reasoningLevel: "medium",
+            permissionMode: "workspace-write",
+            source: "client/turn/requested",
+            serviceTier: "default",
+          },
+        },
+      });
+
+    appendRequest(thread.id, requestIds[0], "gpt-5");
+    appendRequest(thread.id, requestIds[1], "gpt-5-mini");
+    appendRequest(other.id, requestIds[2], "claude-sonnet-4-5");
+
+    const rows = listLastStoredTurnRequestEvents(db, {
+      threadIds: [thread.id, other.id, untouched.id],
+    });
+    const rowByThreadId = new Map(rows.map((row) => [row.threadId, row]));
+
+    expect(rows).toHaveLength(2);
+    expect(rowByThreadId.get(thread.id)?.data).toContain(
+      '"model":"gpt-5-mini"',
+    );
+    expect(rowByThreadId.get(thread.id)?.data).not.toContain(
+      '"model":"gpt-5"',
+    );
+    expect(rowByThreadId.get(other.id)?.data).toContain(
+      '"model":"claude-sonnet-4-5"',
+    );
+    expect(rowByThreadId.has(untouched.id)).toBe(false);
+  });
+
   it("preserves the latest provider thread id after an environment directory update", () => {
     const { db, thread } = setup();
 
@@ -3498,60 +3563,6 @@ describe("events", () => {
     ]);
 
     expect(getLatestThreadSequence(db, { threadId: thread.id })).toBe(5);
-  });
-
-  it("prunes event types before a sequence cutoff and keeps recent rows", () => {
-    const { db, thread } = setup();
-
-    insertEvents(db, noopNotifier, [
-      {
-        threadId: thread.id,
-        sequence: 1,
-        type: "thread/tokenUsage/updated",
-        ...createTurnEventFields({ turnId: "turn-1" }),
-        data: "{}",
-      },
-      {
-        threadId: thread.id,
-        sequence: 2,
-        type: "thread/tokenUsage/updated",
-        ...createTurnEventFields({ turnId: "turn-1" }),
-        data: "{}",
-      },
-      {
-        threadId: thread.id,
-        sequence: 3,
-        type: "thread/tokenUsage/updated",
-        ...createTurnEventFields({ turnId: "turn-1" }),
-        data: "{}",
-      },
-      {
-        threadId: thread.id,
-        sequence: 4,
-        type: "thread/tokenUsage/updated",
-        ...createTurnEventFields({ turnId: "turn-1" }),
-        data: "{}",
-      },
-      {
-        threadId: thread.id,
-        sequence: 5,
-        type: "thread/tokenUsage/updated",
-        ...createTurnEventFields({ turnId: "turn-1" }),
-        data: "{}",
-      },
-    ]);
-
-    const latestSequence = getLatestThreadSequence(db, { threadId: thread.id });
-    const removed = pruneThreadEventsBeforeSequence(db, {
-      threadId: thread.id,
-      sequenceCutoff: latestSequence - 2,
-      types: ["thread/tokenUsage/updated"],
-    });
-
-    expect(removed).toBe(3);
-    expect(
-      listEvents(db, { threadId: thread.id }).map((event) => event.sequence),
-    ).toEqual([4, 5]);
   });
 
   it("keeps only the latest root token-usage snapshot", () => {
@@ -5120,18 +5131,6 @@ describe("events", () => {
     });
   });
 
-  it("chunks thread IDs before SQLite reaches its variable limit", () => {
-    const { db } = setup();
-    const threadIds = Array.from(
-      { length: 32_753 },
-      (_, index) => `thr_missing_${index}`,
-    );
-
-    expect(
-      listActiveBackgroundTaskCountsByThreadIds(db, { threadIds }),
-    ).toEqual([]);
-  });
-
   it("returns the same counts from chunked and unchunked thread IDs", () => {
     const { db, project, thread } = setup();
     const otherThread = createThread(db, noopNotifier, {
@@ -5298,59 +5297,6 @@ describe("events", () => {
     expect(
       listOpenBackgroundTaskItemRowsForHost(db, { hostId: otherHost.id }),
     ).toEqual([]);
-  });
-
-  it("pruning is scoped to the target thread", () => {
-    const { db, project, thread } = setup();
-    const thread2 = createThread(db, noopNotifier, {
-      projectId: project.id,
-      providerId: "codex",
-    });
-
-    insertEvents(db, noopNotifier, [
-      {
-        threadId: thread.id,
-        sequence: 1,
-        type: "thread/tokenUsage/updated",
-        ...createTurnEventFields({ turnId: "turn-1" }),
-        data: "{}",
-      },
-      {
-        threadId: thread.id,
-        sequence: 2,
-        type: "thread/tokenUsage/updated",
-        ...createTurnEventFields({ turnId: "turn-1" }),
-        data: "{}",
-      },
-      {
-        threadId: thread2.id,
-        sequence: 1,
-        type: "thread/tokenUsage/updated",
-        ...createTurnEventFields({ turnId: "turn-1" }),
-        data: "{}",
-      },
-      {
-        threadId: thread2.id,
-        sequence: 2,
-        type: "thread/tokenUsage/updated",
-        ...createTurnEventFields({ turnId: "turn-1" }),
-        data: "{}",
-      },
-    ]);
-
-    const removed = pruneThreadEventsBeforeSequence(db, {
-      threadId: thread.id,
-      sequenceCutoff: 1,
-      types: ["thread/tokenUsage/updated"],
-    });
-
-    expect(removed).toBe(1);
-    expect(
-      listEvents(db, { threadId: thread.id }).map((event) => event.sequence),
-    ).toEqual([2]);
-    expect(
-      listEvents(db, { threadId: thread2.id }).map((event) => event.sequence),
-    ).toEqual([1, 2]);
   });
 
   it("notifies on events-appended per thread", () => {

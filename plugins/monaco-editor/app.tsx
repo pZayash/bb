@@ -1,7 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import {
   definePluginApp,
+  experimental_Diff,
   experimental_useCodeTheme,
+  Markdown,
   useRpc,
   type PluginFileOpenerProps,
 } from "@get-bb/plugin-sdk/app";
@@ -14,9 +23,25 @@ import {
   setOverflowWidgetsTheme,
 } from "./lib/monaco-loader.js";
 import { applyCodeTheme, editorBackground } from "./lib/monaco-theme.js";
-import { cn } from "@bb/shared-ui/lib/utils";
+import { cn } from "@/lib/utils";
 import { FileToolbar, type SaveIndicator } from "./components/FileToolbar.js";
 import { FileTreePanel } from "./components/FileTreePanel.js";
+// bb-fork(file-diff): unified/split diff of the open file against Git.
+import {
+  FileDiffControls,
+  type FileDiffViewMode,
+} from "./components/FileDiffControls.fork.js";
+import { FileDiffBody } from "./components/FileDiffBody.fork.js";
+import { useFileDiff } from "./lib/file-diff.fork.js";
+// bb-fork(file-diff-base): the open request can pin the editor's diff base.
+import { THREAD_START_SELECTION } from "./lib/file-diff-selection.fork.js";
+// bb-fork(md-preview): rendered Markdown preview next to the editor.
+import { MarkdownPreviewToggle } from "./components/MarkdownPreviewToggle.fork.js";
+import {
+  buildMarkdownPreviewDocument,
+  isMarkdownPreviewPath,
+  type MarkdownPreviewViewMode,
+} from "./lib/markdown-preview.fork.js";
 import type { FlatEntry } from "./lib/file-tree.js";
 import {
   EDITOR_COMMANDS,
@@ -32,6 +57,11 @@ type SaveState =
   | { kind: "saving" }
   | { kind: "error"; message: string }
   | { kind: "conflict" };
+
+// bb-fork(md-preview): match the built-in preview's Markdown content width.
+const MARKDOWN_PREVIEW_WRAPPER_STYLE = {
+  "--md-content-w": "100cqi",
+} as CSSProperties;
 
 function revealLineRange(
   editor: MonacoNs.editor.IStandaloneCodeEditor,
@@ -58,6 +88,7 @@ function MonacoFileOpener({
   path,
   source,
   Original,
+  experimental_diffIntent,
   experimental_lineRange,
 }: PluginFileOpenerProps) {
   const rpc = useRpc<typeof rpcContract>();
@@ -101,10 +132,61 @@ function MonacoFileOpener({
     | { kind: "error"; message: string }
   >({ kind: "loading" });
 
+  // bb-fork(md-preview): document identity for rendering the Markdown preview.
+  const [fileIdentity, setFileIdentity] = useState<{
+    relativePath: string;
+    rootPath: string;
+  } | null>(null);
+  const [viewMode, setViewMode] = useState<MarkdownPreviewViewMode>("source");
+  const [previewContent, setPreviewContent] = useState("");
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
+
+  // bb-fork(file-diff): diff mode state for the open file.
+  const [isDiffActive, setIsDiffActive] = useState(
+    experimental_diffIntent != null,
+  );
+  // bb-fork(diff-rail): the diff's scroller backs its change map and navigation.
+  const [diffScrollElement, setDiffScrollElement] =
+    useState<HTMLDivElement | null>(null);
+  const [diffSelection, setDiffSelection] = useState<string | null>(null);
+  const [diffViewMode, setDiffViewMode] = useState<FileDiffViewMode>("split");
+  const fileDiff = useFileDiff({
+    enabled: isDiffActive,
+    path: activePath,
+    rpc,
+    selection: diffSelection,
+    source,
+  });
+
   const setSaveState = useCallback((next: SaveState) => {
     saveStateRef.current = next;
     setSaveStateValue(next);
   }, []);
+
+  // bb-fork(md-preview): a newly selected file always opens in the editor.
+  useEffect(() => {
+    setViewMode("source");
+  }, [activePath]);
+
+  // bb-fork(file-diff): a newly selected file always opens in the editor.
+  useEffect(() => {
+    setIsDiffActive(false);
+    setDiffSelection(null);
+  }, [activePath]);
+
+  // bb-fork(file-diff-open): apply the requested diff view; a null intent changes nothing.
+  useEffect(() => {
+    if (experimental_diffIntent == null) return;
+    setDiffViewMode(experimental_diffIntent.view);
+    // bb-fork(file-diff-base): the request's comparison decides the base until the user does.
+    setDiffSelection(
+      experimental_diffIntent.base === "thread_start"
+        ? THREAD_START_SELECTION
+        : null,
+    );
+    setIsDiffActive(true);
+  }, [experimental_diffIntent]);
 
   const writeEditorContent = useCallback(
     async (expectedSha256: string | null) => {
@@ -150,6 +232,10 @@ function MonacoFileOpener({
       const file = await rpc.call("read", { path: activePath, source });
       if (file.kind !== "text") return;
       sha256Ref.current = file.sha256;
+      setFileIdentity({
+        relativePath: file.relativePath,
+        rootPath: file.rootPath,
+      });
       editor.setValue(file.content);
       setSaveState({ kind: "clean" });
     } catch (error) {
@@ -225,6 +311,7 @@ function MonacoFileOpener({
   useEffect(() => {
     let disposed = false;
     setStatus({ kind: "loading" });
+    setFileIdentity(null);
 
     void (async () => {
       try {
@@ -237,6 +324,10 @@ function MonacoFileOpener({
           setStatus({ kind: "delegate", reason: file.reason });
           return;
         }
+        setFileIdentity({
+          relativePath: file.relativePath,
+          rootPath: file.rootPath,
+        });
 
         const monaco = await loadMonaco(baseUrl);
         if (disposed) return;
@@ -281,6 +372,10 @@ function MonacoFileOpener({
           if (saveStateRef.current.kind === "clean") {
             setSaveState({ kind: "dirty" });
           }
+          // bb-fork(md-preview): keep the rendered preview in sync with disk.
+          if (viewModeRef.current === "preview") {
+            setPreviewContent(editor.getValue());
+          }
         });
         editor.addCommand(
           monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
@@ -298,10 +393,13 @@ function MonacoFileOpener({
 
     return () => {
       disposed = true;
-      if (editorRef.current) forgetEditor(editorRef.current);
-      editorRef.current?.getModel()?.dispose();
-      editorRef.current?.dispose();
+      const editor = editorRef.current;
       editorRef.current = null;
+      if (editor === null) return;
+      forgetEditor(editor);
+      const model = editor.getModel();
+      editor.dispose();
+      if (model !== null && !model.isDisposed()) model.dispose();
     };
   }, [activePath, rpc, setSaveState, source]);
 
@@ -320,6 +418,29 @@ function MonacoFileOpener({
     editorRef.current?.updateOptions({ theme: applied.name });
     setOverflowWidgetsTheme(applied.base);
   }, [codeTheme, status]);
+
+  // bb-fork(md-preview): derive the Markdown preview state for the open file.
+  const canPreview =
+    status.kind === "ready" && isMarkdownPreviewPath(activePath);
+  const markdownPreviewDocument = useMemo(
+    () =>
+      canPreview && fileIdentity !== null
+        ? buildMarkdownPreviewDocument({
+            relativePath: fileIdentity.relativePath,
+            rootPath: fileIdentity.rootPath,
+            source,
+          })
+        : undefined,
+    [canPreview, fileIdentity, source],
+  );
+  const isPreviewVisible =
+    canPreview && viewMode === "preview" && !isDiffActive;
+  const handleViewModeChange = useCallback((next: MarkdownPreviewViewMode) => {
+    if (next === "preview") {
+      setPreviewContent(editorRef.current?.getValue() ?? "");
+    }
+    setViewMode(next);
+  }, []);
 
   if (status.kind === "delegate") return <Original />;
 
@@ -345,6 +466,36 @@ function MonacoFileOpener({
         onRefresh={requestRefresh}
         isFilesOpen={isFilesOpen}
         onToggleFiles={() => setIsFilesOpen((open) => !open)}
+        previewToggle={
+          canPreview ? (
+            <MarkdownPreviewToggle
+              viewMode={viewMode}
+              onViewModeChange={handleViewModeChange}
+            />
+          ) : undefined
+        }
+        diffControls={
+          source.kind === "workspace" ? (
+            <FileDiffControls
+              isActive={isDiffActive}
+              onSelectionChange={setDiffSelection}
+              onToggle={() => setIsDiffActive((active) => !active)}
+              onViewModeChange={setDiffViewMode}
+              options={
+                fileDiff.status === "ready" || fileDiff.status === "loading"
+                  ? fileDiff.options
+                  : []
+              }
+              selection={
+                diffSelection ??
+                (fileDiff.status === "ready" ? fileDiff.selection : null)
+              }
+              scrollElement={diffScrollElement}
+              state={fileDiff}
+              viewMode={diffViewMode}
+            />
+          ) : undefined
+        }
       />
       <Notice
         onDiscardCancel={() => setPendingDiscard(false)}
@@ -365,7 +516,37 @@ function MonacoFileOpener({
         saveState={saveState}
         status={status}
       />
-      <div ref={containerRef} className="min-h-0 flex-1" />
+      <div
+        ref={containerRef}
+        className={cn(
+          "min-h-0 flex-1",
+          (isPreviewVisible || isDiffActive) && "hidden",
+        )}
+      />
+      {isDiffActive ? (
+        <FileDiffBody
+          onScrollElementChange={setDiffScrollElement}
+          path={activePath}
+          scrollElement={diffScrollElement}
+          state={fileDiff}
+          viewMode={diffViewMode}
+        />
+      ) : null}
+      {isPreviewVisible ? (
+        <div
+          className="@container/page min-h-0 flex-1 overflow-y-auto bg-background"
+          style={MARKDOWN_PREVIEW_WRAPPER_STYLE}
+        >
+          <div className="px-4 py-4">
+            <Markdown
+              content={previewContent}
+              {...(markdownPreviewDocument === undefined
+                ? {}
+                : { experimental_document: markdownPreviewDocument })}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

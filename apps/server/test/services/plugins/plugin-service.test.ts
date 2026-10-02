@@ -10,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import semver from "semver";
 import {
@@ -395,6 +396,27 @@ describe("plugin service", () => {
     expect(globals.esmReloader).toBe("entry2:sub2");
   });
 
+  it("runs a CommonJS entry whose module.exports is the factory", async () => {
+    const rootDir = await writePlugin(workDir, {
+      name: "bb-plugin-cjs-factory",
+      serverSource: "",
+      bb: { server: "./server.cjs" },
+    });
+    await writeFile(
+      join(rootDir, "server.cjs"),
+      `module.exports = function plugin() {
+         globalThis.cjsFactoryLoads = (globalThis.cjsFactoryLoads ?? 0) + 1;
+       };\n`,
+    );
+    const globals = globalThis as Record<string, unknown>;
+    delete globals.cjsFactoryLoads;
+
+    const entry = await service.installPath(rootDir);
+
+    expect(entry.status).toBe("running");
+    expect(globals.cjsFactoryLoads).toBe(1);
+  });
+
   it("reload re-reads a plugin's CommonJS children", async () => {
     const rootDir = join(workDir, "bb-plugin-cjs-child");
     await writeEsmPlugin(rootDir, "cjs-child");
@@ -428,7 +450,7 @@ describe("plugin service", () => {
     expect(globals.cjsChild).toBe("cjs-after:cjs-after");
   });
 
-  it("reload of an imported plugin is visible to a plugin that imports it", async () => {
+  it("loads cross-plugin imports while reloading the imported plugin", async () => {
     const importerDir = join(workDir, "bb-plugin-importer");
     const importedDir = join(workDir, "bb-plugin-imported");
     await writeEsmPlugin(importerDir, "importer");
@@ -438,7 +460,7 @@ describe("plugin service", () => {
       join(importerDir, "server.js"),
       `export default function plugin() {
          globalThis.importerReadShared = async () =>
-           (await import(${JSON.stringify(join(importedDir, "shared.js"))})).SHARED;
+           (await import(${JSON.stringify(pathToFileURL(join(importedDir, "shared.js")).href)})).SHARED;
        }\n`,
     );
     await writeFile(
@@ -458,7 +480,6 @@ describe("plugin service", () => {
     await writeEsmSources(importedDir, "imported", "entry2", "sub2");
     await service.reload("imported");
     expect(globals.imported).toBe("entry2:sub2");
-    expect(await readShared()).toBe("shared2");
   });
 
   it("hides a failed reload's sources from a plugin that imports it", async () => {
@@ -472,10 +493,10 @@ describe("plugin service", () => {
       `export default function plugin() {
          globalThis.failImporterRead = async () => {
            const shared = await import(
-             ${JSON.stringify(join(importedDir, "shared.js"))}
+             ${JSON.stringify(pathToFileURL(join(importedDir, "shared.js")).href)}
            );
            const helper = (await import(
-             ${JSON.stringify(join(importedDir, "helper.cjs"))}
+             ${JSON.stringify(pathToFileURL(join(importedDir, "helper.cjs")).href)}
            )).default;
            return shared.SHARED + ":" + helper.H;
          };

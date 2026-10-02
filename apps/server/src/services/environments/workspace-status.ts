@@ -1,4 +1,7 @@
-import { recordEnvironmentCurrentBranch } from "@bb/db/internal-environment-lifecycle";
+import {
+  recordEnvironmentCurrentBranch,
+  recordEnvironmentStartRefOnce,
+} from "@bb/db/internal-environment-lifecycle";
 import type { Environment } from "@bb/domain";
 import type { HostDaemonOnlineRpcResult } from "@bb/host-daemon-contract";
 import {
@@ -14,6 +17,9 @@ import {
 import type { WorkspaceCommandTarget } from "./workspace-command-target.js";
 
 type WorkspaceStatusResult = HostDaemonOnlineRpcResult<"workspace.status">;
+
+// bb-fork(thread-start-ref): enough history to pick a start commit by hand.
+const WORKSPACE_COMMITS_MAX_COUNT = 50;
 
 interface CallEnvironmentWorkspaceStatusArgs {
   environment: Pick<Environment, "id">;
@@ -34,6 +40,26 @@ export async function callEnvironmentWorkspaceStatus(
     args,
     callHostRetryableOnlineRpc,
   );
+}
+
+// bb-fork(thread-start-ref): recent commits for the start-commit picker.
+export async function callEnvironmentCommits(
+  deps: AppDeps,
+  args: {
+    environment: Pick<Environment, "id">;
+    target: WorkspaceCommandTarget;
+  },
+): Promise<HostDaemonOnlineRpcResult<"workspace.commits">> {
+  return callHostRetryableOnlineRpc(deps, {
+    hostId: args.target.hostId,
+    timeoutMs: COMMAND_TIMEOUT_MS,
+    command: {
+      type: "workspace.commits",
+      environmentId: args.target.environmentId,
+      workspaceContext: args.target.workspaceContext,
+      maxCount: WORKSPACE_COMMITS_MAX_COUNT,
+    },
+  });
 }
 
 export async function callEnvironmentWorkspaceStatusForWork(
@@ -74,6 +100,17 @@ async function callEnvironmentWorkspaceStatusWith(
         result.workspaceStatus.branch.defaultBranch,
       ),
     });
+    // bb-fork(thread-start-ref): the first workspace read pins the commit the thread
+    // bb-fork(thread-start-ref): started from; later reads leave the record alone.
+    const checkout = result.workspaceStatus.checkout;
+    recordEnvironmentStartRefOnce(
+      deps.db,
+      deps.hub,
+      args.environment.id,
+      checkout.kind === "branch" || checkout.kind === "detached"
+        ? checkout.headSha
+        : null,
+    );
   }
 
   return result;

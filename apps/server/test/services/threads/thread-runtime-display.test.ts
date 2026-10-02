@@ -17,6 +17,7 @@ import {
   openSession,
   setQueuedThreadMessageFailureReason,
   upsertHost,
+  upsertProjectExecutionDefaults,
   type DbConnection,
   type ThreadWithPendingInteractionState,
 } from "@bb/db";
@@ -222,6 +223,7 @@ function createThreadListEntry(
 ): ThreadWithPendingInteractionState {
   return {
     ...args.thread,
+    draft: null,
     modelOverride: null,
     reasoningLevelOverride: null,
     storageDeletedAt: null,
@@ -387,6 +389,220 @@ describe("thread runtime display", () => {
     expect(providerIdByThreadId.get(checkout.thread.id)).toBeNull();
   });
 
+  it("resolves each list entry's model like its next turn would", () => {
+    const { db, hostId, hub } = setup();
+    const fromTurn = createThreadWithEnvironment({
+      db,
+      hostId,
+      providerId: "codex",
+    });
+    const overridden = createThreadWithEnvironment({
+      db,
+      hostId,
+      providerId: "codex",
+    });
+    const fromDefault = createThreadWithEnvironment({
+      db,
+      hostId,
+      providerId: "codex",
+    });
+    const mismatched = createThreadWithEnvironment({
+      db,
+      hostId,
+      providerId: "claude-code",
+    });
+    const bare = createThreadWithEnvironment({
+      db,
+      hostId,
+      providerId: "claude-code",
+    });
+
+    appendStoredThreadEvent(db, noopNotifier, {
+      threadId: fromTurn.thread.id,
+      scope: threadScope(),
+      type: "client/turn/requested",
+      data: turnRequestData({
+        input: [{ type: "text", text: "go", mentions: [] }],
+        requestId: formatClientTurnRequestIdSuffix({ suffix: "23456789bb" }),
+      }),
+    });
+    for (const project of [fromDefault.project, mismatched.project]) {
+      upsertProjectExecutionDefaults(db, {
+        projectId: project.id,
+        providerId: "codex",
+        model: "gpt-5-default",
+        reasoningLevel: "medium",
+        permissionMode: "auto",
+        serviceTier: "default",
+      });
+    }
+
+    const entries = toThreadListEntryResponses(
+      { db, hub, providerRegistry },
+      {
+        now: 1_000,
+        threads: [
+          createThreadListEntry({
+            environmentHostId: hostId,
+            thread: fromTurn.thread,
+          }),
+          {
+            ...createThreadListEntry({
+              environmentHostId: hostId,
+              thread: overridden.thread,
+            }),
+            modelOverride: "gpt-5-override",
+          },
+          createThreadListEntry({
+            environmentHostId: hostId,
+            thread: fromDefault.thread,
+          }),
+          createThreadListEntry({
+            environmentHostId: hostId,
+            thread: mismatched.thread,
+          }),
+          createThreadListEntry({
+            environmentHostId: hostId,
+            thread: bare.thread,
+          }),
+        ],
+      },
+    );
+
+    expect(entries.map((entry) => entry.model)).toEqual([
+      "gpt-5",
+      "gpt-5-override",
+      "gpt-5-default",
+      null,
+      null,
+    ]);
+  });
+
+  it("resolves each list entry's reasoning level like its next turn would", () => {
+    const { db, hostId, hub } = setup();
+    const fromTurn = createThreadWithEnvironment({
+      db,
+      hostId,
+      providerId: "codex",
+    });
+    const overridden = createThreadWithEnvironment({
+      db,
+      hostId,
+      providerId: "codex",
+    });
+    const fromDefault = createThreadWithEnvironment({
+      db,
+      hostId,
+      providerId: "codex",
+    });
+    const mismatched = createThreadWithEnvironment({
+      db,
+      hostId,
+      providerId: "claude-code",
+    });
+    const bare = createThreadWithEnvironment({
+      db,
+      hostId,
+      providerId: "claude-code",
+    });
+
+    appendStoredThreadEvent(db, noopNotifier, {
+      threadId: fromTurn.thread.id,
+      scope: threadScope(),
+      type: "client/turn/requested",
+      data: turnRequestData({
+        input: [{ type: "text", text: "go", mentions: [] }],
+        requestId: formatClientTurnRequestIdSuffix({ suffix: "23456789cc" }),
+      }),
+    });
+    for (const project of [fromDefault.project, mismatched.project]) {
+      upsertProjectExecutionDefaults(db, {
+        projectId: project.id,
+        providerId: "codex",
+        model: "gpt-5-default",
+        reasoningLevel: "xhigh",
+        permissionMode: "auto",
+        serviceTier: "default",
+      });
+    }
+
+    const entries = toThreadListEntryResponses(
+      { db, hub, providerRegistry },
+      {
+        now: 1_000,
+        threads: [
+          createThreadListEntry({
+            environmentHostId: hostId,
+            thread: fromTurn.thread,
+          }),
+          {
+            ...createThreadListEntry({
+              environmentHostId: hostId,
+              thread: overridden.thread,
+            }),
+            reasoningLevelOverride: "ultra",
+          },
+          createThreadListEntry({
+            environmentHostId: hostId,
+            thread: fromDefault.thread,
+          }),
+          createThreadListEntry({
+            environmentHostId: hostId,
+            thread: mismatched.thread,
+          }),
+          createThreadListEntry({
+            environmentHostId: hostId,
+            thread: bare.thread,
+          }),
+        ],
+      },
+    );
+
+    expect(entries.map((entry) => entry.reasoningLevel)).toEqual([
+      "medium",
+      "ultra",
+      "xhigh",
+      null,
+      null,
+    ]);
+  });
+
+  it("reports the selected machine before a new thread has an environment", () => {
+    const { db, hostId, hub } = setup();
+    const { project } = createThreadWithEnvironment({ db, hostId });
+    const thread = createThread(db, noopNotifier, {
+      projectId: project.id,
+      environmentId: null,
+      providerId: "codex",
+      status: "pending",
+      startupContext: JSON.stringify({
+        kind: "pending",
+        environmentIntent: {
+          type: "provider",
+          environmentProviderId: "git-worktree",
+          machine: { type: "existing", hostId },
+          inputs: null,
+          selectionResolved: true,
+        },
+        fork: null,
+        startedOnBehalfOf: null,
+        titleProvided: false,
+      }),
+    });
+
+    const [entry] = toThreadListEntryResponses(
+      { db, hub, providerRegistry },
+      {
+        threads: listThreadsWithPendingInteractionState(db, {
+          projectId: project.id,
+        }).filter((row) => row.id === thread.id),
+      },
+    );
+
+    expect(entry?.environmentHostId).toBe(hostId);
+    expect(entry?.environmentId).toBeNull();
+  });
+
   it("resolves list entry runtime from daemon registration per host", () => {
     const { db, hostId, hub } = setup();
     const now = 1_000;
@@ -474,6 +690,8 @@ describe("thread runtime display", () => {
       id: failedRow.id,
       threadId: failed.thread.id,
       failureReason: "The message could not be sent.",
+      now: Date.now(),
+      retryDelaysMs: [],
     });
 
     const entries = toThreadListEntryResponses(

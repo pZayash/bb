@@ -66,6 +66,32 @@ export type EnvironmentFilePreviewSource =
 
 export type WorkspaceFilePreviewStatusLabel = "deleted";
 
+// bb-fork(file-diff-open): an open request that wants the file's diff view.
+export type FilePreviewDiffView = "unified" | "split";
+
+// bb-fork(file-diff-base): the comparison an open request asked for.
+export type FilePreviewDiffBase = "merge_base" | "thread_start";
+
+export interface FilePreviewDiffIntent {
+  /** New per open request, so opening the same file again re-applies the view. */
+  requestId: string;
+  /** Absent means the merge-base comparison. */
+  base?: FilePreviewDiffBase;
+  view: FilePreviewDiffView;
+}
+
+export function areFilePreviewDiffIntentsEqual(
+  a: FilePreviewDiffIntent | null | undefined,
+  b: FilePreviewDiffIntent | null | undefined,
+): boolean {
+  if (a == null || b == null) return a == null && b == null;
+  return (
+    a.requestId === b.requestId &&
+    a.view === b.view &&
+    (a.base ?? "merge_base") === (b.base ?? "merge_base")
+  );
+}
+
 export interface FilePreviewLineRange {
   endLineNumber: number;
   startLineNumber: number;
@@ -90,6 +116,7 @@ export interface WorkspaceFileTabState {
   path: string;
   source: EnvironmentFilePreviewSource;
   statusLabel: WorkspaceFilePreviewStatusLabel | null;
+  diffIntent?: FilePreviewDiffIntent | null;
 }
 
 export interface HostFileTabState {

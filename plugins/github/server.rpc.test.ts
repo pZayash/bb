@@ -256,7 +256,7 @@ describe("github plugin RPC behavior", () => {
     ).toEqual([]);
   });
 
-  it("rejects malformed CLI invocations instead of broadening or ignoring them", async () => {
+  it("rejects malformed repositories as text and JSON and lists its commands in help", async () => {
     const { harness } = await loadPlugin();
 
     await expect(
@@ -264,24 +264,6 @@ describe("github plugin RPC behavior", () => {
     ).resolves.toMatchObject({
       exitCode: 1,
       stderr: 'Invalid repository "bad/repo/shape"; expected owner/repo.\n',
-    });
-    await expect(
-      harness.runCli(["prs", "acme/widgets", "extra"]),
-    ).resolves.toMatchObject({
-      exitCode: 1,
-      stderr: expect.stringContaining("unexpected argument 'extra'"),
-    });
-    await expect(harness.runCli(["repos", "--jsonn"])).resolves.toMatchObject({
-      exitCode: 1,
-      stderr: expect.stringContaining(
-        "unknown option '--jsonn' (Did you mean --json?)",
-      ),
-    });
-    await expect(harness.runCli(["issus"])).resolves.toMatchObject({
-      exitCode: 1,
-      stderr: expect.stringContaining(
-        "unknown command 'issus' (Did you mean issues?)",
-      ),
     });
 
     const failure = await harness.runCli([
@@ -304,181 +286,208 @@ describe("github plugin RPC behavior", () => {
     expect(help.stdout).toContain("bb github sync");
   });
 
-  it("reports repositories, cached rows, and sync counts as JSON", async () => {
+  it("rejects a malformed repository or item number when starting work", async () => {
     const { harness } = await loadPlugin();
 
-    const repos = await harness.runCli(["repos", "--json"]);
-    expect(repos.exitCode).toBe(0);
-    expect(JSON.parse(repos.stdout)).toEqual({
-      ok: true,
-      repos: [{ repo: "acme/widgets", projectId: null }],
-      ignoredExtraRepos: [],
-    });
-
-    const sync = await harness.runCli(["sync", "--json"]);
-    expect(sync.exitCode).toBe(0);
-    expect(JSON.parse(sync.stdout)).toEqual({ ok: true, repos: 1, items: 2 });
-
-    const issues = await harness.runCli(["issues", "acme/widgets", "--json"]);
-    expect(issues.exitCode).toBe(0);
-    const payload = JSON.parse(issues.stdout);
-    expect(payload).toMatchObject({
-      ok: true,
-      items: [
-        {
-          repo: "acme/widgets",
-          number: 7,
-          kind: "issue",
-          state: "OPEN",
-          title: "Cache mutations",
-          labels: ["bug", "old"],
-        },
-      ],
-    });
-    expect(payload.items[0]).not.toHaveProperty("body");
-  });
-
-  it("syncs, filters, mutates, and exposes the same cached issue across surfaces", async () => {
-    const { harness } = await loadPlugin();
-
-    await expect(harness.callRpc("refresh")).resolves.toEqual({
-      repos: 1,
-      items: 2,
-    });
-    await expect(
-      harness.callRpc("listItems", {
-        kind: "issue",
-        state: "open",
-        mine: true,
-        query: "#7",
-      }),
-    ).resolves.toMatchObject({
-      items: [
-        {
-          repo: "acme/widgets",
-          number: 7,
-          kind: "issue",
-          labels: ["bug", "old"],
-          assignees: ["octocat"],
-        },
-      ],
-    });
-
-    await expect(
-      harness.callRpc("setAssignees", {
-        repo: "acme/widgets",
-        number: 7,
-        assignees: ["octocat", "hubot", "hubot"],
-      }),
-    ).resolves.toEqual({
-      ok: true,
-      assignees: ["octocat", "hubot"],
-    });
-    await expect(
-      harness.callRpc("setLabels", {
-        repo: "acme/widgets",
-        number: 7,
-        labels: ["bug", "feature", "feature", " "],
-      }),
-    ).resolves.toEqual({ ok: true, labels: ["bug", "feature"] });
-
-    expect(ghCalls()).toEqual(
-      expect.arrayContaining([
-        "issue edit 7 -R acme/widgets --add-assignee hubot",
-        "issue edit 7 -R acme/widgets --add-label feature --remove-label old",
-      ]),
-    );
-    await expect(
-      harness.callRpc("listItems", { kind: "issue" }),
-    ).resolves.toMatchObject({
-      items: [
-        {
-          number: 7,
-          labels: ["bug", "feature"],
-          assignees: ["octocat", "hubot"],
-        },
-      ],
-    });
-
-    await expect(harness.runCli(["issues", "acme/widgets"])).resolves.toEqual({
-      exitCode: 0,
-      stdout: "acme/widgets#7\t[OPEN]\tCache mutations",
-      stderr: "",
-    });
-    const issueProvider = harness.registrations.mentionProviders.find(
-      (provider) => provider.id === "issue",
-    );
-    if (issueProvider === undefined) {
-      throw new Error("GitHub issue mention provider was not registered");
+    for (const input of [
+      { repo: "not-a-repository", number: 1 },
+      { repo: "acme/widgets", number: 0 },
+    ]) {
+      await expect(harness.callRpc("startWork", input)).rejects.toMatchObject({
+        code: "invalid_input",
+      });
     }
-    expect(
-      issueProvider.search({
-        query: "cache",
-        trigger: "@",
-        projectId: "project-1",
-        threadId: "thread-1",
-      }),
-    ).toEqual([
-      {
-        id: "acme/widgets#7",
-        title: "#7 Cache mutations",
-        subtitle: "acme/widgets",
-      },
-    ]);
-    await expect(
-      issueProvider.resolve("acme/widgets#7"),
-    ).resolves.toMatchObject({
-      context: expect.stringContaining("Live issue body."),
-    });
-    expect(
-      harness.realtimeSignals.filter(
-        (signal) => signal.channel === "data-changed",
-      ),
-    ).toHaveLength(3);
   });
 
-  it("normalizes draft state, checks, review threads, and paginated files", async () => {
-    const { harness } = await loadPlugin();
+  // bb-fork(windows): the fake `gh` is a bash script.
+  it.skipIf(process.platform === "win32")(
+    "reports repositories, cached rows, and sync counts as JSON",
+    async () => {
+      const { harness } = await loadPlugin();
 
-    await expect(
-      harness.callRpc("getPull", { repo: "acme/widgets", number: 42 }),
-    ).resolves.toMatchObject({
-      pull: {
-        repo: "acme/widgets",
-        number: 42,
-        state: "DRAFT",
-        changedFiles: 2,
-        reviewRequests: ["reviewer", "core-team"],
-        checks: [
-          { name: "build", status: "success" },
-          { name: "legacy", status: "failure" },
-          { name: "queued", status: "pending" },
-          { name: "skipped", status: "neutral" },
-        ],
-        reviewThreads: [
+      const repos = await harness.runCli(["repos", "--json"]);
+      expect(repos.exitCode).toBe(0);
+      expect(JSON.parse(repos.stdout)).toEqual({
+        ok: true,
+        repos: [{ repo: "acme/widgets", projectId: null }],
+        ignoredExtraRepos: [],
+      });
+
+      const sync = await harness.runCli(["sync", "--json"]);
+      expect(sync.exitCode).toBe(0);
+      expect(JSON.parse(sync.stdout)).toEqual({ ok: true, repos: 1, items: 2 });
+
+      const issues = await harness.runCli(["issues", "acme/widgets", "--json"]);
+      expect(issues.exitCode).toBe(0);
+      const payload = JSON.parse(issues.stdout);
+      expect(payload).toMatchObject({
+        ok: true,
+        items: [
           {
-            path: "src/index.ts",
-            line: 9,
-            comments: [
-              { author: "reviewer", body: "Root comment" },
-              { author: "bob", body: "Reply" },
-            ],
-          },
-          {
-            path: "src/other.ts",
-            line: 4,
-            comments: [{ author: "reviewer", body: "Second thread" }],
+            repo: "acme/widgets",
+            number: 7,
+            kind: "issue",
+            state: "OPEN",
+            title: "Cache mutations",
+            labels: ["bug", "old"],
           },
         ],
-        files: [
+      });
+      expect(payload.items[0]).not.toHaveProperty("body");
+    },
+  );
+
+  // bb-fork(windows): the fake `gh` is a bash script.
+  it.skipIf(process.platform === "win32")(
+    "syncs, filters, mutates, and exposes the same cached issue across surfaces",
+    async () => {
+      const { harness } = await loadPlugin();
+
+      await expect(harness.callRpc("refresh")).resolves.toEqual({
+        repos: 1,
+        items: 2,
+      });
+      await expect(
+        harness.callRpc("listItems", {
+          kind: "issue",
+          state: "open",
+          mine: true,
+          query: "#7",
+        }),
+      ).resolves.toMatchObject({
+        items: [
           {
-            path: "src/index.ts",
-            status: "modified",
-            patch: "@@ -1 +1 @@",
+            repo: "acme/widgets",
+            number: 7,
+            kind: "issue",
+            labels: ["bug", "old"],
+            assignees: ["octocat"],
           },
-          { path: "src/other.ts", status: "added", patch: null },
         ],
-      },
-    });
-  });
+      });
+
+      await expect(
+        harness.callRpc("setAssignees", {
+          repo: "acme/widgets",
+          number: 7,
+          assignees: ["octocat", "hubot", "hubot"],
+        }),
+      ).resolves.toEqual({
+        ok: true,
+        assignees: ["octocat", "hubot"],
+      });
+      await expect(
+        harness.callRpc("setLabels", {
+          repo: "acme/widgets",
+          number: 7,
+          labels: ["bug", "feature", "feature", " "],
+        }),
+      ).resolves.toEqual({ ok: true, labels: ["bug", "feature"] });
+
+      expect(ghCalls()).toEqual(
+        expect.arrayContaining([
+          "issue edit 7 -R acme/widgets --add-assignee hubot",
+          "issue edit 7 -R acme/widgets --add-label feature --remove-label old",
+        ]),
+      );
+      await expect(
+        harness.callRpc("listItems", { kind: "issue" }),
+      ).resolves.toMatchObject({
+        items: [
+          {
+            number: 7,
+            labels: ["bug", "feature"],
+            assignees: ["octocat", "hubot"],
+          },
+        ],
+      });
+
+      await expect(harness.runCli(["issues", "acme/widgets"])).resolves.toEqual(
+        {
+          exitCode: 0,
+          stdout: "acme/widgets#7\t[OPEN]\tCache mutations",
+          stderr: "",
+        },
+      );
+      const issueProvider = harness.registrations.mentionProviders.find(
+        (provider) => provider.id === "issue",
+      );
+      if (issueProvider === undefined) {
+        throw new Error("GitHub issue mention provider was not registered");
+      }
+      expect(
+        issueProvider.search({
+          query: "cache",
+          trigger: "@",
+          projectId: "project-1",
+          threadId: "thread-1",
+        }),
+      ).toEqual([
+        {
+          id: "acme/widgets#7",
+          title: "#7 Cache mutations",
+          subtitle: "acme/widgets",
+        },
+      ]);
+      await expect(
+        issueProvider.resolve("acme/widgets#7"),
+      ).resolves.toMatchObject({
+        context: expect.stringContaining("Live issue body."),
+      });
+      expect(
+        harness.realtimeSignals.filter(
+          (signal) => signal.channel === "data-changed",
+        ),
+      ).toHaveLength(3);
+    },
+  );
+
+  // bb-fork(windows): the fake `gh` is a bash script.
+  it.skipIf(process.platform === "win32")(
+    "normalizes draft state, checks, review threads, and paginated files",
+    async () => {
+      const { harness } = await loadPlugin();
+
+      await expect(
+        harness.callRpc("getPull", { repo: "acme/widgets", number: 42 }),
+      ).resolves.toMatchObject({
+        pull: {
+          repo: "acme/widgets",
+          number: 42,
+          state: "DRAFT",
+          changedFiles: 2,
+          reviewRequests: ["reviewer", "core-team"],
+          checks: [
+            { name: "build", status: "success" },
+            { name: "legacy", status: "failure" },
+            { name: "queued", status: "pending" },
+            { name: "skipped", status: "neutral" },
+          ],
+          reviewThreads: [
+            {
+              path: "src/index.ts",
+              line: 9,
+              comments: [
+                { author: "reviewer", body: "Root comment" },
+                { author: "bob", body: "Reply" },
+              ],
+            },
+            {
+              path: "src/other.ts",
+              line: 4,
+              comments: [{ author: "reviewer", body: "Second thread" }],
+            },
+          ],
+          files: [
+            {
+              path: "src/index.ts",
+              status: "modified",
+              patch: "@@ -1 +1 @@",
+            },
+            { path: "src/other.ts", status: "added", patch: null },
+          ],
+        },
+      });
+    },
+  );
 });

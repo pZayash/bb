@@ -23,6 +23,8 @@ import {
   shiftMentionsToTextRange,
 } from "./ConversationMessageMentions.js";
 import { ExpandableTimelineRow } from "./ExpandableTimelineRow.js";
+// bb-fork(windows): message timestamp with process duration.
+import { MessageTimestamp } from "./MessageTimestamp.js";
 import { NESTED_TIMELINE_GROUP_LINE_CLASS_NAME } from "./timeline-nested-group-line.js";
 import type {
   TimelineTitleActionResolver,
@@ -47,6 +49,9 @@ import {
 
 interface GeneratedConversationMessageProps {
   attachmentItems: ConversationAttachmentItems;
+  // bb-fork(windows): message timestamp inputs.
+  createdAt?: number;
+  turnId?: string | null;
   originKind: ThreadOriginKind | null;
   mentions: readonly PromptTextMention[];
   onOpenLink?: ThreadTimelineLinkHandler;
@@ -444,6 +449,8 @@ const COLLAPSED_MARKDOWN_PREVIEW_CLASS = cn(
 export const GeneratedConversationMessage = memo(
   function GeneratedConversationMessage({
     attachmentItems,
+    createdAt,
+    turnId = null,
     originKind,
     mentions,
     onOpenLink,
@@ -572,6 +579,7 @@ export const GeneratedConversationMessage = memo(
             <div ref={setCollapsedPreviewTextRef} className="min-w-0 truncate">
               {collapsedPreviewSource.parseAsMarkdown ? (
                 <MarkdownPreview
+                  allowHtml
                   content={collapsedPreviewMarkdown}
                   imagePolicy={
                     suppressGeneratedAgentImages ? "alt-text" : "render"
@@ -612,6 +620,7 @@ export const GeneratedConversationMessage = memo(
           <div className="pl-2 text-sm leading-relaxed text-foreground">
             {messageText ? (
               <MarkdownPreview
+                allowHtml
                 content={messageText}
                 imagePolicy={
                   suppressGeneratedAgentImages ? "alt-text" : "render"
@@ -645,6 +654,11 @@ export const GeneratedConversationMessage = memo(
                 <TurnRequestLabel turnRequest={turnRequest} />
               </div>
             ) : null}
+            {createdAt === undefined ? null : (
+              <div className="mt-1 flex items-center">
+                <MessageTimestamp createdAt={createdAt} turnId={turnId} />
+              </div>
+            )}
           </div>
         </div>
       ),
@@ -654,6 +668,7 @@ export const GeneratedConversationMessage = memo(
         linkRouting,
         messageText,
         messageMentions,
+        createdAt,
         onOpenLocalFileLink,
         projectId,
         resolveSegmentLinkHref,
@@ -661,6 +676,7 @@ export const GeneratedConversationMessage = memo(
         sourceKind,
         suppressGeneratedAgentImages,
         requestLabel,
+        turnId,
         turnRequest,
       ],
     );

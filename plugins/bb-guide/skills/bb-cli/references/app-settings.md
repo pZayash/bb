@@ -13,20 +13,54 @@ every window and client sees the same value.
 
 ## Sidebar preferences
 
+The sidebar thread list defaults to `__automatic__`: the first installed thread list
+plugin other than the bundled Thread list plugin (`thread-list/thread-list`), or the
+bundled plugin when there is none. Installing a thread list plugin therefore switches
+to it. Legacy `__builtin__` selections resolve to the bundled plugin; other plugin
+selections are preserved.
+Use `bb settings ui reset sidebar.threadListProvider` to restore Automatic, or
+`bb settings ui set sidebar.threadListProvider <plugin-id>/<slot-id>` to select
+another plugin. The SDK exposes the same setting through `uiPreferences`.
+
+The sidebar navigation works the same way: `sidebar.navigationProvider` defaults
+to `__automatic__`, which prefers an installed navigation plugin over the bundled
+Navigation plugin (`navigation/navigation`), and legacy `__builtin__` selections
+resolve to the bundled plugin. Navigation order and
+visibility stay in `sidebar.pluginPanelOrder` and `sidebar.visiblePluginPanels`,
+so they carry over between navigation plugins.
+
 - The server keeps a keyed, revisioned registry of sidebar layout preferences
   (`sidebar.organizationMode`, `sidebar.threadGrouping.environment`,
   `sidebar.chronologicalSort`, the section
   orders, the collapsed-id lists, `sidebar.hiddenGroups`,
   `sidebar.pluginPanelOrder`, `sidebar.visiblePluginPanels`, `sidebar.navigationProvider`,
-  `sidebar.threadListProvider`).
-- `sidebar.organizationMode` defaults to Custom (`chronological`) when unset;
-  existing server and legacy browser choices are preserved.
+  `sidebar.headerProvider`, `sidebar.threadListProvider`).
+- <!-- bb-fork(windows): the fork adds the terminal shell preference; see docs/windows.md. -->
+  `terminal.shellId` holds the shell the Start terminal action launches on a
+  machine that reports a choice (`bb terminal shells`); `__automatic__` (the
+  default) leaves the launch to the machine's own default shell, and so does an
+  id that machine no longer offers.
+- The built-in sidebar's Filter selects Active and Archived, defaulting to Active,
+  including threads with saved messages. This selection is browser-local, not
+  a server-backed preference or SDK/CLI setting. Selected archived rows
+  retain their hierarchy placement and offer a restore action. Archived pages load only while selected;
+  plugin sidebar replacements keep ownership of their rendering.
+- The palette's Filter selects Active and Archived independently of the
+  sidebar, defaulting to Active. This selection is browser-local, not configurable
+  through SDK/CLI. Active includes threads with saved messages; Search threads
+  retains existing title and conversation matching. Archived recents load only while selected and are
+  bounded at the server.
+- <!-- bb-fork(windows): the fork defaults an unset organization to By project; see docs/windows.md. -->
+  `sidebar.organizationMode` defaults to By project (`project`) on new installs and
+  for migrated installs with existing projects, threads, or UI preferences. Saved
+  server choices win over legacy browser choices, which win over the installation
+  fallback. Reset saves that fallback explicitly.
 - `sidebar.threadGrouping.environment` decides whether sibling threads sharing
   one worktree environment collapse into a single worktree row inside their
   section: `true` groups them and `false` keeps every thread on its own row, in
   every organization mode. The default `auto` groups them in By project and By
-  machine and leaves them flat in Custom. The thread-list header's Organize menu
-  exposes it under Groups as By environment. Each `sidebar.threadGrouping.*` key
+  machine and leaves them flat in Custom. Set it through Organize → Groups →
+  By environment, settings, or the CLI. Each `sidebar.threadGrouping.*` key
   toggles one grouping dimension independently.
 - `bb settings ui list [--json]` prints every key with its value, revision,
   and description; `bb settings ui get <key> [--json]` prints one.
@@ -38,23 +72,12 @@ every window and client sees the same value.
 
 ### Thread-list visibility
 
-- A project, custom section, or machine's menu offers **Hide from list**;
-  its menu inside **More** offers **Add to sidebar**. **Customize list**
-  manages visibility and order for the current organization. Hidden groups keep
-  their threads, saved order, and collapse state; pinned threads remain in Pinned.
-  More carries hidden activity without automatically restoring groups.
-- `sidebar.hiddenGroups` defaults to `[]`. Use `project:<projectId>`,
-  `section:<sectionId>`, or `machine:<hostId>` keys (`machine:no-machine` for the
-  unassigned group). Each organization applies only its matching keys. Built-in
-  Pinned and Threads cannot be hidden. Duplicate keys are deduplicated;
-  unavailable IDs are retained without creating rows, and new groups are visible.
-- `bb settings ui get sidebar.hiddenGroups` reads the current list.
-  `bb settings ui set sidebar.hiddenGroups '["project:proj_example"]'` replaces
-  the complete list across organizations; include existing keys you want to keep
-  hidden. `bb settings ui reset sidebar.hiddenGroups` shows every group again.
-- SDK callers use `sdk.system.uiPreferences.list()` for the value and revision,
-  `.set({ key: "sidebar.hiddenGroups", value, expectedRevision })` to replace it,
-  and `.reset({ key: "sidebar.hiddenGroups" })` to show all groups.
+- The bundled Thread list plugin owns its layout preferences, including hidden
+  groups. Use `bb thread-list prefs list [--json]` to inspect them and
+  `bb thread-list prefs get/set/reset <key>` to change them.
+- Its installed `thread-list` skill documents accepted keys and values. Keep
+  plugin-specific settings out of `bb settings ui`; those legacy values are
+  read only during one-time migration.
 
 ## Keyboard shortcuts
 
@@ -108,6 +131,16 @@ every window and client sees the same value.
 - A composer whose stored selection is a hidden model falls back to the
   provider default, and the next send records that default. Select the custom
   model again after you turn streamer mode off.
+
+## Fast service tier
+
+- `allowFastServiceTier` defaults to true. Set it with
+  `bb settings general allowFastServiceTier <true|false|on|off>` or use the
+  switch in Settings → Providers.
+- When disabled, new turns use the default tier even if a request, project
+  default, automation, or queued message selected fast. The app hides Fast mode.
+  Turn it on to choose fast again; project defaults saved while it was off
+  retain the default tier.
 
 ## New branch prefix
 
@@ -170,6 +203,14 @@ every window and client sees the same value.
 - Enable it with `bb settings experiment changelogPreview true` to show the
   latest release notes on Settings → Updates.
 
+## Legacy plugin loader
+
+- The `legacyJitiPluginLoader` experiment defaults to false.
+- Enable it with `bb settings experiment legacyJitiPluginLoader true`.
+- Running plugins are unchanged when it is toggled. The selected loader applies
+  the next time a plugin is installed, reloaded, enabled, updated, or loaded
+  after a server restart.
+
 ## Sidebar progressive disclosure
 
 - The `sidebarProgressiveDisclosure` experiment defaults to false.
@@ -181,10 +222,8 @@ every window and client sees the same value.
 
 ## Timeline windowing
 
-- The `timelineWindowing` experiment defaults to false.
-- Enable it with `bb settings experiment timelineWindowing true`.
-- It keeps stable timeline wrappers while mounting only rows near the active
-  main or nested detail scrollport.
+- Long timelines keep stable row wrappers while mounting only rows near the
+  active main or nested detail scrollport.
 
 ## Server move
 
@@ -192,14 +231,6 @@ every window and client sees the same value.
 - Enable it with `bb settings experiment serverMove true`.
 - It shows Move server here in Settings → Machines and lets the server run
   `bb server move`, `bb server export`, and old server copy deletion.
-
-## Multi-machine picker
-
-- The `multiMachinePicker` experiment defaults to false.
-- Enable it with `bb settings experiment multiMachinePicker true`.
-- Projects with at least three machines use a searchable, target-first
-  environment picker. Machine-only pickers add search when they contain more
-  than five machines.
 
 Machine access: `bb settings general machineServerUrl https://bb.example.com`
 sets the server URL reachable by machines. Set `null` to use BB_EXTERNAL_URL.

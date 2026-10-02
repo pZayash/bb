@@ -141,7 +141,7 @@ describe("plugin SDK Markdown", () => {
       lineRange: null,
       path: "/workspace/README.md",
     });
-    expect(screen.getByRole("img", { name: "chart" }).getAttribute("data-markdown-image-src")).toBe(
+    expect(screen.getByRole("img", { name: "chart" }).getAttribute("src")).toBe(
       "/api/v1/threads/thr_plugin/host-files/content?path=%2Fworkspace%2Fimages%2Fchart.png",
     );
 
@@ -173,7 +173,7 @@ describe("plugin SDK Markdown", () => {
             };
       const props = {
         content:
-          "[Sibling](sibling.md#L2-L4) ![Chart](../chart%20one.svg) [Parent](../summary.md) [Missing](missing.md) [Web](https://example.com)",
+          '[Sibling](sibling.md#L2-L4) ![Chart](../chart%20one.svg) [Parent](../summary.md) [Missing](missing.md) [Web](https://example.com)\n\n<video src="../clip.mp4" controls title="Clip"></video>',
         experimental_document: { target, rootPath, threadId: "thr_document" },
       };
       render(
@@ -198,9 +198,12 @@ describe("plugin SDK Markdown", () => {
         location: { kind: "range", startLine: 2, endLine: 4 },
       });
       expect(
-        screen.getByRole("img", { name: "Chart" }).getAttribute("data-markdown-image-src"),
+        screen.getByRole("img", { name: "Chart" }).getAttribute("src"),
       ).toBe(
         `/api/v1/threads/thr_document/${kind === "workspace" ? "worktree" : kind}/files/reports/chart%20one.svg`,
+      );
+      expect(screen.getByLabelText("Clip").getAttribute("src")).toBe(
+        `/api/v1/threads/thr_document/${kind === "workspace" ? "worktree" : kind}/files/reports/clip.mp4`,
       );
       fireEvent.click(screen.getByRole("link", { name: "Parent" }));
       expect(openFilePreview).toHaveBeenLastCalledWith({
@@ -250,7 +253,7 @@ describe("plugin SDK Markdown", () => {
       screen.getByRole("link", { name: "Escape" }).getAttribute("href"),
     ).toBe("../../../outside.md");
     expect(
-      screen.getByRole("img", { name: "Escape" }).getAttribute("data-markdown-image-src"),
+      screen.getByRole("img", { name: "Escape" }).getAttribute("src"),
     ).toBe("../../../outside.svg");
     expect(openFilePreview).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("link", { name: "Absolute" }));
@@ -259,7 +262,7 @@ describe("plugin SDK Markdown", () => {
       lineRange: null,
     });
     expect(
-      screen.getByRole("img", { name: "Absolute" }).getAttribute("data-markdown-image-src"),
+      screen.getByRole("img", { name: "Absolute" }).getAttribute("src"),
     ).toBe(
       "/api/v1/threads/thr_document/host-files/content?path=%2Foutside.svg",
     );

@@ -2,6 +2,7 @@
 
 import { resolveThreadMentionDropTarget } from "@/lib/thread-mention-drop";
 import type { PromptTextMention } from "@bb/domain";
+import type { TiptapEditorHTMLElement } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { EditorView } from "@tiptap/pm/view";
 import {
@@ -1448,49 +1449,52 @@ describe("PromptBoxInternal submit shortcuts", () => {
     }
   });
 
-  describe.each([false, true])("swapped submit actions: %s", (swapSubmitActions) => {
-    it.each(["", "Follow up"])(
-      "sends with the same action and queues only draft input (%j)",
-      (value) => {
-        const onSubmit = vi.fn();
-        const onModifierSubmit = vi.fn();
-        const onStop = vi.fn();
-        render(
-          <PromptBoxInternal
-            {...createPromptBoxProps({
-              value,
-              onSubmit,
-              submission: {
-                onModifierSubmit,
-                swapSubmitActions,
-                isRunning: true,
-                onStop,
-              },
-            })}
-          />,
-        );
+  describe.each([false, true])(
+    "swapped submit actions: %s",
+    (swapSubmitActions) => {
+      it.each(["", "Follow up"])(
+        "sends with the same action and queues only draft input (%j)",
+        (value) => {
+          const onSubmit = vi.fn();
+          const onModifierSubmit = vi.fn();
+          const onStop = vi.fn();
+          render(
+            <PromptBoxInternal
+              {...createPromptBoxProps({
+                value,
+                onSubmit,
+                submission: {
+                  onModifierSubmit,
+                  swapSubmitActions,
+                  isRunning: true,
+                  onStop,
+                },
+              })}
+            />,
+          );
 
-        const editor = getPromptEditorElement();
-        fireEvent.keyDown(editor, {
-          key: "Enter",
-          metaKey: !swapSubmitActions,
-        });
-        expect(onModifierSubmit).toHaveBeenCalledOnce();
-        expect(onSubmit).not.toHaveBeenCalled();
+          const editor = getPromptEditorElement();
+          fireEvent.keyDown(editor, {
+            key: "Enter",
+            metaKey: !swapSubmitActions,
+          });
+          expect(onModifierSubmit).toHaveBeenCalledOnce();
+          expect(onSubmit).not.toHaveBeenCalled();
 
-        fireEvent.keyDown(editor, {
-          key: "Enter",
-          metaKey: swapSubmitActions,
-        });
-        expect(onSubmit).toHaveBeenCalledTimes(value ? 1 : 0);
-        expect(onModifierSubmit).toHaveBeenCalledOnce();
-        if (!value) {
-          fireEvent.click(screen.getByRole("button", { name: "Stop run" }));
-          expect(onStop).toHaveBeenCalledOnce();
-        }
-      },
-    );
-  });
+          fireEvent.keyDown(editor, {
+            key: "Enter",
+            metaKey: swapSubmitActions,
+          });
+          expect(onSubmit).toHaveBeenCalledTimes(value ? 1 : 0);
+          expect(onModifierSubmit).toHaveBeenCalledOnce();
+          if (!value) {
+            fireEvent.click(screen.getByRole("button", { name: "Stop run" }));
+            expect(onStop).toHaveBeenCalledOnce();
+          }
+        },
+      );
+    },
+  );
 
   it.each([
     { swapSubmitActions: false, touch: true },
@@ -1498,7 +1502,7 @@ describe("PromptBoxInternal submit shortcuts", () => {
     { swapSubmitActions: false, touch: false },
     { swapSubmitActions: true, touch: false },
   ])(
-    "offers the shared alternate action and scheduling (Enter steers: $swapSubmitActions, touch: $touch)",
+    "offers alternate send actions and only the scheduling registration (Enter steers: $swapSubmitActions, touch: $touch)",
     ({ swapSubmitActions, touch: isTouch }) => {
       const restoreMatchMedia = mockPointerCoarse(isTouch);
       vi.useFakeTimers();
@@ -1507,18 +1511,28 @@ describe("PromptBoxInternal submit shortcuts", () => {
         const onModifierSubmit = vi.fn();
         const schedule = vi.fn();
         setPluginSlotRegistrations(
-          "scheduler",
+          "scheduled-send",
           pluginRegistrationSet([
             {
               id: "send-later",
               plusMenu: [
                 {
-                  id: "schedule",
+                  id: "send-later",
                   label: "Send later",
-                  experimental_sendMenu: true,
                   run: schedule,
                 },
                 { id: "other", label: "Other action", run: vi.fn() },
+              ],
+            },
+          ]),
+        );
+        setPluginSlotRegistrations(
+          "other-plugin",
+          pluginRegistrationSet([
+            {
+              id: "other",
+              plusMenu: [
+                { id: "other", label: "Other plugin action", run: vi.fn() },
               ],
             },
           ]),
@@ -1617,15 +1631,13 @@ describe("PromptBoxInternal submit shortcuts", () => {
             .getByRole("button", { name: "Submit (Enter)" })
             .hasAttribute("disabled"),
         ).toBe(true);
-        if (!isTouch) {
-          expect(
-            screen
-              .getByRole("button", { name: "Send options" })
-              .hasAttribute("disabled"),
-          ).toBe(true);
+        expect(
+          screen.queryByRole("button", { name: "Send options" }),
+        ).toBeNull();
+        if (isTouch) {
+          openMenu();
+          expect(screen.queryByRole("menuitem")).toBeNull();
         }
-        openMenu();
-        expect(screen.queryByRole("menuitem")).toBeNull();
 
         rerender(renderComposer("Follow up", true));
         openMenu();
@@ -1659,7 +1671,9 @@ describe("PromptBoxInternal submit shortcuts", () => {
             })}
           />,
         );
-        expect(screen.queryByRole("button", { name: "Send options" })).toBeNull();
+        expect(
+          screen.queryByRole("button", { name: "Send options" }),
+        ).toBeNull();
         const submit = screen.getByRole("button", { name: "Submit (Enter)" });
         vi.spyOn(submit, "getBoundingClientRect").mockReturnValue(
           new DOMRect(0, 0, 40, 40),
@@ -4331,6 +4345,68 @@ describe("PromptBoxInternal prompt actions", () => {
     await waitFor(() => expect(latestValue(changes)).toBe("> quoted"));
     expect(getPromptEditorElement().querySelector("blockquote")).not.toBeNull();
   });
+
+  it.each([
+    {
+      label: "drops the quote from part of a quoted line",
+      selection: { from: 1, to: 6 },
+      copiedText: "ello ",
+      value: "> hello world\n\nafterello ",
+      blockquotes: 1,
+    },
+    {
+      label: "keeps the quote on a whole quoted line",
+      selection: { from: 0, to: 11 },
+      copiedText: "> hello world",
+      value: "> hello world\n\nafter\n> hello world",
+      blockquotes: 2,
+    },
+  ])(
+    "$label when copying and pasting",
+    async ({ selection, copiedText, value, blockquotes }) => {
+      const { changes, promptBoxRef } = renderPromptBox(
+        "> hello world\n\nafter",
+      );
+
+      await focusPromptEnd(promptBoxRef);
+      const editor = (getPromptEditorElement() as TiptapEditorHTMLElement)
+        .editor;
+      if (!editor) {
+        throw new Error("Prompt editor was not mounted");
+      }
+      const quoteTextStart = 2;
+      act(() => {
+        editor.view.dispatch(
+          editor.state.tr.setSelection(
+            TextSelection.create(
+              editor.state.doc,
+              quoteTextStart + selection.from,
+              quoteTextStart + selection.to,
+            ),
+          ),
+        );
+      });
+      const copied = new Map<string, string>();
+      fireEvent.copy(getPromptEditorElement(), {
+        clipboardData: {
+          clearData: () => copied.clear(),
+          setData: (type: string, data: string) => copied.set(type, data),
+        },
+      });
+      expect(copied.get("text/plain")).toBe(copiedText);
+
+      await focusPromptEnd(promptBoxRef);
+      pasteClipboard({
+        html: copied.get("text/html") ?? "",
+        plainText: copied.get("text/plain") ?? "",
+      });
+
+      await waitFor(() => expect(latestValue(changes)).toBe(value));
+      expect(
+        getPromptEditorElement().querySelectorAll("blockquote"),
+      ).toHaveLength(blockquotes);
+    },
+  );
 
   it("inserts a dropped sidebar thread as a serialized mention pill", async () => {
     const { changes, promptBoxRef } = renderPromptBox("Review ");

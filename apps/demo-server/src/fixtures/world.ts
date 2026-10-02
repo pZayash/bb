@@ -46,11 +46,15 @@ export function threadListEntry(
     projectId: DEMO_PROJECT_ID,
     environmentId: null,
     providerId: "codex",
+    model: DEFAULT_MODEL,
+    reasoningLevel: "high",
     title: seed.title,
     titleFallback: seed.title,
     sectionId: null,
     status: busy ? "active" : "idle",
     parentThreadId: null,
+    // bb-fork(parent-mute): the demo world never mutes parent notifications.
+    parentNotificationsMutedAt: null,
     sourceThreadId: null,
     lifecycleOwnerThreadId: null,
     originKind: null,
@@ -108,8 +112,10 @@ export function threadResponse(
   return {
     ...thread,
     activeBackgroundAgentCount: 0,
+    canRestoreEnvironment: false,
     canSpawnChild: true,
     queuedMessageCount: 0,
+    draft: null,
   };
 }
 
