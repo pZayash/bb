@@ -644,7 +644,8 @@ export function registerActionsCommands(
     },
     {
       name: "compact",
-      description: "Request compaction of an idle or errored thread's context",
+      description:
+        "Request compaction of an idle or errored thread's context (starts a turn and wakes the thread)",
       method: "compact",
       done: "context compaction requested",
     },

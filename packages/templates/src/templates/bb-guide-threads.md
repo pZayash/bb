@@ -291,14 +291,20 @@ Messaging:
   `input` to `threads.spawn` or `threads.send`.
 
   bb thread stop [id]                      Stop work and release the agent runtime
-  bb thread compact [id]                   Request compaction of an idle or errored thread's context
+  bb thread compact [id]                   Start a compaction turn on an idle or errored thread
   bb thread clear [id]                     Clear model context for an idle or failed thread
   bb thread cancel-plan [id]               Exit the provider's active Plan mode
   bb thread clear-goal [id]                Clear the provider's active Goal
     --self                                 Target current thread
 
-  `thread compact` enqueues the same structured /compact turn used by the
-  composer. Follow the thread timeline for the eventual compaction result.
+  `thread compact` dispatches the same structured /compact turn used by the
+  composer, so it is a real provider turn: it resumes (wakes) the thread's
+  runtime, marks the thread active, and spends one turn on the provider's
+  compaction command. There is no wake-free compaction; it runs the provider's
+  compaction command only, and bb does not report its completion to the thread's
+  parent, so an orchestrator cannot mistake it for a new task result. Follow the
+  thread timeline for the eventual compaction result; an archived thread refuses
+  the command until it is unarchived.
   `thread clear` keeps the BB thread, workspace, durable event history, and
   sticky execution settings. Its active timeline starts at one visible
   `Context cleared` boundary, and its next prompt starts a fresh provider

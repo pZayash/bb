@@ -188,7 +188,12 @@ export function ensureThreadIsWritable(
   allowStopping = false,
 ): void {
   if (thread.archivedAt) {
-    throwThreadNotWritable(thread, "archived", "Thread is archived");
+    // bb-fork(archive-hint): name the way out of the archived state
+    throwThreadNotWritable(
+      thread,
+      "archived",
+      `Thread is archived (unarchive it with: bb thread unarchive ${thread.id})`,
+    );
   }
   if (thread.status === "stopping" && !allowStopping) {
     throwThreadNotWritable(thread, "stopping", "Thread is stopping");

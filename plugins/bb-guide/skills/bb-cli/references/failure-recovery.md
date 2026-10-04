@@ -26,10 +26,13 @@ sendAt?, reason? })`.
   interrupts a turn the machine retains while the server sees idle or failed,
   including a turn that starts during the stop. If interruption fails, the
   thread remains stopping; inspect its status before treating Stop as confirmed.
-- Use `bb thread compact <id>` to send the built-in `/compact` command to an idle or errored thread. Completion or failure appears in the timeline. Provider support varies; consult its skill and reported capabilities.
+- Use `bb thread compact <id>` to send the built-in `/compact` command to an idle or errored thread. This is a real provider turn: it wakes (resumes) the thread's runtime and spends one turn on the provider's compaction command. There is no wake-free compaction; it runs the provider's compaction command only, and bb does not report its completion to the thread's parent, so it cannot be mistaken for a new task result. Completion or failure appears in the timeline. Provider support varies; consult its skill and reported capabilities.
 - Use `bb thread clear <id>` on an idle or failed thread to reset its active
   timeline and model context in place while keeping the same BB thread,
   workspace, durable event history, and sticky execution settings.
+- A send to an archived thread is refused with `thread_not_writable` and
+  includes the unarchive command. Unarchive it (`bb thread unarchive <id>`)
+  before sending; `bb thread tell` never silently drops the message.
 - A send that fails with `provider_session_unavailable` means the thread's
   recorded provider session belongs to another thread (`details.reason:
 "foreign"`) or was announced by another thread in the same millisecond

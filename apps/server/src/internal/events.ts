@@ -42,6 +42,8 @@ import {
 } from "../services/system/event-pruning.js";
 import { queueChildThreadTurnNotificationBestEffort } from "../services/threads/child-thread-notifications.js";
 import { isParentNotifiableChildThread } from "../services/threads/thread-parent.js";
+// bb-fork(compact-notify): suppress child outcome reports for manual compaction
+import { isManualCompactionTurn } from "../services/threads/thread-manual-compaction.fork.js";
 import {
   runQueuedMessageDispatch,
   type QueuedMessageDispatchWake,
@@ -462,7 +464,17 @@ async function applyEventEffects(
                 threadId: turnCompleted.thread.id,
                 turnId,
               }));
-          if (!alreadyHandledByCommandFailure && !manuallyStopped) {
+          // bb-fork(compact-notify): a manual compaction turn is a service
+          // operation, not task progress, so it must not report to the parent.
+          const manualCompactionTurn = isManualCompactionTurn(deps, {
+            threadId: turnCompleted.thread.id,
+            turnId,
+          });
+          if (
+            !alreadyHandledByCommandFailure &&
+            !manuallyStopped &&
+            !manualCompactionTurn
+          ) {
             addParentTurnNotificationFollowUp({
               failedParentNotificationThreadIds,
               followUps,

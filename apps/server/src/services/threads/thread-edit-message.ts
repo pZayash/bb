@@ -336,7 +336,13 @@ function resolveEditableTurn(
   thread: Thread,
   requestSequence?: number,
 ): EditableTurn {
-  if (thread.archivedAt !== null || thread.deletedAt !== null) {
+  if (thread.archivedAt !== null) {
+    // bb-fork(archive-hint): name the way out of the archived state
+    conflict(
+      `Thread is archived (unarchive it with: bb thread unarchive ${thread.id})`,
+    );
+  }
+  if (thread.deletedAt !== null) {
     conflict("The thread is not writable");
   }
   const backgroundActivity = listActiveBackgroundTaskCountsByThreadIds(db, {

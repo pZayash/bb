@@ -25,8 +25,16 @@ export async function clearThreadContext(
     if (!thread) {
       throw new ApiError(404, "invalid_request", "Thread not found");
     }
-    if (thread.archivedAt !== null || thread.deletedAt !== null) {
-      throw new ApiError(409, "invalid_request", "Thread is not writable");
+    if (thread.archivedAt !== null) {
+      // bb-fork(archive-hint): name the way out of the archived state
+      throw new ApiError(
+        409,
+        "invalid_request",
+        `Thread is archived (unarchive it with: bb thread unarchive ${thread.id})`,
+      );
+    }
+    if (thread.deletedAt !== null) {
+      throw new ApiError(409, "invalid_request", "Thread is deleted");
     }
     if (thread.status !== "idle" && thread.status !== "error") {
       throw new ApiError(
@@ -35,7 +43,9 @@ export async function clearThreadContext(
         "Context can only be cleared when the thread is idle or failed",
       );
     }
-    if (deps.pendingInteractions.hasTurnBoundPendingThreadInteraction(thread.id)) {
+    if (
+      deps.pendingInteractions.hasTurnBoundPendingThreadInteraction(thread.id)
+    ) {
       throw new ApiError(
         409,
         "awaiting_user_interaction",

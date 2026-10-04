@@ -22,6 +22,35 @@ describe("bb thread action command output", () => {
   const register: CommandRegistrar = (program) =>
     registerThreadCommands(program, () => "http://server");
 
+  it("bb thread tell surfaces the unarchive hint from an archived thread", async () => {
+    stubServerApi({
+      "v1.threads.:id.send.$post": vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              code: "thread_not_writable",
+              message:
+                "Thread is archived (unarchive it with: bb thread unarchive thread-archived-1)",
+              details: {
+                reason: "archived",
+                archivedAt: 1,
+                threadStatus: "idle",
+              },
+            }),
+            { status: 409, headers: { "Content-Type": "application/json" } },
+          ),
+      ),
+    });
+
+    await expect(
+      runCommand(["thread", "tell", "thread-archived-1", "Hello"], register),
+    ).rejects.toThrow("process.exit:1");
+
+    expect(collectLogLines(vi.mocked(console.error))).toContain(
+      "Error: HTTP 409: Thread is archived (unarchive it with: bb thread unarchive thread-archived-1)",
+    );
+  });
+
   it("bb thread archive sends the thread id from args", async () => {
     const archivePost = vi.fn(async () => ({
       ok: true,
