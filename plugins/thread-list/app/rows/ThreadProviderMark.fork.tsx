@@ -41,9 +41,31 @@ export function useThreadProvider(providerId: string): ThreadProvider | null {
   );
 }
 
+// bb-fork(windows): the devin provider bridge packs variant data into the model
+// bb-fork(windows): id as `devin-family:` + URI-encoded JSON (`["swe-2",262000,""]`);
+// bb-fork(windows): show the packed model uid instead of the opaque id.
+const DEVIN_FAMILY_PREFIX = "devin-family:";
+
+function decodeDevinFamilyLabel(model: string): string | null {
+  if (!model.startsWith(DEVIN_FAMILY_PREFIX)) return null;
+  try {
+    const parsed: unknown = JSON.parse(
+      decodeURIComponent(model.slice(DEVIN_FAMILY_PREFIX.length)),
+    );
+    return Array.isArray(parsed) &&
+      typeof parsed[0] === "string" &&
+      parsed[0] !== ""
+      ? parsed[0]
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function shortModelLabel(model: string): string {
   const separator = model.lastIndexOf("/");
-  return separator === -1 ? model : model.slice(separator + 1);
+  const tail = separator === -1 ? model : model.slice(separator + 1);
+  return decodeDevinFamilyLabel(tail) ?? tail;
 }
 
 // bb-fork(windows): fallback copy for a provider that does not declare its own

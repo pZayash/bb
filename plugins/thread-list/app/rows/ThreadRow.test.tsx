@@ -1087,6 +1087,36 @@ describe("ThreadRow", () => {
     ).toBe("gpt-5.6-sol");
   });
 
+  it("decodes a packed devin-family model id down to its model uid", () => {
+    const { container } = renderThreadRow({
+      thread: createThread({
+        providerId: "codex",
+        model: "devin-family:%5B%22swe-2%22%2C262000%2C%22%22%5D",
+      }),
+      providers: [makeProvider("codex", "Codex")],
+      showProviderIcons: true,
+    });
+
+    expect(
+      container.querySelector("[data-sidebar-thread-model]")?.textContent,
+    ).toBe("swe-2");
+  });
+
+  it("shows a malformed devin-family model id as-is", () => {
+    const { container } = renderThreadRow({
+      thread: createThread({
+        providerId: "codex",
+        model: "devin-family:not-encoded-json",
+      }),
+      providers: [makeProvider("codex", "Codex")],
+      showProviderIcons: true,
+    });
+
+    expect(
+      container.querySelector("[data-sidebar-thread-model]")?.textContent,
+    ).toBe("devin-family:not-encoded-json");
+  });
+
   it("shows the provider mark alone when the thread has no model yet", () => {
     const { container } = renderThreadRow({
       thread: createThread({ providerId: "codex", model: null }),
