@@ -9,6 +9,8 @@ import { HttpError } from "./api";
 type LifecycleErrorSeverity = "info" | "warning" | "error";
 export type LifecycleErrorOperation =
   | "archive_thread"
+  // bb-fork(compaction-model)
+  | "compact_thread"
   | "commit"
   | "create_thread"
   | "edit_message"
@@ -94,6 +96,9 @@ function operationTitle(operation: LifecycleErrorOperation): string {
   switch (operation) {
     case "archive_thread":
       return "Failed to archive thread";
+    // bb-fork(compaction-model)
+    case "compact_thread":
+      return "Failed to compact context";
     case "commit":
       return "Commit failed";
     case "create_thread":

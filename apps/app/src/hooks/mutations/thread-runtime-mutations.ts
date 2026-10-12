@@ -570,6 +570,19 @@ export function useStopThread() {
   });
 }
 
+// bb-fork(compaction-model): manual compaction from the context indicator.
+export function useCompactThread() {
+  return useMutation({
+    meta: {
+      errorMessage: "Failed to compact thread context.",
+      lifecycleOperation: "compact_thread",
+    },
+    mutationFn: async (threadId: string) => {
+      await sdk.threads.compact({ threadId });
+    },
+  });
+}
+
 export function useCancelThreadPlan() {
   const queryClient = useQueryClient();
 

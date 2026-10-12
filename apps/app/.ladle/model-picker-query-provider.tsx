@@ -74,6 +74,7 @@ const STORY_PROVIDER_INFOS: ProviderInfo[] = STORY_PROVIDER_OPTIONS.map(
       supportsNativeUserQuestion: true,
       supportsFork: true,
       supportsSessionRewind: true,
+      supportsManualCompaction: true,
       modelCatalogScope: "workspace",
       permissionModes: [...permissionModes],
     },

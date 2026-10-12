@@ -211,6 +211,39 @@ export function useKnownProviderModelCatalogScope(
   return undefined;
 }
 
+// bb-fork(compaction-model): reads the provider's manual-compaction
+// capability from whichever provider cache is already warm; no fetch.
+export function useKnownProviderManualCompactionSupport(
+  providerId: string,
+): boolean {
+  const queryClient = useQueryClient();
+  if (providerId.length === 0) {
+    return false;
+  }
+  const supportedIn = (
+    providers: readonly ProviderInfo[] | undefined,
+  ): boolean | undefined =>
+    providers?.find((provider) => provider.id === providerId)?.capabilities
+      .supportsManualCompaction;
+  for (const [, options] of queryClient.getQueriesData<{
+    providers: ProviderInfo[];
+  }>({ queryKey: allSystemExecutionOptionsQueryKeyPrefix() })) {
+    const supported = supportedIn(options?.providers);
+    if (supported !== undefined) {
+      return supported;
+    }
+  }
+  for (const [, providers] of queryClient.getQueriesData<ProviderInfo[]>({
+    queryKey: allSystemProvidersQueryKeyPrefix(),
+  })) {
+    const supported = supportedIn(providers);
+    if (supported !== undefined) {
+      return supported;
+    }
+  }
+  return false;
+}
+
 export function useSystemProviders(args: UseSystemProvidersArgs = {}) {
   const capability = args.capability ?? null;
   const environmentId = args.environmentId ?? null;

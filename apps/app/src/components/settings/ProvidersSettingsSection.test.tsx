@@ -36,6 +36,7 @@ function provider(id: string, displayName: string): ProviderInfo {
       supportsNativeUserQuestion: false,
       supportsFork: false,
       supportsSessionRewind: false,
+      supportsManualCompaction: true,
       modelCatalogScope: "workspace",
       permissionModes: ["full"],
     },

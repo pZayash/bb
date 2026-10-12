@@ -106,6 +106,7 @@ import {
   useCreateThreadQueuedMessage,
   useCancelThreadPlan,
   useClearThreadGoal,
+  useCompactThread,
   useStopThread,
 } from "@/hooks/mutations/thread-runtime-mutations";
 import {
@@ -118,6 +119,8 @@ import {
   useThreadPromptHistory,
 } from "@/hooks/queries/thread-queries";
 import { useThreadDefaultExecutionOptions } from "@/hooks/queries/thread-default-execution-options-query";
+// bb-fork(compaction-model)
+import { useKnownProviderManualCompactionSupport } from "@/hooks/queries/system-queries";
 import {
   getMutationErrorMessage,
   showMutationErrorToast,
@@ -512,6 +515,12 @@ export function ThreadDetailPromptArea({
   );
   const createQueuedMessage = useCreateThreadQueuedMessage();
   const stopThread = useStopThread();
+  // bb-fork(compaction-model): the context-window indicator exposes manual
+  // compaction when the provider supports it.
+  const compactThread = useCompactThread();
+  const compactionSupported = useKnownProviderManualCompactionSupport(
+    thread.providerId,
+  );
   const cancelThreadPlan = useCancelThreadPlan();
   const clearThreadGoal = useClearThreadGoal();
   const unarchiveThread = useUnarchiveThread();
@@ -2210,6 +2219,19 @@ export function ThreadDetailPromptArea({
       focusEndKey={bottomFocusEndKey}
       environmentSummary={environmentSummary}
       contextWindowUsage={contextWindowUsage ?? null}
+      contextCompaction={
+        compactionSupported
+          ? {
+              onCompact: () => compactThread.mutate(thread.id),
+              pending: compactThread.isPending,
+              disabled:
+                (thread.status !== "idle" && thread.status !== "error") ||
+                thread.archivedAt !== null,
+              disabledReason:
+                "Context can be compacted while the thread is idle or errored",
+            }
+          : undefined
+      }
       execution={bottomExecutionConfig}
       permission={bottomPermissionConfig}
       typeahead={typeaheadConfig}

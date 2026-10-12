@@ -182,6 +182,8 @@ export function buildPluginProviderRegistration(args: {
       permissionModes: [...permissionModes],
       supportsFork: capabilities.fork !== "none",
       supportsSessionRewind: capabilities.fork === "checkpoint",
+      // bb-fork(compaction-model): expose the capability the compact UI needs.
+      supportsManualCompaction: capabilities.supportsManualCompaction,
       modelCatalogScope: declaration.models.scope,
     },
     composerActions,

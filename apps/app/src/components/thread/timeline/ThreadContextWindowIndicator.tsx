@@ -14,20 +14,31 @@ import {
   ThreadContextWindowSegments,
 } from "./ThreadContextWindowDetails.js";
 
+// bb-fork(compaction-model): manual compaction action inside the popover card.
+export interface ContextCompactionAction {
+  onCompact: () => void;
+  disabled?: boolean;
+  pending?: boolean;
+  disabledReason?: string;
+}
+
 interface ThreadContextWindowCardProps {
   usage: ThreadContextWindowUsage;
   className?: string;
+  compact?: ContextCompactionAction;
 }
 
 interface ThreadContextWindowIndicatorProps {
   usage: ThreadContextWindowUsage;
   defaultOpen?: boolean;
+  compact?: ContextCompactionAction;
 }
 
 const CONTEXT_WINDOW_POPOVER_CLOSE_DELAY_MS = 60;
 export function ThreadContextWindowCard({
   usage,
   className,
+  compact,
 }: ThreadContextWindowCardProps) {
   const details = usage.snapshot?.categories.length
     ? usage.snapshot
@@ -114,6 +125,17 @@ export function ThreadContextWindowCard({
           <span>{leftPercent}% left</span>
         </div>
       </div>
+      {compact ? (
+        <button
+          type="button"
+          className="mt-2 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xs border border-border px-2 py-1 text-xs text-foreground transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 max-md:py-1.5 max-md:text-sm"
+          disabled={compact.disabled === true || compact.pending === true}
+          title={compact.disabledReason}
+          onClick={() => compact.onCompact()}
+        >
+          {compact.pending ? "Compacting…" : "Compact context"}
+        </button>
+      ) : null}
       {details ? (
         <>
           <div className="-mx-2 max-md:-mx-4">
@@ -156,18 +178,26 @@ export function ThreadContextWindowCard({
 export function ThreadContextWindowIndicator({
   usage,
   defaultOpen,
+  compact,
 }: ThreadContextWindowIndicatorProps) {
   const details = usage.snapshot?.categories.length
     ? usage.snapshot
     : undefined;
+  // bb-fork(compaction-model): popover content must stay open while the pointer
+  // travels to the Compact button, even without a details snapshot.
+  const interactive = details !== undefined || compact !== undefined;
   const {
     open: hoverOpen,
     triggerHoverProps,
     contentHoverProps,
     handleOpenChange,
   } = useHoverPopover({
-    closeDelayMs: details ? 200 : CONTEXT_WINDOW_POPOVER_CLOSE_DELAY_MS,
-    hoverableContent: details !== undefined,
+    closeDelayMs: compact
+      ? 500
+      : details
+        ? 200
+        : CONTEXT_WINDOW_POPOVER_CLOSE_DELAY_MS,
+    hoverableContent: interactive,
   });
   const open = defaultOpen || hoverOpen;
 
@@ -234,6 +264,7 @@ export function ThreadContextWindowIndicator({
       >
         <ThreadContextWindowCard
           usage={usage}
+          compact={compact}
           className="max-md:w-full max-md:rounded-none max-md:border-0 max-md:bg-transparent max-md:px-4 max-md:pt-2 max-md:pb-[max(1rem,env(safe-area-inset-bottom))] max-md:shadow-none"
         />
       </PopoverContent>

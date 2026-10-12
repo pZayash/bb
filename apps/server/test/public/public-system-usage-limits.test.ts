@@ -80,6 +80,7 @@ describe("GET /api/v1/system/usage-limits", () => {
               supportsNativeUserQuestion: false,
               supportsFork: false,
               supportsSessionRewind: false,
+              supportsManualCompaction: true,
               modelCatalogScope: "workspace",
               permissionModes: ["full"],
             },

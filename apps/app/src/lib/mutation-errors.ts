@@ -61,6 +61,8 @@ function toLifecycleErrorOperation(
 
   switch (value) {
     case "archive_thread":
+    // bb-fork(compaction-model)
+    case "compact_thread":
     case "commit":
     case "create_thread":
     case "edit_message":

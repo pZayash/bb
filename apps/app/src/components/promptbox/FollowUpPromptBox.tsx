@@ -156,6 +156,10 @@ export interface FollowUpPromptBoxProps {
   composer: FollowUpComposerProps | null;
   environmentSummary: ReactNode | null;
   contextWindowUsage: ContextWindowUsage | null;
+  // bb-fork(compaction-model): manual compaction action in the indicator card.
+  contextCompaction?: ComponentProps<
+    typeof ThreadContextWindowIndicator
+  >["compact"];
   execution: ExecutionControlsProps;
   permission: ExecutionPermissionConfig;
   executionReadOnly?: boolean;
@@ -232,6 +236,7 @@ function FollowUpPromptBoxWithComposer({
   composer,
   environmentSummary,
   contextWindowUsage,
+  contextCompaction,
   execution,
   permission,
   executionReadOnly,
@@ -801,7 +806,10 @@ function FollowUpPromptBoxWithComposer({
           <div className="flex shrink-0 items-center gap-2">
             {permissionControl}
             {contextWindowUsage ? (
-              <ThreadContextWindowIndicator usage={contextWindowUsage} />
+              <ThreadContextWindowIndicator
+                usage={contextWindowUsage}
+                compact={contextCompaction}
+              />
             ) : null}
           </div>
         </div>

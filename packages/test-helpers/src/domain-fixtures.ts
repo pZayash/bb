@@ -105,6 +105,7 @@ export function makeProviderInfo(
       supportsNativeUserQuestion: false,
       supportsFork: true,
       supportsSessionRewind: false,
+      supportsManualCompaction: true,
       modelCatalogScope: "workspace",
       permissionModes: ["accept-edits", "auto", "full"],
     },

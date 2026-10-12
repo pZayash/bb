@@ -38,6 +38,8 @@ const providerCapabilitiesSchema = z.object({
   supportsNativeUserQuestion: z.boolean(),
   supportsFork: z.boolean(),
   supportsSessionRewind: z.boolean(),
+  // bb-fork(compaction-model): lets the UI offer manual context compaction.
+  supportsManualCompaction: z.boolean(),
   permissionModes: z.array(permissionModeSchema).min(1),
   modelCatalogScope: providerModelCatalogScopeSchema,
 });

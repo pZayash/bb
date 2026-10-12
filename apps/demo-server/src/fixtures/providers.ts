@@ -38,6 +38,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
       permissionModes: ["accept-edits", "auto", "full"],
       supportsFork: true,
       supportsSessionRewind: true,
+      supportsManualCompaction: true,
       modelCatalogScope: "workspace",
     },
     composerActions: [
@@ -61,6 +62,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
       permissionModes: ["accept-edits", "auto", "full"],
       supportsFork: true,
       supportsSessionRewind: true,
+      supportsManualCompaction: true,
       modelCatalogScope: "workspace",
     },
     composerActions: [SKILLS_ACTION, PLAN_ACTION],
@@ -77,6 +79,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
       permissionModes: ["full"],
       supportsFork: true,
       supportsSessionRewind: true,
+      supportsManualCompaction: true,
       modelCatalogScope: "workspace",
     },
     composerActions: [SKILLS_ACTION],
