@@ -52,7 +52,7 @@ describe("useComposerAttachmentUploads", () => {
       }),
     );
 
-    let bottomPromise!: Promise<void>;
+    let bottomPromise!: Promise<PromptDraftAttachment[]>;
     act(() => {
       bottomPromise = result.current.handleAttachBottomFiles([
         new File(["bottom"], "bottom.txt"),
@@ -65,7 +65,7 @@ describe("useComposerAttachmentUploads", () => {
     ).toEqual(["bottom.txt"]);
     expect(result.current.inlinePendingUploads).toEqual([]);
 
-    let inlinePromise!: Promise<void>;
+    let inlinePromise!: Promise<PromptDraftAttachment[]>;
     act(() => {
       inlinePromise = result.current.handleAttachInlineFiles([
         new File(["inline"], "inline.txt"),
@@ -124,7 +124,7 @@ describe("useComposerAttachmentUploads", () => {
       },
     );
 
-    let uploadPromise!: Promise<void>;
+    let uploadPromise!: Promise<PromptDraftAttachment[]>;
     act(() => {
       uploadPromise = result.current.handleAttachInlineFiles([
         new File(["old"], "old.txt"),
@@ -203,8 +203,8 @@ describe("useComposerAttachmentUploads", () => {
       }),
     );
     const file = new File(["image"], "same-name.png", { type: "image/png" });
-    let batch!: Promise<void>;
-    let other!: Promise<void>;
+    let batch!: Promise<PromptDraftAttachment[]>;
+    let other!: Promise<PromptDraftAttachment[]>;
     act(() => {
       batch = result.current.handleAttachFiles([file, file]);
       other = result.current.handleAttachFiles([file]);
@@ -261,7 +261,7 @@ describe("useComposerAttachmentUploads", () => {
       },
     );
 
-    let uploadPromise!: Promise<void>;
+    let uploadPromise!: Promise<PromptDraftAttachment[]>;
     act(() => {
       uploadPromise = result.current.handleAttachFiles([
         new File(["old"], "old.txt"),

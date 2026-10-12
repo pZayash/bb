@@ -24,7 +24,6 @@ export function resolveWorkspacePath(args: {
       `Personal workspace key must be a single path segment: ${args.pathKey}`,
     );
   }
-  // bb-fork(windows): native separators; `path.posix.join` mixes `\` and `/`.
   return path.join(args.dataDir, WORKSPACES_DIR_NAME, args.pathKey);
 }
 

@@ -1,4 +1,11 @@
-const WINDOWS_DRIVE_ABSOLUTE_PATH_PATTERN = /^[A-Za-z]:[\\/]/u; // bb-fork(windows)
+import {
+  getHostPathDirname,
+  isAbsoluteHostPath,
+  isHostPathWithin,
+  isWindowsHostPath,
+  joinHostPath,
+  normalizeHostPath,
+} from "@bb/domain";
 
 interface ResolveAbsoluteFilePathArgs {
   path: string;
@@ -23,10 +30,6 @@ interface NormalizeAbsoluteFilePathArgs {
   path: string;
 }
 
-interface NormalizeSegmentsArgs {
-  path: string;
-}
-
 function trimTrailingSlash(path: string): string {
   if (path === "/") {
     return path;
@@ -38,88 +41,43 @@ function trimLeadingSlash(path: string): string {
   return path.replace(/^\/+/u, "");
 }
 
-function toForwardSlashPath(path: string): string {
-  return path.includes("\\") ? path.replace(/\\/g, "/") : path;
-}
-
 function isAbsoluteFilePath(path: string): boolean {
-  return path.startsWith("/") || WINDOWS_DRIVE_ABSOLUTE_PATH_PATTERN.test(path);
+  return isAbsoluteHostPath(path);
 }
 
-function isWindowsDrivePath(path: string): boolean {
-  return /^[A-Za-z]:($|\/)/u.test(path);
-}
-
-function normalizeSegments({ path }: NormalizeSegmentsArgs): string[] {
-  const normalizedSegments: string[] = [];
-  for (const segment of path.split("/")) {
-    if (segment.length === 0 || segment === ".") {
-      continue;
-    }
-    if (segment === "..") {
-      if (normalizedSegments.length > 0) {
-        normalizedSegments.pop();
-      }
-      continue;
-    }
-    normalizedSegments.push(segment);
+// bb-fork(windows): native Windows inputs keep forward-slash form with a
+// lowercase drive letter so the result stays comparable to POSIX-style paths.
+function toForkNormalizedForm(value: string): string {
+  const windowsMatch = /^([A-Za-z]):[\\/]/u.exec(value);
+  if (windowsMatch !== null) {
+    const rest = value.slice(3).replaceAll("\\", "/");
+    return rest.length === 0
+      ? `${windowsMatch[1]!.toLowerCase()}:`
+      : `${windowsMatch[1]!.toLowerCase()}:/${rest}`;
   }
-  return normalizedSegments;
+  if (value.startsWith("\\")) {
+    return `//${value.slice(2).replaceAll("\\", "/")}`;
+  }
+  return value;
+}
+
+// bb-fork(windows): separators only — preserve the drive letter's casing.
+function toForwardSlashes(value: string): string {
+  return value.includes("\\") ? value.replaceAll("\\", "/") : value;
 }
 
 export function normalizeAbsoluteFilePath({
   path,
 }: NormalizeAbsoluteFilePathArgs): string | null {
-  if (!isAbsoluteFilePath(path)) {
-    return null;
-  }
-
-  const slashPath = toForwardSlashPath(path);
-  if (slashPath.startsWith("/")) {
-    const normalizedSegments = normalizeSegments({ path: slashPath });
-    return normalizedSegments.length === 0
-      ? "/"
-      : `/${normalizedSegments.join("/")}`;
-  }
-
-  const drive = slashPath[0]!.toLowerCase();
-  const normalizedSegments = normalizeSegments({
-    path: slashPath.slice(3),
-  });
-  return normalizedSegments.length === 0
-    ? `${drive}:`
-    : `${drive}:/${normalizedSegments.join("/")}`;
+  const normalized = normalizeHostPath(path);
+  return normalized === null ? null : toForkNormalizedForm(normalized);
 }
 
 export function isAbsoluteFilePathWithinRoot({
   candidatePath,
   rootPath,
 }: IsAbsoluteFilePathWithinRootArgs): boolean {
-  const normalizedCandidatePath = normalizeAbsoluteFilePath({
-    path: candidatePath,
-  });
-  const normalizedRootPath = normalizeAbsoluteFilePath({ path: rootPath });
-  if (normalizedCandidatePath === null || normalizedRootPath === null) {
-    return false;
-  }
-
-  if (normalizedRootPath === "/") {
-    return normalizedCandidatePath.startsWith("/");
-  }
-
-  if (
-    isWindowsDrivePath(normalizedRootPath) &&
-    isWindowsDrivePath(normalizedCandidatePath)
-  ) {
-    const candidate = normalizedCandidatePath.toLowerCase();
-    const root = normalizedRootPath.toLowerCase();
-    return candidate === root || candidate.startsWith(`${root}/`);
-  }
-
-  return (
-    normalizedCandidatePath === normalizedRootPath ||
-    normalizedCandidatePath.startsWith(`${normalizedRootPath}/`)
-  );
+  return isHostPathWithin({ rootPath, candidatePath });
 }
 
 export function buildAbsoluteFilePath({
@@ -130,8 +88,13 @@ export function buildAbsoluteFilePath({
     return path;
   }
 
-  const normalizedRootPath = trimTrailingSlash(toForwardSlashPath(rootPath));
-  const relativePath = trimLeadingSlash(toForwardSlashPath(path));
+  if (isWindowsHostPath(rootPath)) {
+    const joined = joinHostPath({ rootPath, relativePath: path });
+    return joined === null ? path : toForwardSlashes(joined);
+  }
+
+  const normalizedRootPath = trimTrailingSlash(rootPath);
+  const relativePath = trimLeadingSlash(path);
   if (normalizedRootPath === "/") {
     return `/${relativePath}`;
   }
@@ -152,11 +115,14 @@ export function resolveAbsoluteFilePath({
 }
 
 export function getAbsoluteDirname({ path }: GetAbsoluteDirnameArgs): string {
-  const slashPath = toForwardSlashPath(path);
-  const trimmed = slashPath === "/" ? slashPath : trimTrailingSlash(slashPath);
-  if (!trimmed.includes("/")) {
-    return /^[A-Za-z]:$/u.test(trimmed) ? trimmed : "/";
+  if (isWindowsHostPath(path)) {
+    const dirname = getHostPathDirname(path);
+    if (dirname === null) return path;
+    const converted = toForwardSlashes(dirname);
+    // bb-fork(windows): keep the caller's drive letter casing.
+    return /^[A-Za-z]:/u.test(path) ? path[0] + converted.slice(1) : converted;
   }
+  const trimmed = trimTrailingSlash(path);
   const lastSlashIndex = trimmed.lastIndexOf("/");
   if (lastSlashIndex === 0) {
     return "/";

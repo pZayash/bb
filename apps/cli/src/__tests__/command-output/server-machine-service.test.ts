@@ -132,46 +132,48 @@ afterAll(async () => {
 describe("bb server install-machine-service", () => {
   setupCommandOutputTestEnvironment();
 
-  // bb-fork(windows): the machine installer runs a POSIX shell script.
-  it.skipIf(process.platform === "win32")(
-    "stops the bb running from the data directory and installs the service for it",
-    async () => {
-      const fixture = await createFixture();
-      const bb = await startRecordedBb(fixture);
-      const bbExit = new Promise<NodeJS.Signals | null>((resolvePromise) => {
-        bb.once("exit", (_code, signal) => resolvePromise(signal));
-      });
+  it("stops the bb running from the data directory and installs the service for it", async ({
+    skip,
+  }) => {
+    skip(
+      process.platform === "win32",
+      "runs a POSIX shell installer for launchd/systemd",
+    );
+    const fixture = await createFixture();
+    const bb = await startRecordedBb(fixture);
+    const bbExit = new Promise<NodeJS.Signals | null>((resolvePromise) => {
+      bb.once("exit", (_code, signal) => resolvePromise(signal));
+    });
 
-      await runCommand(
-        [
-          "server",
-          "install-machine-service",
-          "--data-dir",
-          fixture.dataDir,
-          "--yes",
-          "--json",
-        ],
-        register,
-      );
+    await runCommand(
+      [
+        "server",
+        "install-machine-service",
+        "--data-dir",
+        fixture.dataDir,
+        "--yes",
+        "--json",
+      ],
+      register,
+    );
 
-      await expect(bbExit).resolves.toBe("SIGTERM");
-      await expect(readBbAppRuntimeFile(fixture.dataDir)).resolves.toBeNull();
-      expect(
-        (await readFile(fixture.installerLog, "utf8")).trim().split("\n"),
-      ).toEqual(["--adopt", "--data-dir", fixture.dataDir]);
-      const result = JSON.parse(collectLogPayloads(vi.mocked(console.log))[0]!);
-      expect(result).toEqual({
-        dataDir: fixture.dataDir,
-        serverUrl: "https://me.getbb.app",
-        serviceFile: expect.stringContaining(fixture.homeDir),
-        toHostName: "desktop",
-      });
-      expect(collectLogPayloads(vi.mocked(console.error))).toEqual([
-        `Stopped bb on this computer (pid ${String(bb.pid)}).`,
-      ]);
-      expect(await readServerMovedFile(fixture.dataDir)).toEqual(movedLock());
-    },
-  );
+    await expect(bbExit).resolves.toBe("SIGTERM");
+    await expect(readBbAppRuntimeFile(fixture.dataDir)).resolves.toBeNull();
+    expect(
+      (await readFile(fixture.installerLog, "utf8")).trim().split("\n"),
+    ).toEqual(["--adopt", "--data-dir", fixture.dataDir]);
+    const result = JSON.parse(collectLogPayloads(vi.mocked(console.log))[0]!);
+    expect(result).toEqual({
+      dataDir: fixture.dataDir,
+      serverUrl: "https://me.getbb.app",
+      serviceFile: expect.stringContaining(fixture.homeDir),
+      toHostName: "desktop",
+    });
+    expect(collectLogPayloads(vi.mocked(console.error))).toEqual([
+      `Stopped bb on this computer (pid ${String(bb.pid)}).`,
+    ]);
+    expect(await readServerMovedFile(fixture.dataDir)).toEqual(movedLock());
+  });
 
   it("refuses a data directory that no server moved away from", async () => {
     const fixture = await createFixture();
@@ -196,20 +198,49 @@ describe("bb server install-machine-service", () => {
     await expect(readFile(fixture.installerLog, "utf8")).rejects.toThrow();
   });
 
-  // bb-fork(windows): the machine installer runs a POSIX shell script.
-  it.skipIf(process.platform === "win32")(
-    "leaves bb running when node on the PATH is too old for the service",
+  it("leaves bb running when node on the PATH is too old for the service", async ({
+    skip,
+  }) => {
+    skip(
+      process.platform === "win32",
+      "runs a POSIX shell installer for launchd/systemd",
+    );
+    const fixture = await createFixture();
+    const bb = await startRecordedBb(fixture);
+    const binDir = join(fixture.root, "bin");
+    await mkdir(binDir);
+    await writeFile(
+      join(binDir, "node"),
+      "#!/bin/sh\nprintf '%s\\n' 20.18.1\n",
+    );
+    await chmod(join(binDir, "node"), 0o755);
+    vi.stubEnv("PATH", [binDir, "/usr/bin", "/bin"].join(delimiter));
+
+    await expect(
+      runCommand(
+        [
+          "server",
+          "install-machine-service",
+          "--data-dir",
+          fixture.dataDir,
+          "--yes",
+        ],
+        register,
+      ),
+    ).rejects.toThrow("process.exit:1");
+
+    expect(collectLogPayloads(vi.mocked(console.error))).toEqual([
+      "Error: The background service runs bb with the node on your PATH, which is Node.js 20.18.1. Install Node.js 22.19 or newer, then run this command again.",
+    ]);
+    expect(bb.exitCode).toBeNull();
+    expect(bb.signalCode).toBeNull();
+    await expect(readFile(fixture.installerLog, "utf8")).rejects.toThrow();
+  });
+
+  it.runIf(process.platform === "win32")(
+    "refuses on Windows before stopping bb or running an installer",
     async () => {
       const fixture = await createFixture();
-      const bb = await startRecordedBb(fixture);
-      const binDir = join(fixture.root, "bin");
-      await mkdir(binDir);
-      await writeFile(
-        join(binDir, "node"),
-        "#!/bin/sh\nprintf '%s\\n' 20.18.1\n",
-      );
-      await chmod(join(binDir, "node"), 0o755);
-      vi.stubEnv("PATH", [binDir, "/usr/bin", "/bin"].join(delimiter));
 
       await expect(
         runCommand(
@@ -225,15 +256,17 @@ describe("bb server install-machine-service", () => {
       ).rejects.toThrow("process.exit:1");
 
       expect(collectLogPayloads(vi.mocked(console.error))).toEqual([
-        "Error: The background service runs bb with the node on your PATH, which is Node.js 20.18.1. Install Node.js 22.19 or newer, then run this command again.",
+        "Error: bb cannot install the background machine service on Windows. It is available on macOS and Linux.",
       ]);
-      expect(bb.exitCode).toBeNull();
-      expect(bb.signalCode).toBeNull();
       await expect(readFile(fixture.installerLog, "utf8")).rejects.toThrow();
     },
   );
 
-  it("reports an installer failure", async () => {
+  it("reports an installer failure", async ({ skip }) => {
+    skip(
+      process.platform === "win32",
+      "runs a POSIX shell installer for launchd/systemd",
+    );
     const fixture = await createFixture();
     vi.stubEnv("FAKE_INSTALLER_EXIT", "1");
     readlineMocks.question.mockResolvedValue("y");
@@ -257,45 +290,40 @@ describe("bb server install-machine-service", () => {
 describe("bb server unlock with a machine service", () => {
   setupCommandOutputTestEnvironment();
 
-  // bb-fork(windows): the machine installer runs a POSIX shell script.
-  it.skipIf(process.platform === "win32")(
-    "refuses while a background service runs this computer as a machine",
-    async () => {
-      const fixture = await createFixture();
-      await runCommand(
-        [
-          "server",
-          "install-machine-service",
-          "--data-dir",
-          fixture.dataDir,
-          "--yes",
-          "--json",
-        ],
+  it("refuses while a background service runs this computer as a machine", async ({
+    skip,
+  }) => {
+    skip(
+      process.platform === "win32",
+      "runs a POSIX shell installer for launchd/systemd",
+    );
+    const fixture = await createFixture();
+    await runCommand(
+      [
+        "server",
+        "install-machine-service",
+        "--data-dir",
+        fixture.dataDir,
+        "--yes",
+        "--json",
+      ],
+      register,
+    );
+    const { serviceFile } = JSON.parse(
+      collectLogPayloads(vi.mocked(console.log))[0]!,
+    );
+    vi.mocked(console.error).mockClear();
+
+    await expect(
+      runCommand(
+        ["server", "unlock", "--data-dir", fixture.dataDir, "--yes", "--force"],
         register,
-      );
-      const { serviceFile } = JSON.parse(
-        collectLogPayloads(vi.mocked(console.log))[0]!,
-      );
-      vi.mocked(console.error).mockClear();
+      ),
+    ).rejects.toThrow("process.exit:1");
 
-      await expect(
-        runCommand(
-          [
-            "server",
-            "unlock",
-            "--data-dir",
-            fixture.dataDir,
-            "--yes",
-            "--force",
-          ],
-          register,
-        ),
-      ).rejects.toThrow("process.exit:1");
-
-      expect(collectLogPayloads(vi.mocked(console.error))[0]).toContain(
-        `Error: A background service (${serviceFile}) runs this computer as a machine from ${fixture.dataDir}.`,
-      );
-      expect(await readServerMovedFile(fixture.dataDir)).toEqual(movedLock());
-    },
-  );
+    expect(collectLogPayloads(vi.mocked(console.error))[0]).toContain(
+      `Error: A background service (${serviceFile}) runs this computer as a machine from ${fixture.dataDir}.`,
+    );
+    expect(await readServerMovedFile(fixture.dataDir)).toEqual(movedLock());
+  });
 });

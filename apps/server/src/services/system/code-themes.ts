@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import {
   CUSTOM_CODE_THEME_JSON_MAX_LENGTH,
   codeThemeNameSchema,
@@ -10,6 +10,7 @@ import {
   type DeclaredCodeThemeSlot,
   type UiCodeThemeDeclaration,
 } from "@bb/domain";
+import { isPathWithinDirectory } from "@bb/process-utils";
 
 const THEME_MANIFEST_FILE_NAME = "theme.json";
 const CONVENTION_CODE_THEME_FILES = {
@@ -31,11 +32,7 @@ function resolveWithinRoot(
     throw new Error(`${label} must be relative, got "${entry}"`);
   }
   const resolved = resolve(rootDir, entry);
-  // bb-fork(windows): compare with path.relative so `\` separators are handled.
-  const rel = relative(rootDir, resolved);
-  const within =
-    resolved === rootDir || (!rel.startsWith("..") && !isAbsolute(rel));
-  if (!within) {
+  if (!isPathWithinDirectory(resolve(rootDir), resolved)) {
     throw new Error(`${label} escapes the theme directory: "${entry}"`);
   }
   return resolved;

@@ -1,10 +1,11 @@
 import { readFile, realpath, stat } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import {
   isPluginOwnedIconPath,
   pluginPackageJsonSchema,
   type PluginPackageJson,
 } from "@bb/domain";
+import { isPathWithinDirectory } from "@bb/process-utils";
 import {
   assertValidPluginCompactIconSvg,
   assertValidPluginIconSvg,
@@ -15,22 +16,6 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// bb-fork(windows): relative()/sep-based check works with backslash paths;
-// the upstream startsWith(root + "/") test fails on win32.
-function isPathWithinDirectory(
-  candidatePath: string,
-  directory: string,
-): boolean {
-  const relativePath = relative(directory, candidatePath);
-  if (relativePath === "") {
-    return true;
-  }
-  return (
-    relativePath !== ".." &&
-    !relativePath.startsWith(`..${sep}`) &&
-    !isAbsolute(relativePath)
-  );
-}
 
 export async function readPluginPackageJsonFile(
   packageJsonPath: string,
@@ -57,8 +42,7 @@ export function resolveManifestPath(
     throw new Error(`manifest ${label} must be relative, got "${entry}"`);
   }
   const resolved = resolve(rootDir, entry);
-  // bb-fork(windows): separator-agnostic containment check.
-  if (!isPathWithinDirectory(resolved, rootDir)) {
+  if (!isPathWithinDirectory(resolve(rootDir), resolved)) {
     throw new Error(
       `manifest ${label} escapes the plugin directory: "${entry}"`,
     );
@@ -98,8 +82,7 @@ export async function resolveManifestAssetFile(
     realpath(rootDir),
     realpath(assetPath),
   ]);
-  // bb-fork(windows): separator-agnostic containment check.
-  if (!isPathWithinDirectory(realAsset, realRoot)) {
+  if (!isPathWithinDirectory(realRoot, realAsset)) {
     throw new Error(
       `manifest ${label} escapes the plugin directory through a symlink`,
     );

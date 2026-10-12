@@ -91,6 +91,7 @@ it("pages mobile panes without using annotation selection as navigation", () => 
       expect(buttons).toHaveLength(1);
       return buttons[0]!.textContent;
     };
+    const previous = container.querySelector<HTMLButtonElement>('[aria-label="Previous surface"]')!;
     const next = container.querySelector<HTMLButtonElement>('[aria-label="Next surface"]')!;
     const openAnnotation = (id: string) => act(() => {
       current().querySelector<HTMLAnchorElement>(`a[href="#surface-${id}"]`)!.click();
@@ -100,11 +101,9 @@ it("pages mobile panes without using annotation selection as navigation", () => 
     });
     expect(container.querySelector('[aria-label="Explore an annotation"]')).toBeNull();
     expect(visiblePage()).toBe("Sidebar");
+    expect(previous.disabled).toBe(true);
     expect(current().querySelector('[data-guide-mobile-scene="navigation"]')).not.toBeNull();
-    openAnnotation("sidebar-navigation");
-    act(() => vi.advanceTimersByTime(400));
-    expect(scroll).toHaveBeenCalledTimes(1);
-    nextAnnotation();
+    openAnnotation("nav-panel");
     act(() => vi.advanceTimersByTime(400));
     expect(scroll).toHaveBeenCalledTimes(1);
     expect(navigate).not.toHaveBeenCalled();
@@ -114,14 +113,14 @@ it("pages mobile panes without using annotation selection as navigation", () => 
     const previousExample = () => examples().querySelector<HTMLButtonElement>('[aria-label="Previous example plugin"]')!;
     const nextExample = () => examples().querySelector<HTMLButtonElement>('[aria-label="Next example plugin"]')!;
     expect(previousExample().disabled).toBe(true);
-    for (const name of ["Automations", "Docs", "GitHub", "Tasks"]) {
+    for (const name of ["Automations", "Docs", "GitHub", "Tasks", "Theme Preview"]) {
       expect(examples().textContent).toContain(name);
       expect(examples().querySelectorAll('[aria-live="polite"] > span:not(.sr-only)')).toHaveLength(1);
-      if (name !== "Tasks") act(() => nextExample().click());
+      if (name !== "Theme Preview") act(() => nextExample().click());
     }
     expect(nextExample().disabled).toBe(true);
     act(() => previousExample().dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })));
-    expect(examples().textContent).toContain("GitHub");
+    expect(examples().textContent).toContain("Tasks");
     expect(visiblePage()).toBe("Sidebar");
     expect(navigate).not.toHaveBeenCalled();
     act(() => container.querySelector('[role="dialog"] button')!.dispatchEvent(
@@ -130,6 +129,7 @@ it("pages mobile panes without using annotation selection as navigation", () => 
     expect(navigate).not.toHaveBeenCalled();
     act(() => next.click());
     expect(visiblePage()).toBe("Thread");
+    expect(previous.disabled).toBe(false);
     expect(current().querySelector('[data-guide-mobile-scene="conversation"]')).not.toBeNull();
     for (const id of ["timeline-renderers", "message-directives", "pending-interaction", "app-overlay"]) {
       expect(current().querySelector(`a[href="#surface-${id}"]`), id).not.toBeNull();
@@ -189,6 +189,7 @@ it("pages mobile panes without using annotation selection as navigation", () => 
     expect(visiblePage()).toBe("Home page");
     for (let step = 0; step < 4; step++) act(() => next.click());
     expect(visiblePage()).toBe("Plugin backend");
+    expect(previous.disabled).toBe(false);
     expect(next.disabled).toBe(true);
     swipe(-80);
     expect(visiblePage()).toBe("Plugin backend");

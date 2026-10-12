@@ -151,7 +151,7 @@ export function Overview() {
           <ProjectPathDialogContent
             target={createTarget}
             pending={false}
-            platform="windows"
+            platform="win32"
             hostId={null}
             hostName="Sawyer's PC"
             onSubmit={noop}

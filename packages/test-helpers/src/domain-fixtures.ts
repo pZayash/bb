@@ -110,11 +110,20 @@ export function makeProviderInfo(
       permissionModes: ["accept-edits", "auto", "full"],
     },
   };
+  const capabilities = { ...provider.capabilities, ...overrides.capabilities };
   return {
     ...provider,
+    ...(capabilities.supportsServiceTier
+      ? {
+          serviceTiers: [
+            { id: "default", label: "Default" },
+            { id: "fast", label: "Fast" },
+          ],
+        }
+      : {}),
     ...overrides,
     maintenance: { ...provider.maintenance, ...overrides.maintenance },
-    capabilities: { ...provider.capabilities, ...overrides.capabilities },
+    capabilities,
   };
 }
 
@@ -152,10 +161,7 @@ export function makeThreadWithRuntime(
 ): ThreadWithRuntime {
   const thread: ThreadWithRuntime = {
     ...makeThread(),
-    runtime: {
-      displayStatus: "idle",
-      hostReconnectGraceExpiresAt: null,
-    },
+    runtime: { displayStatus: "idle" },
   };
   return {
     ...thread,

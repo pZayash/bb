@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer, type Server, type Socket } from "node:net";
 import { extname } from "node:path";
@@ -19,51 +18,6 @@ export function piLaunchRequiresWindowsShell(
   }
   const extension = extname(command).toLowerCase();
   return extension === "" || WINDOWS_BATCH_EXTENSIONS.has(extension);
-}
-
-export function planPiChildKill(args: {
-  windowsShellChild: boolean;
-  platform: NodeJS.Platform;
-}): { signal: NodeJS.Signals | null; escalateImmediately: boolean } {
-  if (args.windowsShellChild) {
-    return { signal: null, escalateImmediately: true };
-  }
-  return {
-    signal: args.platform === "win32" ? null : "SIGTERM",
-    escalateImmediately: false,
-  };
-}
-
-export interface WindowsShellKillSpawn {
-  (
-    command: string,
-    args: readonly string[],
-    options: { stdio: "ignore"; windowsHide: boolean },
-  ): { on(event: "error", listener: (error: Error) => void): unknown };
-}
-
-export function escalateWindowsShellChildKill(args: {
-  pid: number | undefined;
-  killFallback: (signal: NodeJS.Signals) => unknown;
-  spawnProcess?: WindowsShellKillSpawn;
-}): void {
-  const { pid } = args;
-  if (pid === undefined) {
-    return;
-  }
-  const spawnProcess = args.spawnProcess ?? spawn;
-  try {
-    const taskkill = spawnProcess(
-      "taskkill",
-      ["/pid", String(pid), "/T", "/F"],
-      { stdio: "ignore", windowsHide: true },
-    );
-    taskkill.on("error", () => {
-      args.killFallback("SIGKILL");
-    });
-  } catch {
-    args.killFallback("SIGKILL");
-  }
 }
 
 export class WindowsChannelPipe {

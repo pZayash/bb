@@ -18,12 +18,21 @@ import {
   within,
 } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import {
   PluginComposerHostScopeProvider,
   usePluginComposerHost,
   usePluginComposerHostDraft,
 } from "@/components/plugin/plugin-composer-host";
+import { LazyQueuedMessagesList } from "@/components/promptbox/banner/LazyQueuedMessagesList";
 import { getPromptDraftAccessor } from "@/hooks/usePromptDraftStorage";
 import { ThreadDetailPromptArea } from "./ThreadDetailPromptArea";
 
@@ -138,15 +147,11 @@ vi.mock("@/components/promptbox/banner/ThreadWorkflowCard", () => ({
 vi.mock(
   "@/components/thread/pending-interactions/ThreadPendingInteractionBanner",
   () => ({
-    ThreadPendingInteractionBanner: () => (
+    ThreadPendingInteractionBanners: () => (
       <div data-testid="pending-interaction" />
     ),
   }),
 );
-
-vi.mock("@/components/plugin/PluginPendingInteractionComposer", () => ({
-  PluginPendingInteractionComposer: () => null,
-}));
 
 vi.mock("@/components/ui/app-toast", () => ({
   appToast: { error: vi.fn() },
@@ -228,7 +233,6 @@ vi.mock("@/hooks/mutations/thread-runtime-mutations", () => {
     useSetThreadQueuedMessageGroupBoundary: idleMutation,
     useSendThreadQueuedMessage: idleMutation,
     useStopThread: idleMutation,
-    useUpdateThreadDraft: idleMutation,
     useUpdateThreadQueuedMessage: () => ({
       isPending: false,
       mutateAsync: mocks.updateQueuedMessageMutateAsync,
@@ -247,6 +251,7 @@ vi.mock("@/hooks/mutations/thread-state-mutations", () => ({
     mutate: vi.fn(),
     variables: null,
   }),
+  useUpdateThread: () => ({ isPending: false, mutate: vi.fn() }),
 }));
 
 vi.mock("@/hooks/queries/sidebar-navigation-query", () => ({
@@ -271,8 +276,9 @@ const queryMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/hooks/queries/thread-queries", () => ({
-  getLatestPendingInteraction: (interactions: readonly PendingInteraction[]) =>
-    interactions.at(-1) ?? null,
+  orderPendingInteractions: (
+    interactions: readonly PendingInteraction[] | undefined,
+  ) => interactions ?? [],
   useThreadPromptHistory: () => ({ data: [] }),
   useThreadQueuedMessages: () => ({ data: queryMocks.queuedMessages }),
 }));
@@ -364,7 +370,7 @@ function buildPromptArea({
       <ShellProbe />
       <PublishedHostDraftProbe />
       <ThreadDetailPromptArea
-        serverDraft={null}
+        showGitChanges={true}
         activeBackgroundAgentCount={0}
         activeBackgroundCommands={[]}
         activePromptMode={null}
@@ -377,12 +383,13 @@ function buildPromptArea({
         canRestoreEnvironment={false}
         environmentGoneStatus={null}
         goal={null}
+        providerCommands={null}
+        sessionOptions={null}
         modelFallback={null}
         isEnvironmentActionPending={false}
         onChangedFileClick={vi.fn()}
         parentThreadSection={null}
         pendingInteractions={pendingInteractions}
-        pendingInteractionsInitialLoading={false}
         queuedMessageCount={0}
         pendingTodos={null}
         projectId={PROJECT_ID}
@@ -414,6 +421,8 @@ function getBottomComposerInput(): HTMLInputElement {
 
 let threadCounter = 0;
 let threadId = "";
+
+beforeAll(() => LazyQueuedMessagesList.preload());
 
 beforeEach(() => {
   threadCounter += 1;

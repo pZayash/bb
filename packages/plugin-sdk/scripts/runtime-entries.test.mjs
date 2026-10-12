@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { build } from "esbuild";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -74,10 +74,8 @@ describe("published runtime entries", () => {
       const { stdout } = await run(process.execPath, [
         "--input-type=module",
         "-e",
-        // bb-fork(windows): Node's ESM loader needs a file URL for an
-        // bb-fork(windows): absolute Windows path.
-        "const { pathToFileURL } = await import('node:url'); const mod = await import(pathToFileURL(process.argv[1]).href); console.log(Object.keys(mod).length > 0);",
-        outputs.get(subpath),
+        "const mod = await import(process.argv[1]); console.log(Object.keys(mod).length > 0);",
+        pathToFileURL(outputs.get(subpath)).href,
       ]);
 
       expect(stdout.trim()).toBe("true");

@@ -1,13 +1,6 @@
-import {
-  beginArchiveEnvironmentThreadsTransaction,
-  rollbackArchiveThreadsTransaction,
-  settleArchiveThreadsTransaction,
-  type ArchiveThreadsTransaction,
-} from "../cache-owners/thread-state-cache-owner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Environment } from "@bb/domain";
 import type {
-  EnvironmentArchiveThreadsResponse,
   EnvironmentActionResponse,
   UpdateEnvironmentRequest,
 } from "@bb/server-contract";
@@ -25,10 +18,6 @@ import {
 type UpdateEnvironmentMutationRequest = {
   id: string;
 } & UpdateEnvironmentRequest;
-
-interface ArchiveEnvironmentThreadsMutationRequest {
-  id: string;
-}
 
 export function useRequestEnvironmentAction() {
   const queryClient = useQueryClient();
@@ -60,42 +49,6 @@ export function useRequestEnvironmentAction() {
       invalidateEnvironmentActionQueries({
         environmentId: variables.id,
         queryClient,
-      });
-    },
-  });
-}
-
-export function useArchiveEnvironmentThreads() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    meta: {
-      errorMessage: "Failed to archive threads.",
-    },
-    mutationFn: ({
-      id,
-    }: ArchiveEnvironmentThreadsMutationRequest): Promise<EnvironmentArchiveThreadsResponse> =>
-      sdk.environments.archiveThreads({ environmentId: id }),
-    onMutate: async ({ id }): Promise<ArchiveThreadsTransaction> =>
-      beginArchiveEnvironmentThreadsTransaction({
-        environmentId: id,
-        queryClient,
-      }),
-    onError: (_error, _variables, context) => {
-      rollbackArchiveThreadsTransaction({
-        queryClient,
-        transaction: context,
-      });
-    },
-    onSettled: (data, _error, variables, context) => {
-      invalidateEnvironmentActionQueries({
-        environmentId: variables.id,
-        queryClient,
-      });
-      settleArchiveThreadsTransaction({
-        queryClient,
-        response: data,
-        transaction: context,
       });
     },
   });

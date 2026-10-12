@@ -16,6 +16,7 @@ import {
   sql,
 } from "drizzle-orm";
 import {
+  getLatestThreadSequence,
   deleteThread,
   environments,
   events,
@@ -23,6 +24,7 @@ import {
   getHost,
   getLatestThreadInterruptedReason,
   getThread,
+  listThreadIdsStoppedSinceLastTurnStart,
   listThreadIdsWithLatestHostDaemonRestartInterruption,
   listThreadTurnInterruptionEventStates,
   markThreadStorageDeleted,
@@ -319,6 +321,7 @@ interface ReconcileDaemonReportedThreadsArgs {
   activeThreadIds: readonly string[];
   hostId: string;
   sameDaemonInstance: boolean;
+  undeliveredEventThreadIds: readonly string[];
 }
 
 interface DispatchSettledArchivedThreadProviderArchiveCommandArgs {
@@ -545,6 +548,7 @@ function appendProvisioningInterruptedEventInTransaction(
     entries: [buildProvisioningStoppedEntry()],
   });
   deps.hub.notifyThread(thread.id, ["events-appended"], {
+    timelineSequence: getLatestThreadSequence(deps.db, { threadId: thread.id }),
     eventTypes: ["system/thread-provisioning"],
   });
 }
@@ -561,6 +565,9 @@ function appendThreadInterruptedEventIfMissingInTransaction(
     reason: args.reason,
   });
   deps.hub.notifyThread(args.threadId, ["events-appended"], {
+    timelineSequence: getLatestThreadSequence(deps.db, {
+      threadId: args.threadId,
+    }),
     eventTypes: ["system/thread/interrupted"],
   });
   return true;
@@ -583,6 +590,9 @@ function markThreadStoppingWithEventInTransaction(
     reason: args.reason,
   });
   deps.hub.notifyThread(args.threadId, ["events-appended"], {
+    timelineSequence: getLatestThreadSequence(deps.db, {
+      threadId: args.threadId,
+    }),
     eventTypes: ["system/thread/interrupted"],
   });
   return true;
@@ -1046,10 +1056,17 @@ export function settleThreadStopCommandResult(
   }
 
   if (!args.report.ok) {
-    if (args.report.errorCode !== "unknown_environment") {
+    if (
+      args.report.errorCode !== "unknown_environment" &&
+      args.report.errorCode !== "host_unavailable" &&
+      args.report.errorCode !== "command_timeout"
+    ) {
       return emptyCommandResultSideEffects();
     }
 
+    settleDanglingBackgroundTasksForStoppedThreadInTransaction(args.deps, {
+      threadId: args.command.threadId,
+    });
     finalizeStoppedThreadInTransaction(args.deps, {
       threadId: args.command.threadId,
     });
@@ -1258,6 +1275,7 @@ function dispatchThreadStartFromRequest(
 
   if (result.completedProvisionSequence !== null) {
     deps.hub.notifyThread(args.threadId, ["events-appended"], {
+      timelineSequence: result.completedProvisionSequence,
       eventTypes: ["system/thread-provisioning"],
     });
   }
@@ -1562,6 +1580,13 @@ export async function stopThreadForCurrentState(
   }
 }
 
+function isUnansweredStopError(error: unknown): boolean {
+  return (
+    isHostUnavailableApiError(error) ||
+    (error instanceof ApiError && error.body.code === "command_timeout")
+  );
+}
+
 function manualThreadStopArgs(
   threadId: string,
   environment: RequestThreadStopForCurrentStateEnvironment,
@@ -1600,6 +1625,9 @@ async function stopThreadUntilSettled(
             afterInterrupt?.status === "idle" ||
             afterInterrupt?.status === "error"
           ) {
+            if (isUnansweredStopError(interrupted.failure.error)) {
+              return null;
+            }
             continue;
           }
         }
@@ -1731,6 +1759,9 @@ function interruptActiveTurnForThreadInTransaction(
     eventTypes.push("system/thread/interrupted");
   }
   deps.hub.notifyThread(args.threadId, ["events-appended", "status-changed"], {
+    timelineSequence: getLatestThreadSequence(deps.db, {
+      threadId: args.threadId,
+    }),
     eventTypes,
   });
 
@@ -1855,6 +1886,9 @@ function interruptActiveThreads(
       result.threadId,
       ["events-appended", "status-changed"],
       {
+        timelineSequence: getLatestThreadSequence(deps.db, {
+          threadId: result.threadId,
+        }),
         eventTypes,
         ...(thread ? buildThreadStatusChangeMetadata(deps, thread) : {}),
       },
@@ -2118,6 +2152,10 @@ export async function reconcileDaemonReportedThreads(
     }
   }
 
+  const threadIdsStillReporting = [
+    ...args.activeThreadIds,
+    ...args.undeliveredEventThreadIds,
+  ];
   const activeButMissing = deps.db
     .select({ environmentId: environments.id, id: threads.id })
     .from(threads)
@@ -2127,8 +2165,8 @@ export async function reconcileDaemonReportedThreads(
         eq(environments.hostId, args.hostId),
         eq(threads.status, "active"),
         isNull(threads.deletedAt),
-        args.activeThreadIds.length > 0
-          ? notInArray(threads.id, [...args.activeThreadIds])
+        threadIdsStillReporting.length > 0
+          ? notInArray(threads.id, threadIdsStillReporting)
           : undefined,
       ),
     )
@@ -2148,7 +2186,7 @@ export async function reconcileDaemonReportedThreads(
   }
 
   const inactiveButActive = deps.db
-    .select({ id: threads.id })
+    .select({ environmentId: environments.id, id: threads.id })
     .from(threads)
     .innerJoin(environments, eq(threads.environmentId, environments.id))
     .where(
@@ -2168,8 +2206,25 @@ export async function reconcileDaemonReportedThreads(
     }),
   );
 
+  const stoppedWhileAwayThreadIds = new Set(
+    listThreadIdsStoppedSinceLastTurnStart(deps.db, {
+      threadIds: inactiveButActive.map((thread) => thread.id),
+    }),
+  );
+
   for (const thread of inactiveButActive) {
     if (blockedRevivalThreadIds.has(thread.id)) {
+      continue;
+    }
+    if (stoppedWhileAwayThreadIds.has(thread.id)) {
+      if (inFlightThreadRpcGuard.claim(thread.id, "thread.stop")) {
+        dispatchThreadStopCommand(deps, {
+          environmentId: thread.environmentId,
+          hostId: args.hostId,
+          interruptionReason: "manual-stop",
+          threadId: thread.id,
+        });
+      }
       continue;
     }
     applyLoggedThreadLifecycleEvent(deps, {

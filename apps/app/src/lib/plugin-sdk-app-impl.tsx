@@ -15,21 +15,23 @@ import {
   usePluginCheckoutState,
 } from "@/components/plugin/usePluginBranchPickerState";
 import { PluginNewThreadComposer } from "@/components/plugin/PluginNewThreadComposer";
+import { VoiceInputTextarea } from "@/components/promptbox/VoiceInputTextarea";
 import { PluginProviderModelPicker } from "@/components/plugin/PluginProviderModelPicker";
 import { PluginPermissionModePicker } from "@/components/plugin/PluginPermissionModePicker";
 import { PluginSourceCode } from "@/components/plugin/PluginSourceCode";
-import { PluginThreadChat } from "@/components/plugin/PluginThreadChat";
+import { LazyPluginThreadChat } from "@/components/plugin/LazyPluginThreadChat";
 import { PluginThreadTitle } from "@/components/plugin/PluginThreadTitle";
+import { ThreadStatusGlyph } from "@/components/thread/ThreadStatusGlyph";
 import { PluginUrlLink } from "@/components/plugin/PluginUrlLink";
 import { ExperimentalFileLink } from "@/components/plugin/ExperimentalFileLink";
 import { usePluginId } from "@/components/plugin/plugin-context";
 import { useQuestionFormHost } from "@bb/shared-ui/question-form-host";
 import { definePluginApp } from "./plugin-app-definition";
-import { installDeprecatedAliases } from "./plugin-sdk-deprecated-aliases";
 import {
   useBbContext,
   useBbNavigate,
   useComposer,
+  useComposers,
   useComposerView,
   useEnvironmentProviders,
   useProviders,
@@ -55,63 +57,79 @@ import {
   useSidebarSplitLayout,
   useSidebarThreadSplit,
 } from "./plugin-sidebar-split";
+import { experimental_THREAD_ACTION_GROUPS } from "@get-bb/plugin-sdk";
 import {
-  useSidebarNavigation,
-  useSidebarNavigationSplit,
-} from "./plugin-sidebar-navigation";
-import { SidebarNavigationIcon } from "@/components/sidebar/SidebarNavigationModel";
+  ThreadActionsContextMenu,
+  ThreadActionsMenu,
+} from "@/components/thread/ThreadActionsMenu";
+import { useThreadActions } from "@/components/thread/ThreadActionsProvider";
+import {
+  useThreadActionEntries,
+  useThreadActionRegistrationInfos,
+} from "./thread-actions/thread-action-registry";
 import { useCodeTheme } from "./plugin-code-theme";
+import { copyToClipboard } from "./clipboard";
 
-export const pluginSdkAppImplementation = installDeprecatedAliases(
-  {
-    definePluginApp,
-    experimental_Icon: Icon,
-    experimental_ProviderIcon: ProviderIcon,
-    useBbContext,
-    experimental_usePluginId: usePluginId,
-    experimental_useQuestionFormHost: useQuestionFormHost,
-    useBbNavigate,
-    experimental_useAppPanel,
-    experimental_useFixedTabTarget,
-    useComposer,
-    useComposerView,
-    useRealtime,
-    useRealtimeConnectionState,
-    useRpc,
-    useSettings,
-    ThreadChat: PluginThreadChat,
-    Markdown: PluginMarkdown,
-    experimental_FileLink: ExperimentalFileLink,
-    UrlLink: PluginUrlLink,
-    experimental_NewThreadComposer: PluginNewThreadComposer,
-    experimental_ProviderModelPicker: PluginProviderModelPicker,
-    experimental_PermissionModePicker: PluginPermissionModePicker,
-    experimental_BranchPicker: PluginBranchPicker,
-    experimental_useBranches: usePluginBranches,
-    experimental_useCheckoutState: usePluginCheckoutState,
-    experimental_SourceCode: PluginSourceCode,
-    experimental_Diff: PluginDiff,
-    experimental_DiffChangeRail: DiffChangeRail,
-    experimental_DiffChangeRailToggle: DiffChangeRailToggle,
-    experimental_DiffChangeNav: DiffChangeNav,
-    experimental_useSidebarThreads: useSidebarThreads,
-    experimental_useSidebarThreadActions: useSidebarThreadActions,
-    experimental_useSidebarThreadPullRequest: useSidebarThreadPullRequest,
-    experimental_useSidebarThreadSplit: useSidebarThreadSplit,
-    experimental_useSidebarNavigation: useSidebarNavigation,
-    experimental_useSidebarNavigationSplit: useSidebarNavigationSplit,
-    experimental_SidebarNavigationIcon: SidebarNavigationIcon,
-    useSidebarThreadDraft,
-    useSidebarThreadDraftIds,
-    useSidebarThreadRowStatus,
-    useSidebarThreadRowStatuses,
-    useSidebarSplitLayout,
-    useSidebarThreadShortcut,
-    ThreadTitle: PluginThreadTitle,
-    useEnvironmentProviders,
-    useSdk,
-    experimental_useProviders: useProviders,
-    experimental_useCodeTheme: useCodeTheme,
-  } satisfies PluginSdkApp,
-  { experimental_UrlLink: "UrlLink" },
-);
+function useArchiveEnvironmentThreads(): (
+  environmentId: string,
+) => Promise<void> {
+  return useThreadActions().archiveEnvironmentThreads;
+}
+
+export const pluginSdkAppImplementation = {
+  definePluginApp,
+  experimental_Icon: Icon,
+  experimental_ProviderIcon: ProviderIcon,
+  useBbContext,
+  experimental_usePluginId: usePluginId,
+  experimental_useQuestionFormHost: useQuestionFormHost,
+  useBbNavigate,
+  experimental_useAppPanel,
+  experimental_useFixedTabTarget,
+  useComposer,
+  useComposers,
+  useComposerView,
+  useRealtime,
+  useRealtimeConnectionState,
+  useRpc,
+  useSettings,
+  ThreadChat: LazyPluginThreadChat,
+  Markdown: PluginMarkdown,
+  experimental_FileLink: ExperimentalFileLink,
+  UrlLink: PluginUrlLink,
+  experimental_NewThreadComposer: PluginNewThreadComposer,
+  experimental_VoiceInputTextarea: VoiceInputTextarea,
+  experimental_ProviderModelPicker: PluginProviderModelPicker,
+  experimental_PermissionModePicker: PluginPermissionModePicker,
+  experimental_BranchPicker: PluginBranchPicker,
+  experimental_useBranches: usePluginBranches,
+  experimental_useCheckoutState: usePluginCheckoutState,
+  experimental_SourceCode: PluginSourceCode,
+  experimental_Diff: PluginDiff,
+  experimental_useSidebarThreads: useSidebarThreads,
+  experimental_useSidebarThreadActions: useSidebarThreadActions,
+  experimental_useThreadActions: useThreadActionEntries,
+  experimental_useArchiveEnvironmentThreads: useArchiveEnvironmentThreads,
+  experimental_useThreadActionRegistrations: useThreadActionRegistrationInfos,
+  experimental_ThreadActionsMenu: ThreadActionsMenu,
+  experimental_ThreadActionsContextMenu: ThreadActionsContextMenu,
+  experimental_THREAD_ACTION_GROUPS,
+  experimental_useSidebarThreadPullRequest: useSidebarThreadPullRequest,
+  experimental_useSidebarThreadSplit: useSidebarThreadSplit,
+  useSidebarThreadDraft,
+  useSidebarThreadDraftIds,
+  useSidebarThreadRowStatus,
+  useSidebarThreadRowStatuses,
+  useSidebarSplitLayout,
+  useSidebarThreadShortcut,
+  ThreadTitle: PluginThreadTitle,
+  experimental_ThreadStatusGlyph: ThreadStatusGlyph,
+  useEnvironmentProviders,
+  useSdk,
+  experimental_useProviders: useProviders,
+  experimental_useCodeTheme: useCodeTheme,
+  experimental_copyToClipboard: copyToClipboard,
+  experimental_DiffChangeNav: DiffChangeNav,
+  experimental_DiffChangeRail: DiffChangeRail,
+  experimental_DiffChangeRailToggle: DiffChangeRailToggle,
+} satisfies PluginSdkApp;

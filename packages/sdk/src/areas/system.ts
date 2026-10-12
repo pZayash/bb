@@ -1,3 +1,4 @@
+import { mobileAppDownloads } from "@bb/domain";
 import type {
   MachineEnvironmentReplace,
   MachineEnvironmentSet,
@@ -7,6 +8,7 @@ import type {
   AppKeybindingOverrides,
   AppSettings,
   AppSettingsUpdate,
+  ExperimentUpdates,
   Experiments,
   UiPreferenceKey,
   UiPreferenceValue,
@@ -22,6 +24,7 @@ import type {
   SystemAttentionResponse,
   SystemConfigReloadResponse,
   SystemConfigResponse,
+  SystemMobileAppReleasesResponse,
   SystemExecutionOptionsQuery,
   SystemExecutionOptionsResponse,
   SystemCliSkillsStatusResponse,
@@ -57,7 +60,11 @@ export interface SystemExecutionOptionsArgs extends SystemExecutionOptionsQuery 
   signal?: AbortSignal;
 }
 
-export interface SystemUsageLimitsArgs extends SystemUsageLimitsQuery {
+export interface SystemUsageLimitsArgs extends Omit<
+  SystemUsageLimitsQuery,
+  "refresh"
+> {
+  refresh?: boolean;
   signal?: AbortSignal;
 }
 
@@ -172,7 +179,11 @@ export interface SystemArea {
     args: SystemVoiceTranscriptionArgs,
   ): Promise<SystemVoiceTranscriptionResult>;
   uiPreferences: SystemUiPreferencesArea;
-  updateExperiments(args: Experiments): Promise<SystemUpdateExperimentsResult>;
+  mobileAppDownloads(): typeof mobileAppDownloads;
+  mobileAppReleases(): Promise<SystemMobileAppReleasesResponse>;
+  updateExperiments(
+    args: ExperimentUpdates,
+  ): Promise<SystemUpdateExperimentsResult>;
   updateGeneralSettings(
     args: AppSettingsUpdate,
   ): Promise<SystemUpdateGeneralSettingsResult>;
@@ -340,6 +351,14 @@ export function createSystemArea(args: CreateSdkAreaArgs): SystemArea {
         await response.json(),
       );
     },
+    async mobileAppReleases() {
+      return transport.readJson(
+        transport.api.v1.system["mobile-app-releases"].$get(),
+      );
+    },
+    mobileAppDownloads() {
+      return { ...mobileAppDownloads };
+    },
     async updateExperiments(input) {
       return transport.readJson(
         transport.api.v1.settings.experiments.$put({ json: input }),
@@ -375,6 +394,12 @@ export function createSystemArea(args: CreateSdkAreaArgs): SystemArea {
             query: {
               hostId: input.hostId,
               providerId: input.providerId,
+              refresh:
+                input.refresh === undefined
+                  ? undefined
+                  : input.refresh
+                    ? "true"
+                    : "false",
             },
           },
           ...signalRequestArgs(input.signal),

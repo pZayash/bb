@@ -85,6 +85,10 @@ export const rpcContract = defineRpcContract({
   },
 });
 
+function hostPathApi(hostPath: string): path.PlatformPath {
+  return /^(?:[A-Za-z]:[\\/]|\\\\)/.test(hostPath) ? path.win32 : path.posix;
+}
+
 function isBundleStale(moduleDir: string, bundleDir: string): boolean {
   const builtAtMs = statSync(path.join(bundleDir, "editor.js")).mtimeMs;
   const entryDir = path.join(moduleDir, "monaco-bundle");
@@ -152,18 +156,6 @@ export default async function plugin(bb: BbPluginApi) {
     return assetLease;
   }
 
-  // bb-fork(windows): pick the path API from the root's own convention; a POSIX
-  // bb-fork(windows): remote root must not be joined with `\` just because the host is Windows.
-  function pathApiFor(value: string): typeof path.posix {
-    return /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("\\\\")
-      ? path.win32
-      : path.posix;
-  }
-
-  function hostJoin(root: string, ...segments: string[]): string {
-    return pathApiFor(root).join(root, ...segments);
-  }
-
   async function resolveTarget(
     source: z.infer<typeof sourceSchema>,
     filePath: string,
@@ -176,7 +168,7 @@ export default async function plugin(bb: BbPluginApi) {
         threadId: source.threadId,
       });
       return {
-        path: hostJoin(storageRootPath, filePath),
+        path: hostPathApi(storageRootPath).join(storageRootPath, filePath),
         rootPath: storageRootPath,
         hostId,
       };
@@ -199,7 +191,7 @@ export default async function plugin(bb: BbPluginApi) {
         throw new Error("This project has no matching source checkout");
       }
       return {
-        path: hostJoin(checkout.path, filePath),
+        path: hostPathApi(checkout.path).join(checkout.path, filePath),
         rootPath: checkout.path,
         hostId: checkout.hostId,
       };
@@ -212,7 +204,7 @@ export default async function plugin(bb: BbPluginApi) {
     });
 
     if (source.kind === "host") {
-      const api = pathApiFor(filePath);
+      const api = hostPathApi(filePath);
       return {
         path: filePath,
         rootPath: api.dirname(filePath),
@@ -224,14 +216,14 @@ export default async function plugin(bb: BbPluginApi) {
       throw new Error("This environment has no workspace path");
     }
     return {
-      path: hostJoin(environment.path, filePath),
+      path: hostPathApi(environment.path).join(environment.path, filePath),
       rootPath: environment.path,
       ...(environment.hostId ? { hostId: environment.hostId } : {}),
     };
   }
 
   function relativeTo(root: string, target: string): string {
-    const api = pathApiFor(root);
+    const api = hostPathApi(root);
     return api.relative(root, target) || api.basename(target);
   }
 

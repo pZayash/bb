@@ -24,6 +24,7 @@ import {
   type AddPluginInitial,
 } from "@/components/plugin/management/AddPluginDialog";
 import { BrowsePluginsTab } from "@/components/plugin/management/BrowsePluginsTab";
+import { PluginAttentionBanner } from "@/components/plugin/management/PluginAttentionBanner";
 import { InstalledPluginsTab } from "@/components/plugin/management/InstalledPluginsTab";
 import { PluginAuthorPage } from "@/components/plugin/management/PluginAuthorPage";
 import {
@@ -44,6 +45,7 @@ import {
 } from "./management/plugin-browse-discovery";
 import { PLUGINS_INSTALLED_DESCRIPTION } from "@/components/plugin/plugins-collection-copy";
 import { usePluginList } from "@/hooks/queries/plugin-settings-queries";
+import { pluginDetailLocation } from "@/components/plugin/plugin-detail-key";
 import {
   getPluginDetailRoutePath,
   getRootComposeRoutePath,
@@ -213,12 +215,11 @@ export function PluginsOverview({
 
   const openPlugin =
     onOpenPlugin ??
-    ((pluginId: string) =>
+    ((detailKey: string) =>
       navigate(
-        getPluginDetailRoutePath({
-          pluginId,
-          view: activeMode === "installed" ? "installed" : undefined,
-        }),
+        activeMode === "installed"
+          ? getPluginDetailRoutePath({ pluginId: detailKey, view: "installed" })
+          : pluginDetailLocation(detailKey, ""),
       ));
   let content: ReactNode;
   if (activeMode === "browse") {
@@ -269,6 +270,7 @@ export function PluginsOverview({
         }
       >
         <div className={cn("space-y-3", TOOLS_PAGE_BAND_CLASSES)}>
+          <PluginAttentionBanner plugins={plugins} onOpenPlugin={openPlugin} />
           {listQuery.isError ? (
             <ResourceListState
               state="error"

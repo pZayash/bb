@@ -55,13 +55,13 @@ const hostCommandWakePolicy = {
   "host.list_skills": "work",
   // bb-fork(windows): shell enumeration for the Start terminal picker.
   "host.list_terminal_shells": "never",
+  "host.read_workspace_agent_context": "work",
   "host.delete_skill": "work",
   "host.write_skill": "work",
   "host.install_global_skills": "work",
   "host.global_skills_status": "work",
   "host.inspect_git_source": "work",
   "host.list_branch_options": "work",
-  "host.file_metadata": "work",
   "host.read_file": "work",
   "host.read_file_chunk": "work",
   "host.read_file_relative": "work",
@@ -71,6 +71,7 @@ const hostCommandWakePolicy = {
   "provider.installation.status": "work",
   "provider.installation.run": "work",
   "provider.usage": "work",
+  "host.discover_repos": "work",
   "workspace.status": "work",
   // bb-fork(thread-start-ref): reading recent commits is a read, but it still needs the host.
   "workspace.commits": "work",

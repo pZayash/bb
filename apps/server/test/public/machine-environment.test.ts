@@ -1,6 +1,13 @@
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
-import { projects, environmentVariables, upsertHost, updateHost } from "@bb/db";
+import {
+  environmentVariables,
+  getAppSettings,
+  projects,
+  setAppSettings,
+  updateHost,
+  upsertHost,
+} from "@bb/db";
 import { createBbSdk } from "@bb/sdk/core";
 import { createHttpTransport } from "@bb/sdk/node";
 import { describe, expect, it, vi } from "vitest";
@@ -23,6 +30,10 @@ describe("machine environment settings", () => {
       ]);
     try {
       await withTestHarness(async (harness) => {
+        setAppSettings(harness.db, {
+          ...getAppSettings(harness.db),
+          machineGitCredentialsEnabled: true,
+        });
         const sdk = createBbSdk({
           transport: createHttpTransport({
             baseUrl: "http://localhost",
@@ -65,7 +76,6 @@ describe("machine environment settings", () => {
           "GH_TOKEN",
         );
         await expect(stat(path)).rejects.toMatchObject({ code: "ENOENT" });
-        // bb-fork(windows): Windows does not enforce POSIX file modes.
         if (process.platform !== "win32") {
           expect(
             (

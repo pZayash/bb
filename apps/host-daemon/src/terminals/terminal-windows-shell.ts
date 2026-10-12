@@ -37,9 +37,6 @@ const GIT_FOR_WINDOWS_DIRECTORY_UP_LEVELS = [
   path.join("..", "..", ".."),
 ] as const;
 
-const NO_SHELL_FOUND_MESSAGE =
-  "No shell was found on this machine. Install PowerShell 7 (pwsh), Windows PowerShell, or Git for Windows.";
-
 async function pathIsExecutable(filePath: string): Promise<boolean> {
   try {
     await access(filePath, constants.X_OK);
@@ -226,57 +223,24 @@ export async function listWindowsTerminalShells(): Promise<
   }));
 }
 
-export async function resolveWindowsTerminalShell(
-  shellId?: string,
-): Promise<string> {
+// bb-fork(windows): map a picker-selected shell id to its detected path;
+// bb-fork(windows): unknown or automatic ids defer to default resolution.
+export async function resolvePickedWindowsTerminalShell(
+  shellId: string,
+): Promise<string | null> {
+  if (shellId === AUTOMATIC_TERMINAL_SHELL_ID) return null;
   const shells = await listWindowsTerminalShells();
-  if (shells.length === 0) {
-    throw new Error(NO_SHELL_FOUND_MESSAGE);
-  }
-
-  if (shellId !== undefined && shellId !== AUTOMATIC_TERMINAL_SHELL_ID) {
-    const requested = shells.find((shell) => shell.id === shellId);
-    if (requested !== undefined) {
-      return requested.path;
-    }
-  }
-
-  const defaultShell = shells.find((shell) => shell.isDefault) ?? shells[0];
-  if (defaultShell === undefined) {
-    throw new Error(NO_SHELL_FOUND_MESSAGE);
-  }
-  return defaultShell.path;
+  return shells.find((shell) => shell.id === shellId)?.path ?? null;
 }
 
-export type TerminalShellFamily = "posix" | "powershell";
-
-export function terminalShellFamily(shell: string): TerminalShellFamily {
-  const name = shell.split(/[\\/]/).at(-1)?.toLowerCase() ?? "";
-  return name === "pwsh.exe" || name === "powershell.exe" || name === "pwsh"
-    ? "powershell"
-    : "posix";
-}
-
-function isWindowsBashShell(shell: string): boolean {
-  return (shell.split(/[\\/]/).at(-1)?.toLowerCase() ?? "") === "bash.exe";
-}
-
-export function windowsTerminalSpawnArgs(
+// bb-fork(windows): Git Bash opens as a login shell so PATH and profile
+// bb-fork(windows): customizations apply; anything else defers to the
+// bb-fork(windows): shared terminal-shell.ts argument builder.
+export function windowsShellArgsOverride(
   start: TerminalOpenStart,
   shell: string,
 ): string[] | null {
-  if (terminalShellFamily(shell) === "posix") {
-    // bb-fork(windows): Git Bash starts like its own launcher; command mode
-    // keeps the generic posix "-lc" arguments.
-    if (start.mode !== "shell" || !isWindowsBashShell(shell)) {
-      return null;
-    }
-    return ["--login", "-i"];
-  }
-  switch (start.mode) {
-    case "shell":
-      return ["-NoLogo"];
-    case "command":
-      return ["-NoLogo", "-Command", start.command];
-  }
+  const name = shell.split(/[\\/]/).at(-1)?.toLowerCase() ?? "";
+  if (name !== "bash.exe" || start.mode !== "shell") return null;
+  return ["--login", "-i"];
 }

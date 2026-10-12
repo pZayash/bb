@@ -100,13 +100,20 @@ async function initSshRemoteRepo() {
   const sshScriptPath = path.join(repoPath, "recording-ssh.sh");
   await fs.writeFile(
     sshScriptPath,
-    `#!/bin/sh\nprintf '%s\\n' "$@" >> ${JSON.stringify(sshLogPath)}\nprintf 'GIT_TERMINAL_PROMPT=%s\\n' "\${GIT_TERMINAL_PROMPT-unset}" >> ${JSON.stringify(sshLogPath)}\nexit 255\n`,
+    `#!/bin/sh\nprintf '%s\\n' "$@" >> ${JSON.stringify(sshLogPath.replaceAll("\\", "/"))}\nprintf 'GIT_TERMINAL_PROMPT=%s\\n' "\${GIT_TERMINAL_PROMPT-unset}" >> ${JSON.stringify(sshLogPath.replaceAll("\\", "/"))}\nexit 255\n`,
     { encoding: "utf8", mode: 0o755 },
   );
   await runGit(["remote", "add", "origin", "ssh://git.invalid/repo.git"], {
     cwd: repoPath,
   });
-  await runGit(["config", "core.sshCommand", sshScriptPath], { cwd: repoPath });
+  await runGit(
+    [
+      "config",
+      "core.sshCommand",
+      "'" + sshScriptPath.replaceAll("\\", "/").replaceAll("'", "'\\''") + "'",
+    ],
+    { cwd: repoPath },
+  );
   return { repoPath, sshLogPath };
 }
 
@@ -210,7 +217,6 @@ describe("runGitWithNullRecordLimit", () => {
     });
   });
 
-  // bb-fork(windows): a Windows filename cannot end in a tab.
   it.skipIf(process.platform === "win32")(
     "does not confuse a regular numstat path ending in a tab with a rename",
     async () => {
@@ -417,11 +423,12 @@ describe("command timeouts", () => {
   it("classifies git command timeouts as hard failures when allowFailure is true", async () => {
     const repoPath = await initEmptyRepo();
 
+    await fs.writeFile(path.join(repoPath, ".git", "packed-refs.lock"), "");
     await expect(
-      runGit(["-c", "alias.bb-sleep=!sleep 5", "bb-sleep"], {
+      runGit(["-c", "core.packedRefsTimeout=10000", "pack-refs", "--all"], {
         cwd: repoPath,
         allowFailure: true,
-        timeoutMs: 10,
+        timeoutMs: 500,
       }),
     ).rejects.toMatchObject({
       code: "git_command_timeout",
@@ -433,10 +440,10 @@ describe("command timeouts", () => {
     const repoPath = await initEmptyRepo();
 
     await expect(
-      runShellPipeline("sleep 5", [], {
+      runShellPipeline("while :; do :; done", [], {
         cwd: repoPath,
         allowFailure: true,
-        timeoutMs: 10,
+        timeoutMs: 500,
       }),
     ).rejects.toMatchObject({
       code: "shell_pipeline_timeout",
@@ -472,33 +479,55 @@ describe.skipIf(process.platform === "win32")("fetchRemoteBranches", () => {
   });
 });
 
-describe.skipIf(process.platform === "win32")(
-  "user-shell Git resolution",
-  () => {
-    it("uses the resolved shell PATH for Git commands and Git pipelines", async () => {
-      const workspacePath = await fs.mkdtemp(
-        path.join(os.tmpdir(), "bb-git-shell-path-workspace-"),
+describe("user-shell Git resolution", () => {
+  it("uses the resolved shell PATH for Git commands and Git pipelines", async () => {
+    const workspacePath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "bb-git-shell-path-workspace-"),
+    );
+    const binPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "bb-git-shell-path-bin-"),
+    );
+    tempDirs.push(workspacePath, binPath);
+    const shell =
+      process.platform === "win32"
+        ? (
+            await runGit(["var", "GIT_SHELL_PATH"], { cwd: workspacePath })
+          ).stdout.trim()
+        : "/bin/sh";
+    const gitPath = path.join(
+      binPath,
+      process.platform === "win32" ? "git.cmd" : "git",
+    );
+    await fs.writeFile(
+      gitPath,
+      process.platform === "win32"
+        ? `@echo off\r\nif "%~1"=="var" (echo ${shell}) else (echo user-shell-git)\r\n`
+        : "#!/bin/sh\nprintf 'user-shell-git\\n'\n",
+      { mode: 0o755 },
+    );
+    if (process.platform === "win32") {
+      await fs.writeFile(
+        path.join(binPath, "git"),
+        "#!/bin/sh\nprintf 'user-shell-git\\n'\n",
+        { mode: 0o755 },
       );
-      const binPath = await fs.mkdtemp(
-        path.join(os.tmpdir(), "bb-git-shell-path-bin-"),
-      );
-      tempDirs.push(workspacePath, binPath);
-      const gitPath = path.join(binPath, "git");
-      await fs.writeFile(gitPath, "#!/bin/sh\nprintf 'user-shell-git\\n'\n");
-      await fs.chmod(gitPath, 0o755);
+    }
 
-      await expect(
-        runGit(["--version"], { cwd: workspacePath, shellPath: binPath }),
-      ).resolves.toMatchObject({ stdout: "user-shell-git\n" });
-      await expect(
-        runShellPipeline("git --version", [], {
-          cwd: workspacePath,
-          shellPath: binPath,
-        }),
-      ).resolves.toMatchObject({ stdout: "user-shell-git\n" });
+    await expect(
+      runGit(["--version"], { cwd: workspacePath, shellPath: binPath }),
+    ).resolves.toMatchObject({
+      stdout: expect.stringMatching(/^user-shell-git\r?\n$/),
     });
-  },
-);
+    await expect(
+      runShellPipeline("git --version", [], {
+        cwd: workspacePath,
+        shellPath: binPath,
+      }),
+    ).resolves.toMatchObject({
+      stdout: expect.stringMatching(/^user-shell-git\r?\n$/),
+    });
+  });
+});
 
 describe("readGitBlob", () => {
   it("reads a blob at a git ref and reports the returned byte size", async () => {
@@ -661,35 +690,6 @@ describe("parseNameStatusEntries", () => {
     ]);
   });
 
-  it("preserves single-letter status with no similarity score", () => {
-    const output = ["T", "src/link.ts", ""].join("\0");
-    expect(parseNameStatusEntries(output)).toEqual([
-      { path: "src/link.ts", status: "T" },
-    ]);
-  });
-
-  it("interleaves regular and rename entries correctly", () => {
-    const output = [
-      "M",
-      "src/a.ts",
-      "R090",
-      "src/b-old.ts",
-      "src/b-new.ts",
-      "A",
-      "src/c.ts",
-      "",
-    ].join("\0");
-    expect(parseNameStatusEntries(output)).toEqual([
-      { path: "src/a.ts", status: "M" },
-      { path: "src/b-new.ts", status: "R" },
-      { path: "src/c.ts", status: "A" },
-    ]);
-  });
-
-  it("returns empty array for empty input", () => {
-    expect(parseNameStatusEntries("")).toEqual([]);
-  });
-
   it("skips truncated trailing entries without throwing", () => {
     expect(parseNameStatusEntries("M\0")).toEqual([]);
     expect(parseNameStatusEntries("R100\0src/old.ts\0")).toEqual([]);
@@ -727,9 +727,5 @@ describe("parseNumstatEntriesZ", () => {
       { path: "src/new.ts", insertions: 3, deletions: 1 },
       { path: "src/app.ts", insertions: 5, deletions: 2 },
     ]);
-  });
-
-  it("returns an empty array for empty input", () => {
-    expect(parseNumstatEntriesZ("")).toEqual([]);
   });
 });

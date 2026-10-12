@@ -1,5 +1,11 @@
+import { joinHostPathSegments } from "../services/lib/host-path.js";
 import { serverAccess } from "../services/machines/server-access.js";
-import { getNonDestroyedHost, updateHost } from "@bb/db";
+import {
+  getLatestSessionForHost,
+  getNonDestroyedHost,
+  getPublicProjectByLocalPathSource,
+  updateHost,
+} from "@bb/db";
 import {
   publicApiRoutes,
   typedRoutes,
@@ -55,6 +61,10 @@ import { registerHostTerminalShellsRoute } from "./hosts-terminal-shells.js";
 import { prepareReconnect } from "../services/machines/reconnect.js";
 import { emitPluginHostDeleted } from "../services/plugins/plugin-thread-events.js";
 
+const DISCOVERED_REPOS_MAX_DEPTH = 5;
+const DISCOVERED_REPOS_SINCE_DAYS = 30;
+const DISCOVERED_REPOS_LIMIT = 10;
+
 const PROVIDER_CLI_INSTALL_TIMEOUT_MS = 15 * 60 * 1000;
 const FOLDER_PICKER_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -109,6 +119,7 @@ async function revokeConnectMachineCredential(
       "revokeMachine",
       handler.value,
       { machineId },
+      { kind: "client" },
     );
     if (!result.ok) throw new Error(result.error.message);
   } catch (error) {
@@ -138,7 +149,7 @@ export function registerHostRoutes(
     return context.json(await submitMachine(deps, payload), 201);
   });
 
-  post(routes.createJoinCode, async (context, payload) => {
+  post(routes.createJoinCode, async (context) => {
     assertHostManagementAllowed(context);
     const issued = await issueHostEnrollKey(deps, {
       enrollSource: "public-multi-machine",
@@ -162,13 +173,19 @@ export function registerHostRoutes(
     ),
   );
 
-  get(routes.get, (context) =>
-    context.json({
-      ...requireNonDestroyedHostWithStatus(deps, context.req.param("id")),
-      connectMachineId: requireMutableHost(deps, context.req.param("id"))
-        .connectMachineId,
-    }),
-  );
+  get(routes.get, (context) => {
+    const hostId = context.req.param("id");
+    const host = requireNonDestroyedHostWithStatus(deps, hostId);
+    const session = getLatestSessionForHost(deps.db, { hostId });
+    return context.json({
+      ...host,
+      connectMachineId: requireMutableHost(deps, hostId).connectMachineId,
+      threadStorageRootPath:
+        session === null
+          ? null
+          : joinHostPathSegments(session.dataDir, "thread-storage"),
+    });
+  });
 
   get(routes.enrollmentCommand, async (context) => {
     assertHostManagementAllowed(context);
@@ -320,6 +337,33 @@ export function registerHostRoutes(
       );
     }
     return context.json({ ok: true });
+  });
+
+  get(routes.discoveredRepos, async (context) => {
+    const hostId = context.req.param("id");
+    assertUsableHostId(deps, { hostId });
+    const result = await callHostRetryableOnlineRpc(deps, {
+      hostId,
+      timeoutMs: COMMAND_TIMEOUT_MS,
+      command: {
+        type: "host.discover_repos",
+        maxDepth: DISCOVERED_REPOS_MAX_DEPTH,
+        sinceDays: DISCOVERED_REPOS_SINCE_DAYS,
+        limit: DISCOVERED_REPOS_LIMIT,
+      },
+    });
+    return context.json({
+      repos: result.repos.map((repo) => ({
+        ...repo,
+        projectId:
+          getPublicProjectByLocalPathSource(deps.db, {
+            type: "local_path",
+            hostId,
+            path: repo.path,
+          })?.id ?? null,
+      })),
+      truncated: result.truncated,
+    });
   });
 
   get(routes.directory, async (context, query) => {

@@ -1,8 +1,11 @@
 import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  assertScriptProcessTreeStopped,
+  buildLifecycleScriptCommand,
+  LifecycleScriptTerminationUnverifiedError,
   runSetupScript,
   runTeardownScript,
 } from "./environment-lifecycle-script.js";
@@ -32,9 +35,6 @@ describe("core environment scripts", () => {
   it.each(["setup", "teardown"] as const)(
     "supplies stdin EOF so %s continues to completion",
     async (kind) => {
-      if (process.platform === "win32") {
-        return;
-      }
       const workspacePath = await workspace(
         kind,
         'cat >/dev/null\nprintf complete > marker\nprintf "\\342"\nsleep 0.05\nprintf "\\234\\223\\n"\nprintf "done\\n" >&2\n',
@@ -43,8 +43,11 @@ describe("core environment scripts", () => {
       const run = kind === "setup" ? runSetupScript : runTeardownScript;
       const result = await run({
         workspacePath,
-        timeoutMs: 1000,
-        env: { PATH: "/usr/bin:/bin" },
+        timeoutMs: process.platform === "win32" ? 15_000 : 1000,
+        env:
+          process.platform === "win32"
+            ? process.env
+            : { PATH: "/usr/bin:/bin" },
         onProgress: (entry) => output.push(entry.text),
       });
       expect(result).toEqual({ ran: true });
@@ -57,12 +60,9 @@ describe("core environment scripts", () => {
   );
 
   it("runs in the environment directory and streams stdout and stderr", async () => {
-    if (process.platform === "win32") {
-      return;
-    }
     const workspacePath = await workspace(
       "setup",
-      "pwd > marker\nprintf 'first\\rsecond\\n'\necho stderr >&2\n",
+      "{ pwd -W 2>/dev/null || pwd; } > marker\nprintf 'first\\rsecond\\n'\necho stderr >&2\n",
     );
     const output: string[] = [];
     await runSetupScript({
@@ -70,18 +70,17 @@ describe("core environment scripts", () => {
       timeoutMs: 5000,
       onProgress: (entry) => output.push(entry.text),
     });
-    expect((await readFile(join(workspacePath, "marker"), "utf8")).trim()).toBe(
-      await realpath(workspacePath),
-    );
+    expect(
+      (await readFile(join(workspacePath, "marker"), "utf8"))
+        .trim()
+        .replaceAll("/", sep),
+    ).toBe(await realpath(workspacePath));
     expect(output).toContain("second");
     expect(output).toContain("stderr");
     expect(output).toContain("Running .bb-env-setup.sh");
   });
 
   it("surfaces output before setup failure", async () => {
-    if (process.platform === "win32") {
-      return;
-    }
     const workspacePath = await workspace(
       "setup",
       "echo failed-details >&2\nexit 7\n",
@@ -100,9 +99,6 @@ describe("core environment scripts", () => {
   it.each(["setup", "teardown"] as const)(
     "enforces the %s timeout",
     async (kind) => {
-      if (process.platform === "win32") {
-        return;
-      }
       const workspacePath = await workspace(
         kind,
         "echo before-timeout\nsleep 120\n",
@@ -124,9 +120,6 @@ describe("core environment scripts", () => {
   );
 
   it("reports teardown failure without rejecting removal", async () => {
-    if (process.platform === "win32") {
-      return;
-    }
     const workspacePath = await workspace(
       "teardown",
       "echo teardown-details\nexit 9\n",
@@ -144,9 +137,6 @@ describe("core environment scripts", () => {
   });
 
   it("cancels a running setup before returning to cleanup", async () => {
-    if (process.platform === "win32") {
-      return;
-    }
     const workspacePath = await workspace("setup", "echo started\nsleep 120\n");
     const controller = new AbortController();
     await expect(
@@ -161,9 +151,106 @@ describe("core environment scripts", () => {
     ).rejects.toThrow("cancelled");
   });
 
-  // bb-fork(windows): native Windows hooks run via PowerShell; the
-  // "unsupported on Windows" contract is replaced by
-  // windows-lifecycle-script.test.ts.
+  it.runIf(process.platform === "win32")(
+    "stops the programs Git Bash started when a Windows hook is cancelled",
+    async () => {
+      const workspacePath = await workspace(
+        "setup",
+        [
+          "sleep 120 &",
+          "sleeper=$!",
+          'node -e "setTimeout(() => {}, 120000)" &',
+          "native=$!",
+          "sleep 1",
+          'read -r sleeper_winpid <"/proc/$sleeper/winpid"',
+          'read -r native_winpid <"/proc/$native/winpid"',
+          'echo "pids $sleeper_winpid $native_winpid"',
+          "wait",
+          "",
+        ].join("\n"),
+      );
+      const controller = new AbortController();
+      let pids: number[] = [];
+      await expect(
+        runSetupScript({
+          workspacePath,
+          timeoutMs: 15_000,
+          signal: controller.signal,
+          onProgress: (entry) => {
+            if (!entry.text.startsWith("pids ")) return;
+            pids = entry.text.split(" ").slice(1).map(Number);
+            controller.abort();
+          },
+        }),
+      ).rejects.toThrow("cancelled");
+      expect(pids).toHaveLength(2);
+      const alive = pids.filter((pid) => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      expect(alive).toEqual([]);
+    },
+    20_000,
+  );
+
+  it("accepts a stopped script only when its whole process tree is confirmed gone", async () => {
+    await expect(
+      assertScriptProcessTreeStopped(undefined, ".bb-env-setup.sh"),
+    ).resolves.toBeUndefined();
+    await expect(
+      assertScriptProcessTreeStopped(
+        Promise.resolve({ treeTermination: "confirmed" }),
+        ".bb-env-setup.sh",
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      assertScriptProcessTreeStopped(
+        Promise.resolve({ treeTermination: "unverified" }),
+        ".bb-env-setup.sh",
+      ),
+    ).rejects.toBeInstanceOf(LifecycleScriptTerminationUnverifiedError);
+    await expect(
+      assertScriptProcessTreeStopped(
+        Promise.reject(new Error("Process did not exit after termination")),
+        ".bb-env-teardown.sh",
+      ),
+    ).rejects.toThrow(
+      ".bb-env-teardown.sh was stopped, but bb could not confirm that all of its processes exited",
+    );
+  });
+
+  it("runs hooks on Windows with the bash that Git installs", () => {
+    expect(
+      buildLifecycleScriptCommand({
+        kind: "setup",
+        scriptName: ".bb-env-setup.sh",
+        platform: "win32",
+        scriptPath: "C:\\src\\repo\\.bb-env-setup.sh",
+        windowsBashPath: "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+      }),
+    ).toEqual({
+      command: "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+      args: ["C:\\src\\repo\\.bb-env-setup.sh"],
+      text: "bash .bb-env-setup.sh",
+      pathPrefix: ["C:\\Program Files\\Git\\usr\\bin"],
+    });
+  });
+
+  it("names Git for Windows when no bash is available", () => {
+    expect(() =>
+      buildLifecycleScriptCommand({
+        kind: "teardown",
+        scriptName: ".bb-env-teardown.sh",
+        platform: "win32",
+        scriptPath: "C:\\src\\repo\\.bb-env-teardown.sh",
+        windowsBashPath: null,
+      }),
+    ).toThrow(".bb-env-teardown.sh needs Git for Windows");
+  });
 
   it("skips absent scripts", async () => {
     const workspacePath = await workspace("setup", "exit 0\n");

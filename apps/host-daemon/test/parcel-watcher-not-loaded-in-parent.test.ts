@@ -91,7 +91,6 @@ describe("daemon bundle keeps @parcel/watcher out of the parent process", () => 
         preload,
         "--input-type=module",
         "--eval",
-        // bb-fork(windows): ESM import needs a file URL, not a drive path.
         `await import(${JSON.stringify(pathToFileURL(outfile).href)}); console.log("[imported]");`,
       ],
       { cwd: workspaceRoot, env: { ...process.env, NODE_PATH: "" } },
@@ -101,7 +100,7 @@ describe("daemon bundle keeps @parcel/watcher out of the parent process", () => 
       .split("\n")
       .filter((line) => line.startsWith("[dlopen] "));
     expect(
-      loadedAddons.filter((line) => /@parcel[/+]watcher/u.test(line)),
+      loadedAddons.filter((line) => /@parcel[/+\\]watcher/u.test(line)),
       `@parcel/watcher addon loaded on import:\n${loadedAddons.join("\n")}`,
     ).toEqual([]);
   });

@@ -83,6 +83,7 @@ async function writeHostPackage(root: string, readme: string): Promise<void> {
   await writeFile(join(root, "README.md"), readme);
   for (const fileName of [
     "bb",
+    "bb.cmd",
     "bb-parcel-watcher-child.mjs",
     "bb-plugin-host-worker.mjs",
     "bb-provider-bridge-worker.mjs",
@@ -141,7 +142,9 @@ describe("bb-app artifact service (desktop packaging)", () => {
 
       await expect(service.getVersion()).resolves.toBe("1.2.3-test");
       const artifact = await service.getArtifact();
-      const listing = (await tar(["-tzf", artifact.path])).stdout.split("\n");
+      const listing = (
+        await tar(["-tzf", artifact.path])
+      ).stdout.split(/\r?\n/u);
       expect(listing).toEqual(
         expect.arrayContaining([
           "package/package.json",
@@ -149,6 +152,7 @@ describe("bb-app artifact service (desktop packaging)", () => {
           "package/dist/bb-host-daemon.js",
           "package/dist/bb.js",
           "package/host-daemon/dist/bb",
+          "package/host-daemon/dist/bb.cmd",
           "package/host-daemon/dist/bb-chunks/chunk-TEST.js",
           "package/host-daemon/dist/bb-parcel-watcher-child.mjs",
           "package/host-daemon/dist/bb-plugin-host-worker.mjs",
@@ -183,9 +187,9 @@ describe("bb-app artifact service (desktop packaging)", () => {
       }
 
       expect(artifact.size).toBeGreaterThan(0);
-      expect((await tar(["-tzf", artifact.path])).stdout.split("\n")).toContain(
-        "package/host-daemon/dist/daemon-bundle.mjs",
-      );
+      expect(
+        (await tar(["-tzf", artifact.path])).stdout.split(/\r?\n/u),
+      ).toContain("package/host-daemon/dist/daemon-bundle.mjs");
     },
     ARTIFACT_LIFECYCLE_TIMEOUT_MS,
   );
@@ -220,8 +224,9 @@ describe("bb-app artifact service (desktop packaging)", () => {
     });
 
     await expect(service.getArtifact()).rejects.toMatchObject({
-      // bb-fork(windows): copying a directory reports EPERM on Windows.
-      code: expect.stringMatching(/^(EISDIR|ENOTSUP|EPERM)$/u),
+      code: expect.stringMatching(
+        process.platform === "win32" ? /^EPERM$/u : /^(EISDIR|ENOTSUP)$/u,
+      ),
       path: readmePath,
     });
   });
@@ -258,7 +263,9 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
 
       const artifact = await service.getArtifact();
       await expect(service.getVersion()).resolves.toBe("1.2.3-test");
-      const listing = (await tar(["-tzf", artifact.path])).stdout.split("\n");
+      const listing = (
+        await tar(["-tzf", artifact.path])
+      ).stdout.split(/\r?\n/u);
       expect(listing).toContain("package/package.json");
       expect(listing).toContain("package/dist/bb-app.js");
       expect(listing).toContain("package/dist/bb.js");
@@ -277,6 +284,9 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
       expect(packedPackageJson).toMatchObject({
         name: "bb-app",
         version: "1.2.3-test",
+        os: isRepoMode(mode)
+          ? ["darwin", "linux"]
+          : ["darwin", "linux", "win32"],
         bin: {
           bb: "dist/bb.js",
           "bb-app": "dist/bb-app.js",

@@ -277,9 +277,10 @@ it("applies hook NODE_ENV and PATH contributions after sanitizing inherited stat
   options.emitEnvironmentHookProgress = (message) => {
     output.push(message.entry.text);
   };
+  const contributedPath = "/review-toolchain:/usr/bin:/bin";
   const contributedEnv = Object.entries({
     NODE_ENV: "production",
-    PATH: "/review-toolchain:/usr/bin:/bin",
+    PATH: contributedPath,
   }).map(([name, value]) => ({
     name,
     value,

@@ -81,7 +81,6 @@ describe("toPluginSidebarThread", () => {
           hasPendingInteraction: true,
           runtime: {
             displayStatus: "active",
-            hostReconnectGraceExpiresAt: null,
           },
         }),
       ).indicator,
@@ -92,7 +91,6 @@ describe("toPluginSidebarThread", () => {
         makeThread({
           runtime: {
             displayStatus: "active",
-            hostReconnectGraceExpiresAt: null,
           },
         }),
       ).indicator,
@@ -187,8 +185,7 @@ describe("toPluginSidebarThread", () => {
       makeThread({
         status: "active",
         runtime: {
-          displayStatus: "host-reconnecting",
-          hostReconnectGraceExpiresAt: 99,
+          displayStatus: "waiting-for-host",
         },
         lifecycleOwnerThreadId: "thr_owner",
         sourceThreadId: "thr_source",
@@ -196,7 +193,7 @@ describe("toPluginSidebarThread", () => {
       }),
     );
     expect(mapped.status).toBe("active");
-    expect(mapped.runtimeStatus).toBe("host-reconnecting");
+    expect(mapped.runtimeStatus).toBe("waiting-for-host");
     expect(mapped.lifecycleOwnerThreadId).toBe("thr_owner");
     expect(mapped.sourceThreadId).toBe("thr_source");
   });

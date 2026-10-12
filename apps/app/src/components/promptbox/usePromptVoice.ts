@@ -1,7 +1,8 @@
-import { useCallback, useMemo, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { useVoiceInput } from "@/hooks/useVoiceInput";
 import { transcribeVoiceInput } from "@/lib/api";
 import type { PromptDraftState } from "@bb/client-core";
+import type { PluginComposerHost } from "@/components/plugin/plugin-composer-host";
 import type { PromptBoxHandle, PromptVoiceConfig } from "./PromptBoxInternal";
 
 async function requestVoiceTranscription({
@@ -26,12 +27,30 @@ export function usePromptVoice(
   draft?: {
     getCurrent: () => PromptDraftState;
     setDraft: (draft: PromptDraftState) => void;
+    submit?: PluginComposerHost["submit"];
   },
 ): PromptVoiceConfig {
+  const sendPendingRef = useRef(false);
+  const stoppedRef = useRef(false);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const onTranscript = useCallback(
     (text: string) => {
-      if (promptBoxRef.current) {
-        promptBoxRef.current.insertTextAtCursor(text);
+      const send = sendPendingRef.current;
+      sendPendingRef.current = false;
+      stoppedRef.current = false;
+      if (mountedRef.current && promptBoxRef.current) {
+        if (send) {
+          promptBoxRef.current.sendVoiceTranscript(text);
+        } else {
+          promptBoxRef.current.insertTextAtCursor(text);
+        }
         return;
       }
       if (!draft) return;
@@ -42,6 +61,7 @@ export function usePromptVoice(
         ...current,
         text: `${current.text}${separator}${text}`,
       });
+      if (send) return draft.submit?.({ experimental_data: null }, undefined);
     },
     [draft, promptBoxRef],
   );
@@ -69,22 +89,53 @@ export function usePromptVoice(
     getPromptContext,
   });
 
+  const stop = useCallback(() => {
+    if (voiceInput.state !== "recording" || stoppedRef.current) return;
+    stoppedRef.current = true;
+    sendPendingRef.current = false;
+    voiceInput.stop();
+  }, [voiceInput]);
+  const send = useCallback(() => {
+    if (voiceInput.state !== "recording" || stoppedRef.current) return;
+    stoppedRef.current = true;
+    sendPendingRef.current = true;
+    voiceInput.stop();
+  }, [voiceInput]);
+  const cancel = useCallback(() => {
+    sendPendingRef.current = false;
+    stoppedRef.current = false;
+    voiceInput.cancel();
+  }, [voiceInput]);
+  useEffect(() => {
+    if (
+      voiceInput.state !== "recording" &&
+      voiceInput.state !== "transcribing"
+    ) {
+      stoppedRef.current = false;
+      sendPendingRef.current = false;
+    }
+  }, [voiceInput.state]);
+
   return useMemo<PromptVoiceConfig>(
     () => ({
       state: voiceInput.state,
+      microphoneWarning: voiceInput.microphoneWarning,
       isSupported: voiceInput.isSupported,
       stream: voiceInput.stream,
       start: voiceInput.start,
-      stop: voiceInput.stop,
-      cancel: voiceInput.cancel,
+      stop,
+      send,
+      cancel,
     }),
     [
       voiceInput.state,
+      voiceInput.microphoneWarning,
       voiceInput.isSupported,
       voiceInput.stream,
       voiceInput.start,
-      voiceInput.stop,
-      voiceInput.cancel,
+      stop,
+      send,
+      cancel,
     ],
   );
 }

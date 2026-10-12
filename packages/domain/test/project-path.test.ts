@@ -4,10 +4,10 @@ import {
   getProjectPathValidationMessage,
   INVALID_PROJECT_PATH_MESSAGE,
   isAbsoluteProjectPath,
-  isNativeWindowsProjectPath,
   normalizeProjectPathInput,
   PROJECT_PATH_ROOT_MESSAGE,
 } from "../src/project-path.js";
+import { isNativeWindowsProjectPath } from "../src/project-path-windows.js";
 
 describe("project-path", () => {
   const windowsProjectPath = "C:\\Users\\michael\\bb";
@@ -26,9 +26,10 @@ describe("project-path", () => {
     expect(deriveProjectNameFromPath(uncProjectPath)).toBe("bb");
   });
 
-  it("does not derive a project name from filesystem roots", () => {
+  it("does not derive a project name from network paths or filesystem roots", () => {
     expect(deriveProjectNameFromPath("/")).toBe("");
     expect(deriveProjectNameFromPath(windowsRootPath)).toBe("");
+    expect(deriveProjectNameFromPath("C:")).toBe("");
   });
 
   it("recognizes supported absolute paths", () => {
@@ -54,9 +55,19 @@ describe("project-path", () => {
       "/mnt/c/Users/michael/bb",
     );
     expect(normalizeProjectPathInput("/")).toBe("/");
-    expect(normalizeProjectPathInput(`${windowsProjectPath}\\`)).toBe(
+    expect(normalizeProjectPathInput(windowsRootPath)).toBe(windowsRootPath);
+  });
+
+  it("stores one spelling for a Windows drive path", () => {
+    for (const spelling of [
+      windowsProjectPath,
       `${windowsProjectPath}\\`,
-    );
+      "c:\\Users\\michael\\bb",
+      "C:/Users/michael/bb/",
+      "C:\\Users\\\\michael\\.\\bb",
+    ]) {
+      expect(normalizeProjectPathInput(spelling)).toBe(windowsProjectPath);
+    }
   });
 
   it("returns clear validation messages for unsupported path formats", () => {
@@ -64,18 +75,18 @@ describe("project-path", () => {
     expect(
       getProjectPathValidationMessage("/mnt/c/Users/michael/bb"),
     ).toBeNull();
+    expect(getProjectPathValidationMessage(windowsProjectPath)).toBeNull();
     expect(getProjectPathValidationMessage("/")).toBe(
+      PROJECT_PATH_ROOT_MESSAGE,
+    );
+    expect(getProjectPathValidationMessage(windowsRootPath)).toBe(
       PROJECT_PATH_ROOT_MESSAGE,
     );
     expect(getProjectPathValidationMessage("relative/path")).toBe(
       INVALID_PROJECT_PATH_MESSAGE,
     );
-    expect(getProjectPathValidationMessage(windowsProjectPath)).toBeNull();
     expect(getProjectPathValidationMessage(uncProjectPath)).toBeNull();
-    expect(getProjectPathValidationMessage(windowsRootPath)).toBe(
-      PROJECT_PATH_ROOT_MESSAGE,
-    );
-    expect(getProjectPathValidationMessage("C:Users\\michael\\bb")).toBe(
+    expect(getProjectPathValidationMessage("C:Users\michael\bb")).toBe(
       INVALID_PROJECT_PATH_MESSAGE,
     );
   });

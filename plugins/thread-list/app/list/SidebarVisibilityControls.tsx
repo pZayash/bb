@@ -29,12 +29,13 @@ import {
 } from "@/components/ui/coarse-pointer-sizing";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
 import { SIDEBAR_DISCLOSURE_ACTION_CLASS } from "@/components/ui/chrome-style-tokens";
+import type { SidebarVisibilityItem } from "@/components/ui/sidebar-visibility-customize";
 import { cn } from "@/lib/utils";
 import {
   PROJECT_LIST_ACTION_BUTTON_CLASS,
   SIDEBAR_ROW_SELECTED_STATE_CLASS,
-} from "../rows/sidebarRowClasses.js";
-import { CONTEXT_SELECTION_SURFACE_CLASS } from "../ui/context-selection.js";
+} from "@/components/ui/sidebar-row-classes";
+import { CONTEXT_SELECTION_SURFACE_CLASS } from "@/components/ui/context-selection";
 
 const OVERFLOW_ROW_BUTTON_CLASS =
   "w-full justify-start gap-2 rounded-sm px-2 text-xs font-normal hover:bg-state-hover focus-visible:bg-state-hover";
@@ -48,18 +49,6 @@ const CompactOverflowContext = createContext<{
   page: CompactOverflowPage | null;
   setPage: (page: CompactOverflowPage | null) => void;
 } | null>(null);
-
-export interface SidebarVisibilityItem {
-  id: string;
-  title: string;
-  icon?: ReactNode;
-  disabled?: boolean;
-}
-
-export interface SidebarActivationModifiers {
-  metaKey: boolean;
-  ctrlKey: boolean;
-}
 
 export function SidebarCustomizeActionContent({ label }: { label: string }) {
   return (
@@ -128,7 +117,7 @@ export function SidebarMore({
                   className={cn(
                     PROJECT_LIST_ACTION_BUTTON_CLASS,
                     SIDEBAR_DISCLOSURE_ACTION_CLASS,
-                    "w-full hover:text-sidebar-foreground focus-visible:text-sidebar-foreground data-[state=open]:text-sidebar-foreground",
+                    "w-full hover:text-sidebar-foreground focus-visible:text-sidebar-foreground data-[state=open]:text-sidebar-foreground max-md:pointer-coarse:[&_[data-sidebar-more-activity]_[data-icon-root]]:size-4",
                     selected && SIDEBAR_ROW_SELECTED_STATE_CLASS,
                     isMenuOpen && "bg-sidebar-accent",
                   )}
@@ -139,6 +128,7 @@ export function SidebarMore({
                   <span className="min-w-0 truncate text-left">More</span>
                   {activity ? (
                     <span
+                      data-sidebar-more-activity=""
                       className={cn(
                         "ml-auto inline-flex shrink-0 items-center justify-center",
                         COARSE_POINTER_ROW_ACTION_SIZE_CLASS,
@@ -366,5 +356,3 @@ export function SidebarOverflowItem({
     </DropdownMenuSub>
   );
 }
-
-export { SidebarVisibilityCustomize } from "./SidebarVisibilityCustomize.js";

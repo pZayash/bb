@@ -68,9 +68,8 @@ describe("auth state", () => {
     await expect(fs.readFile(authStatePath, "utf8")).resolves.not.toContain(
       "serverUrl",
     );
-    const stats = await fs.stat(authStatePath);
-    // bb-fork(windows): Windows does not enforce POSIX file modes.
     if (process.platform !== "win32") {
+      const stats = await fs.stat(authStatePath);
       expect(stats.mode & 0o777).toBe(0o600);
     }
   });

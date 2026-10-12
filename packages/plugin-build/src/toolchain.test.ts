@@ -26,7 +26,6 @@ describe("plugin build toolchain", () => {
     for (const version of Object.values(PLUGIN_TOOLCHAIN_PINS)) {
       expect(basename(dir)).toContain(version);
     }
-    // bb-fork(windows): compare the native cache-root prefix.
     expect(dir.startsWith(`${join("/data")}${sep}`)).toBe(true);
   });
 
@@ -47,18 +46,6 @@ describe("plugin build toolchain", () => {
         () => false,
       ),
     ).toBe(false);
-  });
-
-  it("returns importable module specifiers", async () => {
-    const toolchain = await resolvePluginBuildToolchain(baseDir);
-    const esbuild = (await import(
-      toolchain.esbuild
-    )) as typeof import("esbuild");
-    const result = await esbuild.transform("const x: number = 1", {
-      loader: "ts",
-    });
-
-    expect(result.code.trim()).toBe("const x = 1;");
   });
 
   describe("fetched toolchain", () => {

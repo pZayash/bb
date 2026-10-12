@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -61,7 +68,6 @@ describe("machine enroll", () => {
     expect(h.fetchFn.mock.calls[1]?.[1]?.headers).toMatchObject({
       authorization: "Bearer replacement-bootstrap",
     });
-    // bb-fork(windows): Windows does not enforce POSIX file modes.
     if (process.platform !== "win32") {
       expect((await stat(join(h.dir, "auth.json"))).mode & 0o777).toBe(0o600);
     }
@@ -74,7 +80,6 @@ describe("machine enroll", () => {
     expect(h.fetchFn.mock.calls[0]?.[1]?.headers).toMatchObject({
       authorization: "Bearer private-bootstrap",
     });
-    // bb-fork(windows): Windows does not enforce POSIX file modes.
     if (process.platform !== "win32") {
       expect((await stat(join(h.dir, "auth.json"))).mode & 0o777).toBe(0o600);
     }

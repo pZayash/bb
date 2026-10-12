@@ -46,11 +46,11 @@ export interface TimelineWindowedItemsProps {
   getScrollElement: (() => HTMLElement | null) | null;
   itemKeys: readonly string[];
   measurements: Map<string, number>;
-  minItemCount?: number;
   renderItem: (
     index: number,
     state: TimelineWindowedItemRenderState,
   ) => ReactNode;
+  pinnedToEnd: boolean;
 }
 
 export function TimelineWindowedItemsLoader(props: TimelineWindowedItemsProps) {

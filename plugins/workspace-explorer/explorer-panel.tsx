@@ -10,7 +10,7 @@ import { useBbNavigate, useComposer, useRpc } from "@get-bb/plugin-sdk/app";
 import { explorerRpcContract } from "./shared/contract.js";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@bb/shared-ui/button";
-import { COARSE_POINTER_HOVER_REVEAL_VISIBLE_CLASS } from "@bb/shared-ui/coarse-pointer-visibility";
+import { HOVER_REVEAL_NO_HOVER_VISIBLE_CLASS } from "@bb/shared-ui/hover-reveal";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -105,7 +105,7 @@ function TreeNodeRow({
             title="Add to chat"
             className={cn(
               "mr-1 flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100 group-focus-within:opacity-100 max-md:pointer-coarse:size-7",
-              COARSE_POINTER_HOVER_REVEAL_VISIBLE_CLASS,
+              HOVER_REVEAL_NO_HOVER_VISIBLE_CLASS,
             )}
             onClick={onAddToChat}
           >
@@ -285,10 +285,14 @@ function WorkspaceExplorerContent({ threadId }: { threadId: string }) {
     relativePath: string;
   }) => {
     const reference = `@${entry.relativePath}${entry.kind === "directory" ? "/" : ""}`;
-    composer.updateText((text) => {
-      const trimmed = text.replace(/\s+$/u, "");
-      return trimmed === "" ? `${reference} ` : `${trimmed} ${reference} `;
-    });
+    composer.insert(
+      [
+        composer.text.length === 0 || /\s$/u.test(composer.text) ? "" : " ",
+        reference,
+        " ",
+      ],
+      { at: "end" },
+    );
     composer.focus();
   };
 

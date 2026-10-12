@@ -10,7 +10,9 @@ import type { AddressInfo } from "node:net";
 import {
   createConnection,
   getAppSettings,
+  getDisabledProviderIds,
   listRunningThreads,
+  setAppSettings,
   type DbConnection,
 } from "@bb/db";
 import { defaultFeatureFlags } from "@bb/domain";
@@ -166,6 +168,10 @@ export async function createTestAppHarness(
   const logger = createTestLogger();
   const dataDir = await mkdtemp(join(tmpdir(), "bb-server-test-"));
   const db = createTestDb();
+  setAppSettings(db, {
+    ...getAppSettings(db),
+    machineGitCredentialsEnabled: false,
+  });
   const hub = new NotificationHubImpl();
   const watchInterests = new WatchInterestCoordinator({ db, hub });
   const sharedPorts = new HostSharedPortCoordinator({ db, hub });
@@ -175,6 +181,7 @@ export async function createTestAppHarness(
       const settings = getAppSettings(db);
       return {
         providerOrder: settings.providerOrder,
+        disabledProviderIds: getDisabledProviderIds(db),
         defaultProviderId: settings.defaultProviderId,
       };
     },
@@ -227,6 +234,7 @@ export async function createTestAppHarness(
     customModels: [],
     dataDir,
     featureFlags: defaultFeatureFlags,
+    performanceDiagnosticsAvailable: false,
     hostDaemonPort: 3001,
     marketplaceUrl: "https://marketplace.invalid/marketplace.json",
     inheritedSkillsRootPaths: [],
@@ -274,12 +282,15 @@ export async function createTestAppHarness(
   const appVersion =
     appVersionService ??
     createAppVersionService({
+      sourceCommit: null,
+      installKind: null,
       config,
       logger,
     });
   const appUpdate =
     appUpdateService ??
     createAppUpdateService({
+      currentCommit: null,
       appSurface: "web",
       appVersion,
       config,

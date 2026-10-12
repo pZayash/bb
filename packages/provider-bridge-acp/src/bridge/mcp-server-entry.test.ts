@@ -1,3 +1,4 @@
+import { stopProcessGroupLeaderFirst } from "@bb/process-utils";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -32,11 +33,18 @@ interface AdvertisedMcpServer {
   env: { name: string; value: string }[];
 }
 
-const children: ChildProcess[] = [];
+const children: { child: ChildProcess; closed: Promise<void> }[] = [];
 const tempDirs: string[] = [];
 const bridgeLines: BridgeLine[] = [];
 let bridgeStderr = "";
 let nextRequestId = 1;
+
+function trackChild(child: ChildProcess): void {
+  const closed = new Promise<void>((resolve) => {
+    child.once("close", () => resolve());
+  });
+  children.push({ child, closed });
+}
 
 function makeTempDir(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
@@ -91,7 +99,7 @@ function spawnBridgeLikeTheAgentRuntime(dataDir: string): ChildProcess {
     ],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
-  children.push(bridge);
+  trackChild(bridge);
   bridge.stderr?.on("data", (chunk: Buffer) => {
     bridgeStderr += chunk.toString();
     process.stderr.write(`[bridge] ${chunk.toString()}`);
@@ -205,7 +213,7 @@ async function runMcpInitialize(config: AdvertisedMcpServer): Promise<{
     env,
     stdio: ["pipe", "pipe", "pipe"],
   });
-  children.push(mcp);
+  trackChild(mcp);
   let stderr = "";
   mcp.stderr?.on("data", (chunk: Buffer) => {
     stderr += chunk.toString();
@@ -241,6 +249,24 @@ async function runMcpInitialize(config: AdvertisedMcpServer): Promise<{
   return { exitCode, stderr, stdoutLines };
 }
 
+afterEach(async () => {
+  await Promise.all(
+    children.splice(0).map(async ({ child, closed }) => {
+      await stopProcessGroupLeaderFirst({
+        child,
+        timeoutMs: 0,
+        killGraceMs: 0,
+      });
+      await closed;
+    }),
+  );
+  for (const dir of tempDirs.splice(0)) {
+    await removeTempDir(dir);
+  }
+  bridgeLines.length = 0;
+  bridgeStderr = "";
+});
+
 // bb-fork(windows): a just-killed child can still hold its temp dir, so removal
 // needs a short retry instead of failing the test with EBUSY.
 async function removeTempDir(dir: string): Promise<void> {
@@ -255,21 +281,10 @@ async function removeTempDir(dir: string): Promise<void> {
       if (!retryable || attempt >= 20) {
         throw error;
       }
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
     }
   }
 }
-
-afterEach(async () => {
-  for (const child of children.splice(0)) {
-    child.kill("SIGKILL");
-  }
-  for (const dir of tempDirs.splice(0)) {
-    await removeTempDir(dir);
-  }
-  bridgeLines.length = 0;
-  bridgeStderr = "";
-});
 
 describe("bb-bridge MCP server entry point (#1918)", () => {
   it("advertises an MCP server command that answers MCP initialize when the bridge runs under the bootstrap", async () => {

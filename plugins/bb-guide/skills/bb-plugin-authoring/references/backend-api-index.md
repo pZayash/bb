@@ -18,9 +18,12 @@ Read the installed declarations for exact current signatures.
 - `CodeOverflowMode`
 - `ComposerCustomization`
 - `ComposerPlusMenuItem`
+- `ComposerSendMenuItem`
 - `ComposerRichTextSpec`
-- `ComposerStructuredDraft`
-- `ComposerView`
+- `ComposerDraft`
+- `ComposerMention`
+- `ComposerInsertPart`
+- `ComposerInsertOptions`
 - `DiffProps`
 - `DiffViewMode`
 - `ExperimentalAppPanel`
@@ -57,6 +60,9 @@ Read the installed declarations for exact current signatures.
 - `ExperimentalOpenFixedTabOptions`
 - `ExperimentalPermissionModePickerProps`
 - `ExperimentalPluginFixedTabReference`
+- `ExperimentalPluginRpcCaller`
+- `ExperimentalPluginRpcHandlerContext`
+- `ExperimentalPluginRpcHandlersWithContext`
 - `ExperimentalPluginWebSocket`
 - `ExperimentalPluginWebSocketContext`
 - `ExperimentalPluginWebSocketHandler`
@@ -64,6 +70,7 @@ Read the installed declarations for exact current signatures.
 - `ExperimentalProviderModelPickerProps`
 - `ExperimentalProviderModelPickerRouting`
 - `ExperimentalProviderModelPickerValue`
+- `ExperimentalVoiceInputTextareaProps`
 - `JsonValue`
 - `ReadonlyJsonValue` — deep-readonly JSON, e.g. `context.pluginMetadata` values
 - `MarkdownProps`
@@ -100,8 +107,8 @@ Read the installed declarations for exact current signatures.
 - `PluginHookSignatures`
 - `PluginHooks`
 - `PluginTurnFailedEvent`
-- `ExperimentalComposerSubmitOptions`
-- `ExperimentalComposerSelection`
+- `ComposerSubmitOptions`
+- `ComposerSelection`
 - `PluginAgentConfiguration`
 - `PluginAgentConfigurationContext`
 - `PluginAgentToolContentPart`
@@ -149,10 +156,12 @@ Read the installed declarations for exact current signatures.
 - `PluginCodeThemeData`
 - `PluginCodeThemeState`
 - `PluginCodeThemeTokenRule`
+- `ExperimentalClipboardContent`
 - `PluginAppCommands`
 - `PluginCommandContext`
 - `PluginCommandShortcut`
 - `PluginCommandRegistration`
+- `ExperimentalComposerCommandRegistration`
 - `PluginComposerApi`
 - `PluginComposerMention`
 - `PluginComposerScope`
@@ -257,7 +266,6 @@ Read the installed declarations for exact current signatures.
 - `PluginSidebarPullRequest`
 - `PluginSidebarSplitPane`
 - `PluginSidebarThread`
-- `PluginSidebarThreadActions`
 - `PluginSidebarThreadActivity`
 - `PluginSidebarThreadIndicator`
 - `PluginSidebarThreadPullRequestState`
@@ -344,11 +352,14 @@ Read the installed declarations for exact current signatures.
 
 - `experimental_defineHostEntry`
 - `experimental_filterResolvedNativeRoots`
-- `experimental_killProcessesWithCwdUnder` — reap processes whose cwd is under a
-  workspace a provider is tearing down, before removing the directory
+- `experimental_killProcessesWithCwdUnder` — reap processes whose cwd is under
+  any of the given directories, before removing them; one process listing per
+  call
 - `experimental_nativeRootsHostContract`
 - `experimental_nativeRootsResolveInputSchema`
 - `experimental_nativeRootsResolveOutputSchema`
+- `experimental_readProcessIdentity` — a PID's command line and start time,
+  to confirm it is still the process you recorded before signalling it
 - `experimental_resolveClaudePluginRoots`
 - `experimental_resolveVendorPluginRoots`
 - `experimental_sanitizeInheritedChildProcessEnv`
@@ -374,6 +385,7 @@ Read the installed declarations for exact current signatures.
 - `ExperimentalNativeRootsResolveAnswer`
 - `ExperimentalNativeRootsResolveInput`
 - `ExperimentalNativeRootsResolveOutput`
+- `ExperimentalProcessIdentity`
 - `ExperimentalQuestionFormHost`
 - `ExperimentalQuestionShortcut`
 - `ExperimentalSanitizeInheritedChildProcessEnvArgs`

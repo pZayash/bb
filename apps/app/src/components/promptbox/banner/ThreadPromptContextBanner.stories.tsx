@@ -351,12 +351,6 @@ const forkedFromFixture: ThreadPromptParentThreadSection = {
   relationship: "fork",
 };
 
-const sideChatFromFixture: ThreadPromptParentThreadSection = {
-  parentThreadTitle: "Investigate flaky test",
-  href: "/projects/proj-1/threads/thr_source_demo",
-  relationship: "side-chat",
-};
-
 const childThreadsFixture: ThreadPromptChildThreadsSection = {
   items: [
     {
@@ -423,6 +417,8 @@ function buildPullRequestFixture(
     baseRefName: "main",
     headRefName: "bb/pr-context-banner",
     updatedAt: "2026-06-16T12:30:00Z",
+    autoMerge: false,
+    inMergeQueue: false,
     checks: {
       state: "failing",
       totalCount: 3,
@@ -786,12 +782,6 @@ export function Overview() {
         hint={'renders "Forked from …" instead of "Parent …"'}
       >
         <Row parentThread={forkedFromFixture} mergeBase={null} />
-      </StoryRow>
-      <StoryRow
-        label="side-chat thread (alone)"
-        hint={'renders "Side chat of …"'}
-      >
-        <Row parentThread={sideChatFromFixture} mergeBase={null} />
       </StoryRow>
       <StoryRow
         label="parent thread with a child waiting for approval"

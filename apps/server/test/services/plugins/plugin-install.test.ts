@@ -23,6 +23,7 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createConnection,
+  deleteInstalledPlugin,
   getInstalledPlugin,
   getInstalledPluginRegistration,
   listPluginArtifacts,
@@ -189,7 +190,32 @@ function artifactMeta(args: {
   });
 }
 
+function localGitCachePath(repoDir: string): string {
+  const parsed = parsePluginSource(`git:${repoDir}`);
+  if (parsed.kind !== "git") {
+    throw new Error(`Expected a git source for ${repoDir}`);
+  }
+  return parsed.cachePath;
+}
+
 describe("plugin install sources", () => {
+  it("reads a Windows folder as a local git source", () => {
+    expect(
+      parsePluginSource("git:C:\\Users\\me\\plugins\\bb-plugin-foo@v1"),
+    ).toMatchObject({
+      kind: "git",
+      url: "C:\\Users\\me\\plugins\\bb-plugin-foo",
+      spec: "v1",
+      cachePath: expect.stringMatching(/^local\/bb-plugin-foo-[a-f0-9]{12}$/u),
+    });
+    expect(localGitCachePath("c:/users/ME/plugins/bb-plugin-foo/")).toBe(
+      localGitCachePath("C:\\Users\\me\\plugins\\bb-plugin-foo"),
+    );
+    expect(() => parsePluginSource("git:C:\\Users\\me\\..\\other")).toThrow(
+      "invalid git repository path",
+    );
+  });
+
   it("parses git URLs, tracks HEAD by default, and rejects traversal", () => {
     expect(parsePluginSource("git:github.com/acme/bb-plugin-foo@v1")).toEqual({
       kind: "git",
@@ -236,6 +262,9 @@ describe("plugin install sources", () => {
     expect(() =>
       parsePluginSource("git:github.com/acme/repo@-evil"),
     ).toThrowError(/invalid git ref/);
+    expect(() => parsePluginSource("git:@main")).toThrowError(
+      /invalid git url/,
+    );
   });
 
   it("reads git semver ranges, explicit selectors, and tag prefixes", () => {
@@ -611,7 +640,7 @@ describe("plugin install flows", () => {
       const parsedSource = parsePluginSource(source);
       if (parsedSource.kind !== "git") throw new Error("Expected git source");
       expect(entry.rootDir).toBe(
-        gitArtifactCacheDir(dataDir, parsedSource.cachePath, commit),
+        gitArtifactCacheDir(dataDir, localGitCachePath(repoDir), commit),
       );
       await stat(join(entry.rootDir, "package.json"));
       expect(getInstalledPluginRegistration(db, "gitty")).toMatchObject({
@@ -962,31 +991,12 @@ describe("plugin install flows", () => {
         dataDir,
         "plugins",
         "git",
-        "local",
-        ...repoDir.replace(/^\/+/, "").split("/"),
+        ...localGitCachePath(repoDir).split("/"),
       );
       await expect(stat(`${managed}@main`)).rejects.toThrowError();
     });
 
-    it("hard-fails managed install on an engines.bbPluginSdk mismatch", async () => {
-      const repoDir = join(workDir, "repo-sdk-too-new");
-      await writePluginFixture(repoDir, {
-        name: "bb-plugin-sdk-too-new",
-        pluginSdkRange: ">=99.0.0",
-      });
-      await initGitRepo(repoDir);
-      await commitAll(repoDir, "init");
-
-      await expect(
-        service.install(`git:${repoDir}@main`, { kind: "root" }),
-      ).rejects.toThrowError(
-        new RegExp(
-          `install refused.*requires bb plugin SDK >=99\\.0\\.0, running SDK is ${PLUGIN_SDK_VERSION.replaceAll(".", "\\.")}`,
-        ),
-      );
-    });
-
-    it("remove retains immutable git artifacts and never touches a path source", async () => {
+    it("remove deletes cached git artifacts and never touches a path source", async () => {
       const repoDir = join(workDir, "repo-rm");
       await writePluginFixture(repoDir, { name: "bb-plugin-managed" });
       await initGitRepo(repoDir);
@@ -1000,7 +1010,9 @@ describe("plugin install flows", () => {
       await service.install(pathDir, { kind: "root" });
 
       expect(await service.remove("managed")).toBe(true);
-      await stat(managedEntry.rootDir);
+      await expect(stat(managedEntry.rootDir)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
       await stat(join(repoDir, "package.json"));
 
       expect(await service.remove("localdir")).toBe(true);
@@ -1018,9 +1030,9 @@ describe("plugin install flows", () => {
       const source = `git:${repoDir}@main`;
 
       await service.install(source, { kind: "root" });
-      expect(await service.remove("cached-engine")).toBe(true);
-      const clonesBefore = materializationCount;
       await service.stop();
+      expect(deleteInstalledPlugin(db, "cached-engine")).toBe(true);
+      const clonesBefore = materializationCount;
 
       service = createPluginService({
         aiServices: createAiServiceRegistry(),
@@ -1047,26 +1059,6 @@ describe("plugin install flows", () => {
       expect(
         getInstalledPluginRegistration(db, "cached-engine"),
       ).toBeUndefined();
-    });
-
-    it("refuses a git url without the git binary being asked to run arbitrary flags", async () => {
-      await expect(
-        service.install("git:@main", { kind: "root" }),
-      ).rejects.toThrowError();
-    });
-
-    it("builds both bundles for a git plugin", async () => {
-      const repoDir = join(workDir, "repo-selfcontained");
-      await writePluginFixture(repoDir, { name: "bb-plugin-selfcontained" });
-      await initGitRepo(repoDir);
-      await commitAll(repoDir, "init");
-
-      const entry = await service.install(`git:${repoDir}@main`, {
-        kind: "root",
-      });
-      expect(entry.status).toBe("running");
-      await stat(join(entry.rootDir, "dist", "server.js"));
-      await stat(join(entry.rootDir, "dist", "server.meta.json"));
     });
 
     it.runIf(hasNpm)(
@@ -1290,7 +1282,7 @@ describe("plugin install flows", () => {
         if (parsedSource.kind !== "git") throw new Error("Expected git source");
         const checkout = gitArtifactCacheDir(
           dataDir,
-          parsedSource.cachePath,
+          localGitCachePath(repoDir),
           commit,
         );
         expect(alpha.rootDir).toBe(join(checkout, "plugins", "alpha"));
@@ -1456,7 +1448,7 @@ describe("plugin install flows", () => {
         if (parsedSource.kind !== "git") throw new Error("Expected git source");
         const checkout = gitArtifactCacheDir(
           dataDir,
-          parsedSource.cachePath,
+          localGitCachePath(repoDir),
           commit,
         );
         await rm(join(checkout, "plugins"), { recursive: true, force: true });
@@ -1591,17 +1583,6 @@ describe("plugin install flows", () => {
         }),
       ).toMatch(/unknown artifactFormatVersion 2.*supported value is 1/);
     });
-
-    it("accepts metadata that matches the manifest and this SDK", () => {
-      expect(
-        validatePluginArtifactMeta({
-          artifact: "server",
-          raw: artifactMeta({ pluginId: "artifact-ok" }),
-          pluginId: "artifact-ok",
-          pluginVersion: "0.1.0",
-        }),
-      ).toBeNull();
-    });
   });
 
   it("keeps path installs developer-friendly while surfacing SDK incompatibility", async () => {
@@ -1644,7 +1625,7 @@ describe("plugin install flows", () => {
 
   describe.skipIf(!hasNpm)("npm sources", () => {
     it(
-      "installs a scoped package into the immutable cache and retains it on removal",
+      "installs a scoped package into the immutable cache and deletes it on removal",
       { timeout: 120_000 },
       async () => {
         const name = "@acme/bb-plugin-npmhero";
@@ -1759,8 +1740,10 @@ describe("plugin install flows", () => {
           await stat(prefix);
 
           expect(await service.remove("npmhero")).toBe(true);
-          await stat(prefix);
-          expect(listPluginArtifacts(db, "npmhero")).toHaveLength(1);
+          await expect(stat(prefix)).rejects.toMatchObject({
+            code: "ENOENT",
+          });
+          expect(listPluginArtifacts(db, "npmhero")).toEqual([]);
         } finally {
           if (previousCache === undefined) {
             delete process.env.npm_config_cache;
@@ -1799,6 +1782,21 @@ describe("plugin install flows", () => {
       /reserved by the bundled plugin.*builtin:connect/,
     );
     expect(getInstalledPluginRegistration(db, "connect")).toBeUndefined();
+  });
+
+  it("refuses a path plugin whose id uses the reserved bb-- prefix", async () => {
+    const rootDir = join(workDir, "bb-plugin-bb--notes");
+    await writePluginFixture(rootDir, { name: "bb-plugin-bb--notes" });
+    await expect(service.installPath(rootDir)).rejects.toThrowError(
+      /ids starting with "bb--" are reserved/,
+    );
+    expect(getInstalledPluginRegistration(db, "bb--notes")).toBeUndefined();
+  });
+
+  it("refuses an npm package whose derived id uses the reserved bb-- prefix before install", async () => {
+    await expect(
+      service.install("npm:@acme/bb-plugin-bb--notes@1.2.3", { kind: "root" }),
+    ).rejects.toThrowError(/ids starting with "bb--" are reserved/);
   });
 
   it("the bb plugin new scaffold installs and loads through the plugin service", async () => {

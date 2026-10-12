@@ -1,17 +1,17 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { PassThrough, Writable, type Readable } from "node:stream";
 // bb-fork(windows): cmd-shim launches and the named-pipe channel live in a
 // bb-fork(windows): fork module; this file keeps only the integration seams.
 import {
-  escalateWindowsShellChildKill,
-  planPiChildKill,
   planWindowsShellChild,
   type WindowsChannelPipe,
 } from "./rpc-child.windows.js";
 import {
   experimental_isProviderBridgeRecording,
+  experimental_killPortableProcess,
   experimental_readBoundedLines,
   experimental_recordProviderChildIo,
+  experimental_spawnPortableProcess,
   sanitizeInheritedChildProcessEnv,
   withoutBridgeRuntimeEnv,
 } from "@get-bb/plugin-sdk/provider-bridge";
@@ -133,12 +133,12 @@ export class PiRpcChild {
       onLine: (line) => this.handleChannelLine(line),
     });
     this.windowsChannel = windowsChild?.channel ?? null;
-    this.child = spawn(launch.command, [...launch.args, ...args.args], {
+    this.child = experimental_spawnPortableProcess({
+      command: launch.command,
+      args: [...launch.args, ...args.args],
       cwd: args.cwd,
       env: windowsChild?.env ?? args.env,
       stdio: windowsChild?.stdio ?? ["pipe", "pipe", "pipe", "pipe", "pipe"],
-      shell: windowsChild !== null,
-      windowsHide: process.platform === "win32",
     });
     experimental_recordProviderChildIo(this.child, {
       threadId: args.recordThreadId,
@@ -287,40 +287,16 @@ export class PiRpcChild {
       return;
     }
     this.endWriters();
-    // bb-fork(windows): signals do not reach grandchildren of cmd.exe, so
-    // bb-fork(windows): shell children escalate to taskkill immediately.
-    const plan = planPiChildKill({
-      windowsShellChild: this.windowsChannel !== null,
-      platform: process.platform,
-    });
-    if (plan.escalateImmediately) {
-      this.escalateKill();
-      return;
-    }
     if (this.killEscalation === null) {
       this.killEscalation = setTimeout(() => {
         this.killEscalation = null;
         if (this.exitInfo === null) {
-          this.escalateKill();
+          experimental_killPortableProcess(this.child, "SIGKILL");
         }
       }, SIGKILL_ESCALATION_MS);
       this.killEscalation.unref?.();
     }
-    if (plan.signal !== null) {
-      this.child.kill(plan.signal);
-    }
-  }
-
-  private escalateKill(): void {
-    // bb-fork(windows): taskkill /T /F for cmd.exe shell children.
-    if (this.windowsChannel === null) {
-      this.child.kill("SIGKILL");
-      return;
-    }
-    escalateWindowsShellChildKill({
-      pid: this.child.pid,
-      killFallback: (signal) => this.child.kill(signal),
-    });
+    experimental_killPortableProcess(this.child, "SIGTERM");
   }
 
   respondToExtensionUi(

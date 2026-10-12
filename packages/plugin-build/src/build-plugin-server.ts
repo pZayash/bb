@@ -9,7 +9,7 @@ import {
 import { dirname, extname, join, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { init as initModuleLexer, parse as parseModule } from "es-module-lexer";
-import { renameWithRetry } from "./rename-with-retry.fork.js";
+import { renameIntoPlace } from "./rename-into-place.js";
 import { createPluginArtifactMeta } from "./plugin-artifact-meta.js";
 import { zodLocaleStubPlugin } from "./zod-locale-stub.mjs";
 import { zodResolutionPlugin } from "./zod-resolution.js";
@@ -262,6 +262,7 @@ export async function buildPluginServer(
               // bb-fork(windows): specifier, so leave entry points and files alone.
               if (/^[A-Za-z]:[\\/]/.test(args.path)) return undefined;
               if (
+                args.kind === "entry-point" ||
                 args.pluginData === PLUGIN_RUNTIME_FALLBACK_RESOLVE_MARK ||
                 PLUGIN_SDK_SUBPATH_FILTER.test(args.path) ||
                 /^zod($|\/)/.test(args.path) ||
@@ -327,8 +328,6 @@ export async function buildPluginServer(
                 }
                 if (args.kind === "dynamic-import") {
                   return {
-                    // bb-fork(windows): Node's ESM loader rejects a bare
-                    // bb-fork(windows): absolute Windows path, so emit a URL.
                     path:
                       process.platform === "win32"
                         ? pathToFileURL(resolved.path).href
@@ -363,11 +362,11 @@ export async function buildPluginServer(
       await writeFile(join(stageDir, "package.json"), '{"type":"module"}\n');
     }
 
-    await renameWithRetry(stagedJsPath, jsPath);
-    await renameWithRetry(join(stageDir, `${fileName}.map`), mapPath);
-    await renameWithRetry(stagedMetaPath, metaPath);
+    await renameIntoPlace(stagedJsPath, jsPath);
+    await renameIntoPlace(join(stageDir, `${fileName}.map`), mapPath);
+    await renameIntoPlace(stagedMetaPath, metaPath);
     if (format === "esm") {
-      await renameWithRetry(
+      await renameIntoPlace(
         join(stageDir, "package.json"),
         join(distDir, "package.json"),
       );

@@ -139,7 +139,7 @@ describe("archived thread write paths", () => {
     });
   });
 
-  it("refuses retry, compact, clear, draft, and edit on an archived thread", async () => {
+  it("refuses retry, compact, clear, and edit on an archived thread", async () => {
     await withTestHarness(async (harness) => {
       const fixture = await seedArchivedThread(harness);
       const base = `/api/v1/threads/${fixture.threadId}`;
@@ -167,17 +167,6 @@ describe("archived thread write paths", () => {
         message: expect.stringContaining(
           `bb thread unarchive ${fixture.threadId}`,
         ),
-      });
-
-      const draft = await postJson(
-        harness,
-        `${base}/draft`,
-        { input: [{ type: "text", text: "Draft" }] },
-        "PUT",
-      );
-      expect(draft.status).toBe(409);
-      expect(await readJson(draft)).toMatchObject({
-        message: expect.stringContaining("Unarchive the thread"),
       });
 
       expect(threadRequestEvents(harness, fixture.threadId)).toHaveLength(0);

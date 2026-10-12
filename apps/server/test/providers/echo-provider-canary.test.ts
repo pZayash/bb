@@ -428,7 +428,6 @@ describe("echo-provider canary: plugin install → server command → runtime �
     });
 
     expect(itemOf(rows, "fileRead").data.item).toMatchObject({
-      // bb-fork(windows): build the expected path with native separators.
       path: join(workspaceDir, "README.md"),
       presentation: { icon: { glyph: "FileText" } },
     });

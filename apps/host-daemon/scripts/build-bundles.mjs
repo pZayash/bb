@@ -1,4 +1,4 @@
-import { chmod, copyFile, mkdir, rm, stat } from "node:fs/promises";
+import { chmod, copyFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";

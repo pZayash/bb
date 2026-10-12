@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_PROMPT_ACTION } from "@/components/promptbox/PromptBoxActionsMenu";
-import { promptActionCommandSuggestions } from "./useCommandSuggestions";
+import {
+  promptActionCommandSuggestions,
+  threadProviderCommandSuggestions,
+} from "./useCommandSuggestions";
 
 const promptActions = [
   { kind: "skills", text: "/" },
@@ -14,7 +16,6 @@ const promptActions = [
     command: { trigger: "/", name: "goal", trailingText: " " },
     text: "/goal ",
   },
-  AUTOMATION_PROMPT_ACTION,
 ] as const;
 
 describe("promptActionCommandSuggestions", () => {
@@ -42,14 +43,6 @@ describe("promptActionCommandSuggestions", () => {
         description: null,
         argumentHint: null,
       },
-      {
-        kind: "command",
-        name: "automation",
-        source: "command",
-        origin: "user",
-        description: null,
-        argumentHint: null,
-      },
     ]);
   });
 
@@ -61,13 +54,67 @@ describe("promptActionCommandSuggestions", () => {
         trigger: "/",
       }).map((suggestion) => suggestion.name),
     ).toEqual(["plan"]);
+  });
+});
 
+describe("threadProviderCommandSuggestions", () => {
+  const commands = [
+    {
+      name: "review",
+      source: "command",
+      origin: "builtin",
+      description: "Review the diff",
+      argumentHint: null,
+    },
+    {
+      name: "web",
+      source: "command",
+      origin: "builtin",
+      description: null,
+      argumentHint: "query",
+    },
+  ] as const;
+
+  it("offers the agent's live commands under the slash trigger only", () => {
     expect(
-      promptActionCommandSuggestions({
-        promptActions,
-        query: "auto",
+      threadProviderCommandSuggestions({ commands, query: "", trigger: "/" }),
+    ).toEqual([
+      {
+        kind: "command",
+        name: "review",
+        source: "command",
+        origin: "builtin",
+        description: "Review the diff",
+        argumentHint: null,
+      },
+      {
+        kind: "command",
+        name: "web",
+        source: "command",
+        origin: "builtin",
+        description: null,
+        argumentHint: "query",
+      },
+    ]);
+    expect(
+      threadProviderCommandSuggestions({ commands, query: "", trigger: "$" }),
+    ).toEqual([]);
+    expect(
+      threadProviderCommandSuggestions({
+        commands: null,
+        query: "",
+        trigger: "/",
+      }),
+    ).toEqual([]);
+  });
+
+  it("filters them by the typed query", () => {
+    expect(
+      threadProviderCommandSuggestions({
+        commands,
+        query: "we",
         trigger: "/",
       }).map((suggestion) => suggestion.name),
-    ).toEqual(["automation"]);
+    ).toEqual(["web"]);
   });
 });

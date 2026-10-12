@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   createReuseThread,
@@ -85,10 +86,11 @@ describe.sequential("fake provider smoke lifecycle integration", () => {
           cwd: harness.repoDir,
         });
 
-        // bb-fork(windows): git prints worktree paths with `/`.
-        expect(worktreeList).toContain(
-          `worktree ${resolvedWorktreePath.replaceAll("\\", "/")}`,
-        );
+        const gitWorktreePath =
+          path.sep === "\\"
+            ? resolvedWorktreePath.replaceAll("\\", "/")
+            : resolvedWorktreePath;
+        expect(worktreeList).toContain(`worktree ${gitWorktreePath}`);
       },
     ));
 

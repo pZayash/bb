@@ -80,7 +80,7 @@ describe("common config", () => {
         },
         homeDir: "/Users/tester",
       }).BB_DATA_DIR,
-    ).toBe(path.join("/Users/tester", ".bb"));
+    ).toBe(path.normalize("/Users/tester/.bb"));
   });
 
   it("requires repoRoot or BB_DATA_DIR for development data dir resolution", () => {
@@ -106,7 +106,7 @@ describe("common config", () => {
         homeDir,
         repoRoot,
       }).BB_DATA_DIR,
-    ).toBe(path.join("/Users/tester", ".bb-dev", "src-bb-9039de53a76a"));
+    ).toBe(path.normalize("/Users/tester/.bb-dev/src-bb-9039de53a76a"));
   });
 
   it("expands home-directory overrides for BB_DATA_DIR", () => {
@@ -119,6 +119,20 @@ describe("common config", () => {
       }).BB_DATA_DIR,
     ).toBe(path.join(os.homedir(), "custom-bb"));
   });
+
+  it.runIf(process.platform === "win32")(
+    "expands a home-directory override written with a backslash on Windows",
+    () => {
+      expect(
+        loadCommonConfig({
+          env: {
+            BB_DATA_DIR: "~\\custom-bb",
+            NODE_ENV: "production",
+          },
+        }).BB_DATA_DIR,
+      ).toBe(path.join(os.homedir(), "custom-bb"));
+    },
+  );
 
   it("rejects whitespace-only BB_DATA_DIR overrides", () => {
     expect(() =>
@@ -179,7 +193,7 @@ describe("data-dir helpers", () => {
         mode: "dev",
         repoRoot,
       }),
-    ).toBe(path.join("/Users/tester", ".bb-dev", "src-bb-9039de53a76a"));
+    ).toBe(path.normalize("/Users/tester/.bb-dev/src-bb-9039de53a76a"));
   });
 
   it("keeps the legacy fallback label for degenerate checkout labels", () => {
@@ -190,7 +204,7 @@ describe("data-dir helpers", () => {
         mode: "dev",
         repoRoot: "/Users/tester/---",
       }),
-    ).toBe(path.join("/Users/tester", ".bb-dev", "worktree-41987f975862"));
+    ).toBe(path.normalize("/Users/tester/.bb-dev/worktree-41987f975862"));
   });
 });
 
@@ -294,12 +308,10 @@ describe("consumer-specific config", () => {
       }),
     });
 
+    expect(serverConfig.BB_PERF_DIAGNOSTICS).toBe(false);
     expect(serverConfig.BB_SERVER_PORT).toBe(4444);
     expect(serverConfig.BB_HOST_DAEMON_PORT).toBe(5555);
-    // bb-fork(windows): explicit env data dirs are resolved on the current platform.
-    expect(serverConfig.databasePath).toBe(
-      path.resolve("/tmp/bb-data", "bb.db"),
-    );
+    expect(serverConfig.databasePath).toBe(path.resolve("/tmp/bb-data/bb.db"));
     expect(serverConfig.BB_APP_URL).toBe("");
     expect(serverConfig.BB_APP_SURFACE).toBe("web");
     expect(serverConfig.BB_APP_VERSION).toBe("0.0.0-dev");
@@ -308,6 +320,19 @@ describe("consumer-specific config", () => {
       placeholder: false,
       timelineWindowEventBudget: 1_500,
     });
+  });
+
+  it("validates the opt-in performance diagnostics setting", () => {
+    expect(
+      loadServerConfig({
+        env: createServerRuntimeEnv({ BB_PERF_DIAGNOSTICS: "1" }),
+      }).BB_PERF_DIAGNOSTICS,
+    ).toBe(true);
+    expect(() =>
+      loadServerConfig({
+        env: createServerRuntimeEnv({ BB_PERF_DIAGNOSTICS: "typo" }),
+      }),
+    ).toThrow("BB_PERF_DIAGNOSTICS must be a boolean");
   });
 
   it("carries the launcher's server launch id only when it is set", () => {
@@ -482,9 +507,8 @@ describe("consumer-specific config", () => {
       },
     });
 
-    // bb-fork(windows): explicit env data dirs are resolved on the current platform.
     expect(databaseConfig.databasePath).toBe(
-      path.resolve("/tmp/bb-data", "bb.db"),
+      path.resolve("/tmp/bb-data/bb.db"),
     );
   });
 
@@ -561,7 +585,6 @@ describe("consumer-specific config", () => {
       },
     });
 
-    // bb-fork(windows): explicit env data dirs are resolved on the current platform.
     expect(hostDaemonConfig.BB_DATA_DIR).toBe(path.resolve("/tmp/bb-data"));
     expect(hostDaemonConfig.BB_SERVER_URL).toBe("http://localhost:9999");
     expect(hostDaemonConfig.BB_HOST_DAEMON_PORT).toBe(3999);
@@ -577,7 +600,6 @@ describe("consumer-specific config", () => {
       },
     });
 
-    // bb-fork(windows): explicit env data dirs are resolved on the current platform.
     expect(hostDaemonStartConfig.dataDir).toBe(path.resolve("/tmp/bb-data"));
     expect(hostDaemonStartConfig.connectionConfig.BB_SERVER_URL).toBe(
       "http://localhost:9999",
@@ -727,7 +749,6 @@ describe("consumer-specific config", () => {
         BB_HOST_ENROLL_KEY: " enroll-token ",
         BB_HOST_DAEMON_AUTO_UPDATE: "true",
         BB_HOST_ID: " host-123 ",
-        BB_HOST_NAME: " host-123 ",
       },
     });
 
@@ -737,7 +758,6 @@ describe("consumer-specific config", () => {
       BB_HOST_ENROLL_KEY: "enroll-token",
       BB_HOST_DAEMON_AUTO_UPDATE: true,
       BB_HOST_ID: "host-123",
-      BB_HOST_NAME: "host-123",
     });
   });
 
@@ -747,7 +767,6 @@ describe("consumer-specific config", () => {
         BB_BRIDGE_DIR: "",
         BB_CLI_DIR: "   ",
         BB_HOST_ENROLL_KEY: " ",
-        BB_HOST_NAME: "",
       },
     });
 

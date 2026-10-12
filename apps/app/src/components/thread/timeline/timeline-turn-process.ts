@@ -40,7 +40,7 @@ export function buildTimelineTurnProcessTimings(
         continue;
       }
       if (row.kind === "work" && row.workKind === "delegation") {
-        visit(row.childRows);
+        visit(row.childRows ?? []);
       }
     }
   };

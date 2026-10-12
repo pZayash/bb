@@ -1,7 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import { vi } from "vitest";
-import * as pluginBuild from "@bb/plugin-build";
 
 const FAKE_NPM = `#!/usr/bin/env node
 const { mkdirSync, readFileSync } = require("node:fs");
@@ -71,9 +70,10 @@ export async function installFakeNpm(workDir: string): Promise<string> {
   await mkdir(binDir, { recursive: true });
   await writeFile(join(binDir, "npm"), FAKE_NPM, { mode: 0o755 });
   if (process.platform === "win32") {
-    const windowsEntry = join(binDir, "npm-cli.cjs");
-    await writeFile(windowsEntry, FAKE_NPM);
-    vi.spyOn(pluginBuild, "resolveBundledNpmCli").mockReturnValue(windowsEntry);
+    await writeFile(
+      join(binDir, "npm.cmd"),
+      `@"${process.execPath}" "%~dp0npm" %*\r\n`,
+    );
   }
   vi.stubEnv("PATH", `${binDir}${delimiter}${process.env.PATH ?? ""}`);
   return binDir;

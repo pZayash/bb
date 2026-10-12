@@ -1,7 +1,7 @@
 import { getHost, updateHost } from "@bb/db";
 import type { HostDaemonOnlineRpcRequestMessage } from "@bb/host-daemon-contract";
 import { validatePluginMachineProviderDeclaration } from "@get-bb/plugin-sdk/internal/host-policy";
-import { join } from "node:path";
+import { join } from "node:path/posix";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setPluginMachineProviderBridge } from "../src/services/plugins/plugin-machine-provider-registry.js";
 import { registerHostRpcResponder } from "./helpers/host-rpc.js";
@@ -184,7 +184,6 @@ describe.sequential("suspended machine lifecycle policy", () => {
                     threadId: thread.id,
                     url: "https://example.com",
                     title: "Example",
-                    profile: { kind: "automation", id: "profile-1" },
                     presentation: "hidden",
                     control: null,
                   },
@@ -256,7 +255,7 @@ describe.sequential("suspended machine lifecycle policy", () => {
         sessionId: session.id,
         handle: ({ command }) => {
           if (command.type === "turn.submit") {
-            return { ok: true, result: { appliedAs: "new-turn" } };
+            return { ok: true, result: {} };
           }
           throw new Error(`Unexpected host RPC ${command.type}`);
         },

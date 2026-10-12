@@ -81,11 +81,10 @@ interface TerminalCloseOptions extends TerminalJsonOptions {
   ifClean?: boolean;
 }
 
-interface TerminalStartResolution {
-  command: string | null;
-  // bb-fork(windows): the requested shell id, or null for the host default.
-  shellId: string | null;
-}
+type TerminalStartResolution =
+  | { mode: "shell"; shellId?: string }
+  | { mode: "command"; command: string }
+  | { mode: "argv"; argv: string[] };
 
 export function registerTerminalCommands(
   program: Command,
@@ -145,15 +144,7 @@ export function registerTerminalCommands(
         rows: parsePositiveInteger(opts.rows, DEFAULT_ROWS, "--rows"),
         scope: await resolveTerminalCreateScope(opts, getUrl()),
         title: opts.title,
-        start:
-          resolvedStart.command === null
-            ? {
-                mode: "shell",
-                ...(resolvedStart.shellId === null
-                  ? {}
-                  : { shellId: resolvedStart.shellId }),
-              }
-            : { mode: "command", command: resolvedStart.command },
+        start: resolvedStart,
       });
       if (outputJson(opts, session)) return;
       console.log(`Created terminal ${session.id} (${session.title})`);
@@ -239,7 +230,7 @@ export function registerTerminalCommands(
     .description("Send input to a terminal session")
     .option("--text <text>", "Text to send")
     .option("--stdin", "Read bytes from stdin")
-    .option("--enter", "Append a newline")
+    .option("--enter", "Press Enter after the text")
     .option("--json", "Print machine-readable JSON output")
     .action(
       action(async (terminalId: string, opts: TerminalSendOptions) => {
@@ -509,28 +500,19 @@ function resolveTerminalStart(args: {
     if (shellId.length === 0) {
       throw new Error("--shell must not be empty");
     }
-    return { command: null, shellId };
+    return { mode: "shell", shellId };
   }
   if (args.commandOption !== undefined) {
     const command = args.commandOption.trim();
     if (command.length === 0) {
       throw new Error("--command must not be empty");
     }
-    return { command, shellId: null };
+    return { mode: "command", command };
   }
   if (args.commandParts.length > 0) {
-    return {
-      command: args.commandParts.map(shellQuoteArg).join(" "),
-      shellId: null,
-    };
+    return { mode: "argv", argv: [...args.commandParts] };
   }
-  return { command: null, shellId: null };
-}
-
-function shellQuoteArg(value: string): string {
-  if (value.length === 0) return "''";
-  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) return value;
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
+  return { mode: "shell" };
 }
 
 function parsePositiveInteger(
@@ -570,7 +552,7 @@ export async function resolveSendData(
           stdin.on("end", () => resolve(Buffer.concat(chunks)));
         });
   return opts.enter
-    ? Buffer.concat([baseData, Buffer.from("\n", "utf8")])
+    ? Buffer.concat([baseData, Buffer.from("\r", "utf8")])
     : baseData;
 }
 

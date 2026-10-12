@@ -662,7 +662,9 @@ export async function removeWorktree(args: RemoveWorktreeArgs): Promise<void> {
     return;
   }
 
-  await experimental_killProcessesWithCwdUnder({ directory: workspacePath });
+  await experimental_killProcessesWithCwdUnder({
+    directories: [workspacePath],
+  });
   throwIfProvisionAborted(args.signal);
 
   const commonDirResult = await runGit(["rev-parse", "--git-common-dir"], {
@@ -739,10 +741,10 @@ export async function resolveAdoptableWorktree(args: {
   | { status: "failed"; message: string }
 > {
   const adoptable = await listAdoptableWorktrees(args);
-  // bb-fork(windows): return the canonical requested path, not git's `/`-joined
-  // porcelain path.
-  const canonicalPath = await realpathOrResolved(args.path);
-  const entry = findWorktreeEntry(adoptable, canonicalPath);
+  const entry = findWorktreeEntry(
+    adoptable,
+    await realpathOrResolved(args.path),
+  );
   if (entry === null) {
     return {
       status: "failed",
@@ -755,5 +757,5 @@ export async function resolveAdoptableWorktree(args: {
       message: `${args.path} is a prunable worktree; run \`git worktree prune\` or repair it first.`,
     };
   }
-  return { status: "resolved", path: canonicalPath, branch: entry.branch };
+  return { status: "resolved", path: entry.path, branch: entry.branch };
 }

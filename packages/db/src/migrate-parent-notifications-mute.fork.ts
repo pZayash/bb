@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { DbConnection } from "./connection.js";
 
-const MIGRATION_TAG = "0133_modern_vermin";
+const MIGRATION_TAG = "0142_opposite_juggernaut";
 const LEGACY_MUTED_AT_MIGRATION_WHEN = 1790254777753;
 const ENVIRONMENT_RETENTION_MIGRATION_TAG =
   "0131_environment_retention_indexes";

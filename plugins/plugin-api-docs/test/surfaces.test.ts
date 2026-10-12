@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import anatomy from "../src/anatomy-manifest.json";
-import { SURFACE_NUMBERS } from "../src/product-map";
-import {
-  fixtureResponsiveStrategy,
-  SURFACE_GROUPS,
-  SURFACES_BY_ID,
-} from "../src/surfaces";
+import { SURFACE_GROUPS, SURFACES_BY_ID } from "../src/surfaces";
 import { ANATOMY_RENDERER_KEYS } from "../src/wireframes";
 
 const groupById = new Map(SURFACE_GROUPS.map((group) => [group.id, group]));
@@ -20,12 +15,12 @@ function surfaceIds(groupId: string): string[] {
 describe("product-map surfaces", () => {
   it("keeps app-window annotations in column-major visual reading order", () => {
     const ordered = [
-      "sidebar-navigation",
       "nav-panel",
       "thread-row-status",
       "thread-list",
       "sidebar-footer",
       "thread-header",
+      "thread-actions",
       "timeline-renderers",
       "message-directives",
       "message-actions",
@@ -63,39 +58,6 @@ describe("product-map surfaces", () => {
     );
     expect(new Set(all).size).toBe(all.length);
     expect(SURFACES_BY_ID.size).toBe(all.length);
-  });
-
-  it("numbers the surfaces a fixture draws, and only those", () => {
-    for (const group of SURFACE_GROUPS) {
-      const numbers = group.surfaces.map((surface) =>
-        SURFACE_NUMBERS.get(surface.id),
-      );
-      if (group.id === "headless") {
-        expect(numbers.every((number) => number === undefined)).toBe(true);
-        continue;
-      }
-      expect(numbers).toEqual(group.surfaces.map((_, index) => index + 1));
-    }
-  });
-
-  it("derives one responsive strategy from each group's fixture kind", () => {
-    for (const group of SURFACE_GROUPS) {
-      expect(fixtureResponsiveStrategy(group), group.id).toBe(
-        group.fixtureKind === "spatial" ? "scale-together" : "reflow",
-      );
-    }
-    expect(
-      SURFACE_GROUPS.filter(
-        (group) => fixtureResponsiveStrategy(group) === "scale-together",
-      ).map((group) => group.id),
-    ).toEqual([
-      "app-shell",
-      "command-palette",
-      "composer",
-      "home",
-      "settings",
-      "extensions",
-    ]);
   });
 
   it("renders every anatomy-manifest region and nothing else", () => {
@@ -209,12 +171,17 @@ describe("surface card copy", () => {
     for (const group of SURFACE_GROUPS) {
       for (const surface of group.surfaces) {
         expect(surface.summary, surface.id).toMatch(
-          /\. With this, a plugin can:$/,
+          /^(Add|Replace|Run|Provide|Use) .{1,90}\. With this, a plugin can:$/,
         );
         expect(surface.bullets.length, surface.id).toBeGreaterThanOrEqual(2);
+        expect(surface.bullets.length, surface.id).toBeLessThanOrEqual(4);
         for (const bullet of surface.bullets) {
           expect(bullet.trim().length, surface.id).toBeGreaterThan(0);
+          expect(bullet.length, `${surface.id}: "${bullet}"`).toBeLessThanOrEqual(100);
           expect(bullet, `${surface.id}: "${bullet}"`).not.toMatch(/^Can\b/);
+          expect(bullet, `${surface.id}: "${bullet}"`).not.toMatch(
+            /experimental_|\b[a-z]+[A-Z]\w*|\w\(/,
+          );
         }
       }
     }

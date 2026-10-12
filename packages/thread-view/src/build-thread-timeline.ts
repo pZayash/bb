@@ -1,5 +1,7 @@
 import type {
+  ProviderCommand,
   ThreadContextWindowUsage,
+  ThreadTimelineSessionOption,
   TimelineActivityIntent,
   TimelineConversationAttachments,
   TimelineFileChange,
@@ -26,7 +28,7 @@ import {
   type ThreadTimelinePendingTodos,
 } from "@bb/domain";
 import type {
-  EventProjectionErrorMessage,
+  BuildEventProjectionMessagesOptions,
   EventProjectionFileEditChange,
   EventProjectionMessage,
   EventProjection,
@@ -64,6 +66,10 @@ import {
   type PlanCommand,
 } from "./active-prompt-mode-extraction.js";
 import { extractThreadTimelineGoal } from "./goal-snapshot-extraction.js";
+import {
+  extractThreadProviderCommands,
+  extractThreadSessionOptions,
+} from "./provider-state-extraction.js";
 import { extractThreadTimelineModelFallback } from "./model-fallback-extraction.js";
 import { extractThreadTimelinePendingTodos } from "./todo-snapshot-extraction.js";
 import { buildTimelineErrorDisplay } from "./error-display.js";
@@ -101,6 +107,8 @@ export interface ThreadTimelineFromEventsResult {
   goal: ThreadTimelineGoal | null;
   modelFallback: ThreadTimelineModelFallback | null;
   pendingTodos: ThreadTimelinePendingTodos | null;
+  providerCommands: ProviderCommand[] | null;
+  sessionOptions: ThreadTimelineSessionOption[] | null;
   rows: TimelineRow[];
 }
 
@@ -315,12 +323,6 @@ function filterDelegationChildRows(childRows: TimelineRow[]): TimelineRow[] {
   return childRows.filter((row) => !isDelegationLifecycleChildRow(row));
 }
 
-function isReconnectErrorMessage(
-  message: EventProjectionErrorMessage,
-): boolean {
-  return message.reconnectAttempt !== undefined || message.willRetry === true;
-}
-
 function toConversationAttachments(
   attachments: Extract<EventProjectionMessage, { kind: "user" }>["attachments"],
 ): TimelineConversationAttachments | null {
@@ -334,6 +336,7 @@ function toConversationAttachments(
     imageUrls: attachments.imageUrls ?? [],
     localImagePaths: attachments.localImagePaths ?? [],
     localFilePaths: attachments.localFilePaths ?? [],
+    localFileDetails: attachments.localFileDetails ?? [],
   };
 }
 
@@ -489,6 +492,7 @@ function convertMessage(
           ...buildTimelineRowBase(message, options.rowIdPrefix),
           kind: "conversation",
           role: "user",
+          messageSeq: message.messageSeq,
           text: message.text,
           mentions: message.mentions,
           attachments: toConversationAttachments(message.attachments),
@@ -505,6 +509,7 @@ function convertMessage(
           ...buildTimelineRowBase(message, options.rowIdPrefix),
           kind: "conversation",
           role: "assistant",
+          messageSeq: message.sourceSeqEnd,
           text: message.text,
           attachments: null,
           turnRequest: null,
@@ -804,7 +809,7 @@ function convertMessage(
     }
     case "error": {
       const errorDisplay = buildTimelineErrorDisplay(message);
-      const isReconnect = isReconnectErrorMessage(message);
+      const isReconnect = message.willRetry === true;
       return [
         {
           ...buildTimelineRowBase(message, options.rowIdPrefix),
@@ -842,6 +847,7 @@ function convertSteerMessage(
     ...buildTimelineRowBase(message, rowIdPrefix),
     kind: "conversation",
     role: "user",
+    messageSeq: message.messageSeq,
     text: message.text,
     mentions: message.mentions,
     attachments: toConversationAttachments(message.attachments),
@@ -853,11 +859,11 @@ function convertSteerMessage(
   };
 }
 
-function buildPendingSteerRowsFromEvents(
+export function buildPendingSteerMessagesFromEvents(
   acceptedClientRequestContext: AcceptedClientRequestContext,
   events: ThreadEventWithMeta[],
-  options: ThreadTimelineFromEventsBaseOptions,
-): TimelineUserConversationRow[] {
+  options: BuildEventProjectionMessagesOptions,
+): EventProjectionUserMessage[] {
   const orderedEvents = getOrderedThreadEvents(events);
   const acceptedClientRequestById = buildAcceptedClientRequestById({
     context: acceptedClientRequestContext,
@@ -917,7 +923,7 @@ function buildPendingSteerRowsFromEvents(
     }
     explicitRejectionNeedsCompanionError = false;
   }
-  const pendingSteerRows: TimelineUserConversationRow[] = [];
+  const pendingSteerMessages: EventProjectionUserMessage[] = [];
 
   for (const { event, meta } of orderedEvents) {
     if (
@@ -943,16 +949,13 @@ function buildPendingSteerRowsFromEvents(
       acceptedClientRequest === undefined &&
       rejectedMeta
     ) {
-      pendingSteerRows.push(
+      pendingSteerMessages.push(
         ...parseRejectedUsersFromClientRequest({
           decoded: event,
+          requestMeta: meta,
           meta: rejectedMeta,
           options,
-        })
-          .filter((rejectedSteer) => !isSuppressedSystemMessage(rejectedSteer))
-          .map((rejectedSteer) =>
-            convertSteerMessage(rejectedSteer, ROOT_TIMELINE_ROW_ID_PREFIX),
-          ),
+        }),
       );
       continue;
     }
@@ -961,16 +964,13 @@ function buildPendingSteerRowsFromEvents(
       acceptedClientRequest === undefined &&
       legacyRejectedMeta
     ) {
-      pendingSteerRows.push(
+      pendingSteerMessages.push(
         ...parseRejectedUsersFromClientRequest({
           decoded: event,
+          requestMeta: meta,
           meta: legacyRejectedMeta,
           options,
-        })
-          .filter((rejectedSteer) => !isSuppressedSystemMessage(rejectedSteer))
-          .map((rejectedSteer) =>
-            convertSteerMessage(rejectedSteer, ROOT_TIMELINE_ROW_ID_PREFIX),
-          ),
+        }),
       );
       continue;
     }
@@ -983,16 +983,10 @@ function buildPendingSteerRowsFromEvents(
     if (pendingSteers.length === 0) {
       continue;
     }
-    pendingSteerRows.push(
-      ...pendingSteers
-        .filter((pendingSteer) => !isSuppressedSystemMessage(pendingSteer))
-        .map((pendingSteer) =>
-          convertSteerMessage(pendingSteer, ROOT_TIMELINE_ROW_ID_PREFIX),
-        ),
-    );
+    pendingSteerMessages.push(...pendingSteers);
   }
 
-  return pendingSteerRows;
+  return pendingSteerMessages;
 }
 
 function isReconnectSystemRow(row: TimelineRow): boolean {
@@ -1108,6 +1102,17 @@ function orderRowsAfterExternalUserBoundary(
   return [...rows.slice(0, suffixStartIndex), ...orderedSuffix];
 }
 
+function materializeTimelineMessages(
+  messages: readonly EventProjectionMessage[],
+  options: BuildTimelineRowsOptions,
+): TimelineRow[] {
+  const rows: TimelineRow[] = [];
+  for (const message of messages) {
+    appendRows(rows, convertMessage(message, options));
+  }
+  return rows;
+}
+
 function materializeTimelinePlan(
   item: TimelineRowPlan,
   options: BuildTimelineRowsOptions,
@@ -1117,9 +1122,7 @@ function materializeTimelinePlan(
     options.includeNestedRows
       ? {
           ...item.row,
-          children: item.messages.flatMap((message) =>
-            convertMessage(message, options),
-          ),
+          children: materializeTimelineMessages(item.messages, options),
         }
       : item.row,
   ];
@@ -1167,11 +1170,15 @@ export function buildThreadTimelineFromEvents(
       rowIdPrefix: ROOT_TIMELINE_ROW_ID_PREFIX,
       workspaceRoot: args.options.workspaceRoot,
     }),
-    ...buildPendingSteerRowsFromEvents(
+    ...buildPendingSteerMessagesFromEvents(
       args.acceptedClientRequestContext,
       args.events,
       args.options,
-    ),
+    )
+      .filter((message) => !isSuppressedSystemMessage(message))
+      .map((message) =>
+        convertSteerMessage(message, ROOT_TIMELINE_ROW_ID_PREFIX),
+      ),
   ];
 
   return {
@@ -1200,6 +1207,12 @@ export function buildThreadTimelineFromEvents(
     goal: !args.options.isLatestPage
       ? null
       : extractThreadTimelineGoal(stateEvents),
+    providerCommands: !args.options.isLatestPage
+      ? null
+      : extractThreadProviderCommands(stateEvents),
+    sessionOptions: !args.options.isLatestPage
+      ? null
+      : extractThreadSessionOptions(stateEvents),
     modelFallback: !args.options.isLatestPage
       ? null
       : extractThreadTimelineModelFallback(args.events),
@@ -1245,6 +1258,15 @@ export function buildThreadTimelineTurnDetailsFromEvents(
     threadName: args.options.threadName,
     turnMessageDetail: "full",
   });
+  const includesRequestedTurn = projection.entries.some(
+    (entry) =>
+      entry.kind === "turn" &&
+      entry.turn.turnId === args.options.turnId &&
+      entry.turn.sourceSeqEnd >= args.options.sourceSeqStart,
+  );
+  if (!includesRequestedTurn) {
+    return { kind: "missing-match" };
+  }
   const options: BuildTimelineRowsOptions = {
     completedTurnDisplay: args.options.completedTurnDisplay,
     includeNestedRows: true,
@@ -1264,9 +1286,7 @@ export function buildThreadTimelineTurnDetailsFromEvents(
   if (matchingSummary) {
     return {
       kind: "matched",
-      rows: matchingSummary.messages.flatMap((message) =>
-        convertMessage(message, options),
-      ),
+      rows: materializeTimelineMessages(matchingSummary.messages, options),
     };
   }
   if (plan.some((item) => item.kind === "summary")) {

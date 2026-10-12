@@ -48,7 +48,7 @@ function makeSection(id: string, name: string) {
   return { id, name, createdAt: 1, updatedAt: 1 };
 }
 
-function renderCustomSections() {
+function renderCustomSections(pinned = false) {
   const store = createStore();
   store.set(preferencesReadyAtom(), true);
   store.set(sidebarOrganizationModeAtom, "chronological");
@@ -57,7 +57,13 @@ function renderCustomSections() {
     { children: <ProjectList activeThreadId={null} />, store },
     {
       sidebarThreads: {
-        threads: [makeSidebarThread({ id: "thr_alpha", sectionId: "sec_a" })],
+        threads: [
+          makeSidebarThread({
+            id: "thr_alpha",
+            sectionId: "sec_a",
+            pinnedAt: pinned ? 1 : null,
+          }),
+        ],
         projects: [makePluginProject()],
         sections: [makeSection("sec_a", "Alpha"), makeSection("sec_b", "Beta")],
       },
@@ -86,35 +92,35 @@ async function createSectionFrom(actionsLabel: string) {
 }
 
 describe("creating a sidebar section", () => {
-  it("keeps the composer project when starting a thread in a section", async () => {
-    const { inspection } = renderCustomSections();
+  it("pins new threads from the Pinned header", async () => {
+    const { inspection } = renderCustomSections(true);
     fireEvent.click(
-      await screen.findByRole("button", { name: "New thread in Alpha section" }),
+      await screen.findByRole("button", { name: "New thread in Pinned" }),
     );
-
-    expect(inspection.sidebarActionCalls).toContainEqual({
-      method: "openNewThread",
-      options: { sectionId: "sec_a", focusPrompt: true },
+    expect(inspection.navigateCalls).toContainEqual({
+      method: "toCompose",
+      options: {
+        focusPrompt: true,
+        placement: { sectionId: null, pinned: true },
+      },
     });
   });
 
-  it("offers section moves from a thread row in the rendered list", async () => {
-    const slot = renderCustomSections();
-    fireEvent.pointerDown(
-      await screen.findByRole("button", { name: "Thread actions" }),
-      { button: 0 },
-    );
-    const move = await screen.findByRole("menuitem", {
-      name: "Move to section",
-    });
-    fireEvent.keyDown(move, { key: "ArrowRight" });
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Beta" }));
-    await waitFor(() =>
-      expect(slot.inspection.sdkCalls).toContainEqual({
-        method: "threads.update",
-        args: [{ threadId: "thr_alpha", sectionId: "sec_b" }],
+  it("keeps the composer project when starting a thread in a section", async () => {
+    const { inspection } = renderCustomSections();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "New thread in Alpha section",
       }),
     );
+
+    expect(inspection.navigateCalls).toContainEqual({
+      method: "toCompose",
+      options: {
+        placement: { sectionId: "sec_a", pinned: false },
+        focusPrompt: true,
+      },
+    });
   });
 
   it("shows one divider before the built-in section visibility actions", async () => {

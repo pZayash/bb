@@ -1,4 +1,5 @@
 import {
+  getLatestThreadSequence,
   findProjectEnvironmentByHostPath,
   getAppSettings,
   getEnvironment,
@@ -16,7 +17,6 @@ import {
 } from "@bb/domain";
 import { type ThreadProvisionContext } from "./thread-startup-store.js";
 // bb-fork(windows): accept drive-letter and UNC host paths from providers.
-import { isHostAbsolutePath } from "../environments/environment-path.windows.js";
 import { type ThreadProvisioningDeps } from "./thread-provisioning-environment.js";
 import { buildSuggestedBranchName } from "./thread-create-helpers.js";
 import { toThreadResponseFromThread } from "./thread-runtime-display.js";
@@ -44,6 +44,8 @@ import { getProjectSourceByHost, type EnvironmentRow } from "@bb/db";
 import { z } from "zod";
 import { DEFAULT_ENVIRONMENT_PROVIDER_ID } from "../environments/environment-provider-ids.js";
 import {
+  canonicalizeHostPath,
+  isAbsoluteHostPath,
   jsonValueSchema,
   PERSONAL_PROJECT_ID,
   isLocalPathProjectSource,
@@ -234,7 +236,7 @@ export async function completeProviderSelection(
     }
     machine = selection.machine;
   } else {
-    const prepared = await prepareMachineProviderSelection(deps, {
+    const prepared = await prepareMachineProviderSelection({
       machineProviderId: selection.machine.machineProviderId,
       inputs: selection.machine.inputs,
     });
@@ -833,6 +835,7 @@ function reportMachineProgress(
     entries,
   });
   deps.hub.notifyThread(threadId, ["events-appended"], {
+    timelineSequence: getLatestThreadSequence(deps.db, { threadId: threadId }),
     eventTypes: ["system/thread-provisioning"],
   });
 }
@@ -1229,6 +1232,9 @@ export function prepareProviderEnvironment(
         ],
       });
       deps.hub.notifyThread(context.thread.id, ["events-appended"], {
+        timelineSequence: getLatestThreadSequence(deps.db, {
+          threadId: context.thread.id,
+        }),
         eventTypes: ["system/thread-provisioning"],
       });
     }
@@ -1292,7 +1298,7 @@ async function providerPlacement(
     const parsed = z
       .string()
       .min(1)
-      .refine((path) => isHostAbsolutePath(path))
+      .refine(isAbsoluteHostPath)
       .refine((path) => !path.includes("\0"))
       .nullable()
       .safeParse(invocation.value);
@@ -1304,7 +1310,7 @@ async function providerPlacement(
       );
     }
     if (parsed.data !== null) {
-      const path = parsed.data.replace(/\/+$/u, "") || "/";
+      const path = canonicalizeHostPath(parsed.data);
       const hostId = selection.machine.hostId;
       const refusal = foreignProjectOwnedPathRefusal(deps.db, {
         projectId,

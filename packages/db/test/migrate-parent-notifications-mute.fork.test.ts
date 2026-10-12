@@ -1,6 +1,13 @@
 // bb-fork(parent-mute): cover reconciliation of the pre-merge 0131 muted-at migration
 import { expect, it } from "vitest";
 import { createConnection, migrate, type DbConnection } from "../src/index.js";
+import {
+  dropEnvironmentStartRefColumn,
+  dropIdleLifecycleIndexes,
+  dropPluginEnabledFollowsDefaultColumn,
+  dropQueuedMessageEditHeldUntilColumn,
+  rewindThreadPruningWork,
+} from "./helpers/rewind.js";
 
 const LEGACY_MUTED_AT_MIGRATION_WHEN = 1790254777753;
 const ENVIRONMENT_RETENTION_MIGRATION_WHEN = 1790230932025;
@@ -68,10 +75,13 @@ it("reconciles the pre-merge 0131 muted-at migration with upstream's renumbered 
     expect(indexExists(db, "environments_provider_lifecycle_idx")).toBe(true);
 
     db.$client.exec(`
-      ALTER TABLE threads DROP COLUMN draft;
-      ALTER TABLE environments DROP COLUMN start_ref;
       DROP INDEX IF EXISTS environments_provider_lifecycle_idx;
     `);
+    dropIdleLifecycleIndexes(db);
+    dropPluginEnabledFollowsDefaultColumn(db);
+    dropQueuedMessageEditHeldUntilColumn(db);
+    dropEnvironmentStartRefColumn(db);
+    rewindThreadPruningWork(db);
     db.$client
       .prepare<[number]>(
         "DELETE FROM __drizzle_migrations WHERE created_at >= ?",
@@ -86,7 +96,6 @@ it("reconciles the pre-merge 0131 muted-at migration with upstream's renumbered 
     expect(() => migrate(db)).not.toThrow();
 
     const columns = tableColumns(db, "threads");
-    expect(columns).toContain("draft");
     expect(columns).toContain("parent_notifications_muted_at");
     expect(columns).not.toContain("_bb_parent_notifications_muted_at_pending");
     expect(indexExists(db, "environments_provider_lifecycle_idx")).toBe(true);

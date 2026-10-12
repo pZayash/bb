@@ -40,12 +40,13 @@ describe("secret file", () => {
         fileName: "secret",
       });
 
-      expect(second).toBe(first);
+    expect(second).toBe(first);
+    if (process.platform !== "win32") {
       expect((await stat(path.join(dataDir, "secret"))).mode & 0o777).toBe(
         0o600,
       );
-    },
-  );
+    }
+  });
 
   it("returns the same secret to concurrent creators", async () => {
     const dataDir = await makeTempDir();

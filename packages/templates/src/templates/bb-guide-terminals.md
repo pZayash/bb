@@ -31,6 +31,15 @@ List and create require exactly one explicit scope:
 Machine names are resolved to an explicit machine ID. No scope defaults to the
 server machine, and --cwd is valid only with --machine or --host.
 
+A terminal runs the machine's own shell: $SHELL (then zsh, bash, sh) on macOS
+and Linux; on Windows, PowerShell 7 when `pwsh` is on PATH, otherwise Windows
+PowerShell, otherwise cmd. Write --command in that shell's syntax. To run a
+program with arguments without knowing the shell, pass them after `--`
+(`bb terminal create --thread <id> -- pnpm test "my file.ts"`): the machine
+quotes each argument for its own shell. `send --enter` presses Enter (a carriage
+return), which every one of those shells accepts. The terminal's exit code is
+the command's own exit code on every shell.
+
 <!-- bb-fork(windows): the shell choice is a fork feature; see docs/windows.md. -->
 Some machines offer more than one shell. Ask the machine what it can launch,
 then pick one for an interactive terminal:
@@ -48,21 +57,6 @@ shell, so combining it with --command or a positional command is rejected. An
 unknown or removed shell id falls back to the machine default instead of
 failing the launch.
 
-Some machines offer more than one shell. Ask the machine what it can launch,
-then pick one for an interactive terminal:
-
-  bb terminal shells --machine <id-or-name>
-    --host <id-or-name>                   Alias for --machine
-    --json                                Print shell ids, labels, paths, and the default
-
-  bb terminal create --machine <id-or-name> --shell <shell-id>
-
-Only a native Windows machine reports a list today: PowerShell 7, Windows
-PowerShell, and Git Bash, each installed copy. The id marked default is what a
-terminal launches without --shell. `--shell` is valid only for an interactive
-shell, so combining it with --command or a positional command is rejected. An
-unknown or removed shell id falls back to the machine default instead of
-failing the launch.
 
 All other operations need only the terminal ID. They also accept the scope
 flags above and ignore them, so a command built for `list` or `create` still

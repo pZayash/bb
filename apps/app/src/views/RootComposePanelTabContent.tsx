@@ -14,6 +14,7 @@ import {
   LazyNewTabPage,
   LazyProjectFilePreviewTabContent,
   LazyThreadStorageFilePreviewTabContent,
+  LazyAttachmentFilePreviewTabContent,
   LazyThreadTerminalPanel,
   LazyWorkspaceFilePreviewTabContent,
 } from "@/components/secondary-panel/lazySecondaryPanelComponents";
@@ -28,7 +29,7 @@ import {
   type FileOpenerOriginalTab,
 } from "@/components/plugin/file-opener-tabs";
 import { useEnvironment } from "@/hooks/queries/environment-queries";
-import { useThreadStorageViewer } from "@/components/secondary-panel/useThreadStorageViewer";
+import { useThreadStorageLocation } from "@/hooks/queries/thread-queries";
 import { useHostDaemon } from "@/hooks/useHostDaemon";
 import { useLocalOpenTargets } from "@/hooks/useLocalOpenTargets";
 import {
@@ -56,7 +57,7 @@ interface RootComposePanelTabContentProps {
   onActivateTab: (tabId: string) => void;
   onAutoFocusNewTabHandled: () => void;
   onAutoFocusTerminalHandled: () => void;
-  onOpenBrowser: () => void;
+  onOpenBrowser: (() => void) | null;
   onOpenPanelLink: MarkdownPreviewLinkHandler;
   onSelectFileSearchResult: (selection: FileSearchSelection) => void;
   onSelectionAddToChat: (text: string) => void;
@@ -70,9 +71,8 @@ interface RootComposePanelTabContentProps {
   rootPanelThreadId: string | null;
   rootProjectHostId: string | null;
   shouldAutoFocusNewTab: boolean;
-  shouldAutoFocusTerminal: boolean;
+  autoFocusTerminalId: string | null;
   // bb-fork(windows): shell picker rendered beside the Start terminal action.
-  shellIdForLaunch?: string | null;
   startTerminalTrailing?: ReactNode;
   tab: SecondaryFileFixedPanelTab;
   terminalTarget: RootComposeTerminalTarget | null;
@@ -158,8 +158,7 @@ export function RootComposePanelTabContent({
   rootPanelThreadId,
   rootProjectHostId,
   shouldAutoFocusNewTab,
-  shouldAutoFocusTerminal,
-  shellIdForLaunch,
+  autoFocusTerminalId,
   startTerminalTrailing,
   tab,
   terminalTarget,
@@ -167,22 +166,29 @@ export function RootComposePanelTabContent({
   switch (tab.kind) {
     case "browser":
       return null;
+    case "attachment-file-preview":
+      return (
+        <LazyAttachmentFilePreviewTabContent
+          isPanelOpen={isPanelOpen}
+          name={tab.name}
+          onSelectionAddToChat={onSelectionAddToChat}
+          path={tab.path}
+          projectId={tab.projectId}
+        />
+      );
     case "terminal":
       return terminalTarget === null ? null : (
         <LazyThreadTerminalPanel
           autoFocus={
-            pane.isFocused && tab.id === activeTabId && shouldAutoFocusTerminal
+            pane.isFocused &&
+            tab.id === activeTabId &&
+            tab.terminalId === autoFocusTerminalId
           }
-          canCreateTerminal={canCreateTerminal}
           isPanelOpen={isPanelOpen}
           isPanelPersistedOpen={isPanelPersistedOpen}
           onAutoFocusHandled={onAutoFocusTerminalHandled}
           onOpenLink={onOpenPanelLink}
           onSelectionAddToChat={onSelectionAddToChat}
-          panelStateId={ROOT_COMPOSE_FIXED_PANEL_STATE_ID}
-          // bb-fork(windows): replacement terminals use the picked shell.
-          shellIdForLaunch={shellIdForLaunch}
-          syncThreadId={null}
           target={terminalTarget}
           terminalId={tab.terminalId}
         />
@@ -204,12 +210,12 @@ export function RootComposePanelTabContent({
           }}
           recentItemsThreadId={ROOT_COMPOSE_FIXED_PANEL_STATE_ID}
           onOpenBrowser={
-            rootPanelThreadId
-              ? () => {
+            onOpenBrowser === null
+              ? undefined
+              : () => {
                   onActivateTab(tab.id);
                   onOpenBrowser();
                 }
-              : undefined
           }
           onStartTerminal={
             canCreateTerminal
@@ -312,10 +318,12 @@ function RootComposeFilePreviewTabContent({
         ? (tab.threadId ?? rootPanelThreadId)
         : fileOpenerSource.threadId
       : null;
-  const { threadStorageRootPath } = useThreadStorageViewer({
-    fileListEnabled: storageThreadId !== null,
-    threadId: storageThreadId ?? undefined,
-  });
+  const threadStorageLocationQuery = useThreadStorageLocation(
+    storageThreadId ?? "",
+    { enabled: storageThreadId !== null },
+  );
+  const threadStorageRootPath =
+    threadStorageLocationQuery.data?.storageRootPath ?? null;
   const projectPreviewId =
     tab.kind === "workspace-file-preview" && tab.environmentId === null
       ? fileOpenerSource?.kind === "workspace"

@@ -55,15 +55,10 @@ export function forkablePluginPaths(appSourceDir: string): Plugin {
     name: "bb:forkable-plugin-paths",
     enforce: "pre",
     resolveId(source, importer, options) {
+      if (importer === undefined) return null;
       const normalizedSource = normalizePath(source);
-      const normalizedImporter =
-        importer === undefined ? undefined : normalizePath(importer);
-      if (
-        normalizedImporter === undefined ||
-        !normalizedSource.startsWith(appSourcePrefix)
-      ) {
-        return null;
-      }
+      if (!normalizedSource.startsWith(appSourcePrefix)) return null;
+      const normalizedImporter = normalizePath(importer);
       const plugin = plugins.find(({ root }) =>
         normalizedImporter.startsWith(root),
       );

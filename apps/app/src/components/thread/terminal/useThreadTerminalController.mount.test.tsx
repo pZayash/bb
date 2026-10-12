@@ -6,14 +6,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { sdk } from "@/lib/sdk";
 import { createQueryClientTestHarness } from "@/test/queryClientTestHarness";
 import {
-  shouldMountTerminalViewForPanel,
   useThreadTerminalController,
   type ThreadTerminalControllerArgs,
 } from "./useThreadTerminalController";
 import { makeTerminalSession } from "@/test/fixtures/terminal-sessions";
 
 vi.mock("@/lib/sdk", () => ({
-  sdk: { terminals: { create: vi.fn(), list: vi.fn() } },
+  sdk: { terminals: { list: vi.fn() } },
 }));
 
 const session: TerminalSession = makeTerminalSession({
@@ -34,50 +33,16 @@ function controllerArgs(
   visibility: PanelVisibility,
 ): ThreadTerminalControllerArgs {
   return {
-    canCreateTerminal: true,
     isPanelOpen: visibility.isPanelOpen,
     isPanelPersistedOpen: visibility.isPanelPersistedOpen,
-    syncThreadId: null,
     target: { kind: "thread", threadId: "thr_1" },
+    terminalId: session.id,
   };
 }
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-});
-
-describe("shouldMountTerminalViewForPanel", () => {
-  it("mounts only for an open panel or a hidden panel this client already opened", () => {
-    expect(
-      shouldMountTerminalViewForPanel({
-        hasPanelOpened: false,
-        isPanelOpen: true,
-        isPanelPersistedOpen: true,
-      }),
-    ).toBe(true);
-    expect(
-      shouldMountTerminalViewForPanel({
-        hasPanelOpened: false,
-        isPanelOpen: false,
-        isPanelPersistedOpen: true,
-      }),
-    ).toBe(false);
-    expect(
-      shouldMountTerminalViewForPanel({
-        hasPanelOpened: true,
-        isPanelOpen: false,
-        isPanelPersistedOpen: true,
-      }),
-    ).toBe(true);
-    expect(
-      shouldMountTerminalViewForPanel({
-        hasPanelOpened: true,
-        isPanelOpen: false,
-        isPanelPersistedOpen: false,
-      }),
-    ).toBe(false);
-  });
 });
 
 describe("useThreadTerminalController terminal view mounting", () => {
@@ -94,6 +59,20 @@ describe("useThreadTerminalController terminal view mounting", () => {
 
     expect(result.current.shouldMountTerminalView).toBe(false);
     expect(sdk.terminals.list).not.toHaveBeenCalled();
+  });
+
+  it("mounts the view for an open panel that is not persisted open", () => {
+    vi.mocked(sdk.terminals.list).mockResolvedValue({ sessions: [session] });
+    const { wrapper } = createQueryClientTestHarness();
+    const { result } = renderHook(
+      () =>
+        useThreadTerminalController(
+          controllerArgs({ isPanelOpen: true, isPanelPersistedOpen: false }),
+        ),
+      { wrapper },
+    );
+
+    expect(result.current.shouldMountTerminalView).toBe(true);
   });
 
   it("keeps the view mounted across a compact close and unmounts once persisted state closes", async () => {
@@ -126,35 +105,12 @@ describe("useThreadTerminalController terminal view mounting", () => {
     expect(result.current.shouldMountTerminalView).toBe(true);
   });
 
-  // bb-fork(windows): a replacement terminal launches the picked shell.
-  it("creates a replacement terminal with the requested shell", async () => {
-    vi.mocked(sdk.terminals.list).mockResolvedValue({ sessions: [session] });
-    vi.mocked(sdk.terminals.create).mockResolvedValue(session);
-    const { wrapper } = createQueryClientTestHarness();
-    const { result } = renderHook(
-      () =>
-        useThreadTerminalController({
-          ...controllerArgs({ isPanelOpen: true, isPanelPersistedOpen: true }),
-          shellIdForLaunch: "git-bash",
-        }),
-      { wrapper },
-    );
-
-    result.current.handleCreateTerminal();
-
-    await waitFor(() => {
-      expect(sdk.terminals.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          scope: { kind: "thread", threadId: "thr_1" },
-          start: { mode: "shell", shellId: "git-bash" },
-        }),
-      );
+  it("never shows a sibling terminal in place of its own missing terminal", async () => {
+    const sibling = makeTerminalSession({
+      id: "term_sibling",
+      threadId: "thr_1",
     });
-  });
-
-  it("leaves the shell to the host without a picked shell", async () => {
-    vi.mocked(sdk.terminals.list).mockResolvedValue({ sessions: [session] });
-    vi.mocked(sdk.terminals.create).mockResolvedValue(session);
+    vi.mocked(sdk.terminals.list).mockResolvedValue({ sessions: [sibling] });
     const { wrapper } = createQueryClientTestHarness();
     const { result } = renderHook(
       () =>
@@ -164,12 +120,9 @@ describe("useThreadTerminalController terminal view mounting", () => {
       { wrapper },
     );
 
-    result.current.handleCreateTerminal();
-
     await waitFor(() => {
-      expect(sdk.terminals.create).toHaveBeenCalled();
+      expect(sdk.terminals.list).toHaveBeenCalled();
     });
-    const request = vi.mocked(sdk.terminals.create).mock.calls[0]?.[0];
-    expect(request).not.toHaveProperty("start");
+    expect(result.current.activeSession).toBeNull();
   });
 });

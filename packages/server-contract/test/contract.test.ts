@@ -60,8 +60,11 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
       "threadTimelineResponseSchema.delta.upsertRows.systemMessageSubject.outcomes.interruption",
       "threadTimelineResponseSchema.delta.upsertRows.systemMessageSubject.outcomes.interruption.cause",
       "threadTimelineResponseSchema.rows.systemMessageSubject.outcomes",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.systemMessageSubject.outcomes",
       "threadTimelineResponseSchema.rows.systemMessageSubject.outcomes.interruption",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.systemMessageSubject.outcomes.interruption",
       "threadTimelineResponseSchema.rows.systemMessageSubject.outcomes.interruption.cause",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.systemMessageSubject.outcomes.interruption.cause",
     ],
   },
   {
@@ -129,6 +132,7 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
       "threadTimelineResponseSchema.activeWorkflows.presentation",
       "threadTimelineResponseSchema.delta.upsertRows.presentation",
       "threadTimelineResponseSchema.rows.presentation",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.presentation",
     ],
   },
   {
@@ -161,10 +165,15 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
       "threadTimelineResponseSchema.delta.upsertRows.presentation.tint",
       "threadTimelineResponseSchema.delta.upsertRows.presentation.title",
       "threadTimelineResponseSchema.rows.presentation.badge",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.presentation.badge",
       "threadTimelineResponseSchema.rows.presentation.detail",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.presentation.detail",
       "threadTimelineResponseSchema.rows.presentation.suppress",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.presentation.suppress",
       "threadTimelineResponseSchema.rows.presentation.tint",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.presentation.tint",
       "threadTimelineResponseSchema.rows.presentation.title",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.presentation.title",
     ],
   },
   {
@@ -178,8 +187,11 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
       "threadTimelineResponseSchema.delta.upsertRows.questions.options.description",
       "threadTimelineResponseSchema.delta.upsertRows.questions.shortLabel",
       "threadTimelineResponseSchema.rows.questions.options",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.questions.options",
       "threadTimelineResponseSchema.rows.questions.options.description",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.questions.options.description",
       "threadTimelineResponseSchema.rows.questions.shortLabel",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.questions.shortLabel",
     ],
   },
   {
@@ -229,19 +241,33 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
       "threadTimelineResponseSchema.delta.upsertRows.workflow.agents.tokens",
       "threadTimelineResponseSchema.delta.upsertRows.workflow.agents.toolCalls",
       "threadTimelineResponseSchema.rows.workflow.agents.agentType",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.workflow.agents.agentType",
       "threadTimelineResponseSchema.rows.workflow.agents.durationMs",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.workflow.agents.durationMs",
       "threadTimelineResponseSchema.rows.workflow.agents.error",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.workflow.agents.error",
       "threadTimelineResponseSchema.rows.workflow.agents.isolation",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.workflow.agents.isolation",
       "threadTimelineResponseSchema.rows.workflow.agents.lastToolName",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.workflow.agents.lastToolName",
       "threadTimelineResponseSchema.rows.workflow.agents.lastToolSummary",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.workflow.agents.lastToolSummary",
       "threadTimelineResponseSchema.rows.workflow.agents.phaseIndex",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.workflow.agents.phaseIndex",
       "threadTimelineResponseSchema.rows.workflow.agents.phaseTitle",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.workflow.agents.phaseTitle",
       "threadTimelineResponseSchema.rows.workflow.agents.promptPreview",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.workflow.agents.promptPreview",
       "threadTimelineResponseSchema.rows.workflow.agents.queuedAt",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.workflow.agents.queuedAt",
       "threadTimelineResponseSchema.rows.workflow.agents.resultPreview",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.workflow.agents.resultPreview",
       "threadTimelineResponseSchema.rows.workflow.agents.startedAt",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.workflow.agents.startedAt",
       "threadTimelineResponseSchema.rows.workflow.agents.tokens",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.workflow.agents.tokens",
       "threadTimelineResponseSchema.rows.workflow.agents.toolCalls",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.workflow.agents.toolCalls",
     ],
   },
   {
@@ -252,14 +278,19 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
       "threadTimelineResponseSchema.activeWorkflows.workflow.phases.kind",
       "threadTimelineResponseSchema.delta.upsertRows.workflow.phases.kind",
       "threadTimelineResponseSchema.rows.workflow.phases.kind",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.workflow.phases.kind",
     ],
   },
   {
     reason:
-      "A command row carries an output preview only when its output was truncated and the full text may still be fetchable; absence means the row's output field is the whole output.",
+      "A command row carries an output preview only when its output was truncated and the full text may still be fetchable, and a row is marked contentDeferred only when its expandable content was left out to be loaded on expand; absence means the row's fields hold the whole content.",
     fields: [
+      "threadTimelineResponseSchema.delta.upsertRows.contentDeferred",
+      "threadTimelineResponseSchema.rows.contentDeferred",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.contentDeferred",
       "threadTimelineResponseSchema.delta.upsertRows.outputPreview",
       "threadTimelineResponseSchema.rows.outputPreview",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.outputPreview",
     ],
   },
   {
@@ -268,6 +299,7 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
     fields: [
       "threadTimelineResponseSchema.delta.upsertRows.reasoningId",
       "threadTimelineResponseSchema.rows.reasoningId",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.reasoningId",
     ],
   },
   {
@@ -276,6 +308,7 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
     fields: [
       "threadTimelineResponseSchema.delta.upsertRows.steps.status",
       "threadTimelineResponseSchema.rows.steps.status",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates.steps.status",
     ],
   },
   {
@@ -290,12 +323,15 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
   },
   {
     reason:
-      "Timeline snapshot fields are absent on older servers; content metadata and detail continuation inputs only apply to paginated content.",
+      "Timeline snapshot fields are absent on older servers; content metadata and detail continuation inputs only apply to paginated content; older row updates only appear when a latest page omits rows that changed inside its window; a detail item scope is absent when the whole turn is requested, and content stays inline unless deferral is requested.",
     fields: [
       "threadTimelineResponseSchema.timelinePage.contentPage",
       "threadTimelineResponseSchema.timelinePage.historySnapshot",
+      "threadTimelineResponseSchema.timelinePage.olderRowUpdates",
       "threadTimelineResponseSchema.timelinePage.olderRowsSourceSeqEnd",
       "timelineTurnSummaryDetailsQuerySchema.beforeCursor",
+      "timelineTurnSummaryDetailsQuerySchema.deferContent",
+      "timelineTurnSummaryDetailsQuerySchema.itemId",
     ],
   },
   {
@@ -378,12 +414,14 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
       "Thread creation may omit root-thread presentation and execution fields so the server can resolve project/provider defaults.",
     fields: [
       "createThreadRequestSchema.sectionId",
+      "createThreadRequestSchema.pinned",
       "createThreadRequestSchema.model",
       "createThreadRequestSchema.parentThreadId",
       "createThreadRequestSchema.providerId",
       "createThreadRequestSchema.permissionMode",
       "createThreadRequestSchema.reasoningLevel",
       "createThreadRequestSchema.serviceTier",
+      "createThreadRequestSchema.sessionOptions",
       "createThreadRequestSchema.sourceSeqEnd",
       "createThreadRequestSchema.sourceThreadId",
       "createThreadRequestSchema.title",
@@ -464,6 +502,7 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
       "updateThreadRequestSchema.sectionId",
       "updateThreadRequestSchema.parentThreadId",
       "updateThreadRequestSchema.reasoningLevel",
+      "updateThreadRequestSchema.sessionOptions",
       "updateThreadRequestSchema.title",
       "updateThreadRequestSchema.visibility",
     ],
@@ -544,6 +583,7 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
       "threadTimelineQuerySchema.beforeAnchorId",
       "threadTimelineQuerySchema.summaryOnly",
       "threadTimelineQuerySchema.afterSequence",
+      "threadTimelineQuerySchema.deferContent",
     ],
   },
   {
@@ -553,8 +593,11 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
   },
   {
     reason:
-      "Context snapshots are omitted when the latest measurement has no breakdown.",
-    fields: ["threadTimelineResponseSchema.contextWindowUsage.snapshot"],
+      "Context snapshots are omitted when the latest measurement has no breakdown, and session cost when the provider reports none.",
+    fields: [
+      "threadTimelineResponseSchema.contextWindowUsage.snapshot",
+      "threadTimelineResponseSchema.contextWindowUsage.cost",
+    ],
   },
   {
     reason:
@@ -566,14 +609,28 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
   },
   {
     reason:
-      "Uploaded attachments may omit mime type when the client could not determine one.",
-    fields: ["uploadedPromptAttachmentSchema.mimeType"],
+      "Uploaded attachments may omit mime type when the client could not determine one. A source project is present only while an uploaded attachment still belongs to a different project, and a machine only on an absolute-path attachment from prompt history or a draft; the server checks and strips both, and destination-relative and legacy references omit them.",
+    fields: [
+      "uploadedPromptAttachmentSchema.mimeType",
+      "uploadedPromptAttachmentSchema.sourceProjectId",
+      "createQueuedMessageRequestSchema.input.sourceProjectId",
+      "createThreadRequestSchema.input.sourceProjectId",
+      "forkThreadRequestSchema.agentContextSeed.sourceProjectId",
+      "forkThreadRequestSchema.input.sourceProjectId",
+      "sendMessageRequestSchema.input.sourceProjectId",
+      "sendQueuedMessageResponseSchema.queuedMessage.content.sourceProjectId",
+      "createQueuedMessageRequestSchema.input.hostId",
+      "createThreadRequestSchema.input.hostId",
+      "forkThreadRequestSchema.agentContextSeed.hostId",
+      "forkThreadRequestSchema.input.hostId",
+      "sendMessageRequestSchema.input.hostId",
+      "sendQueuedMessageResponseSchema.queuedMessage.content.hostId",
+    ],
   },
   {
     reason:
-      "sendAt is present only when the caller is scheduling the dispatch, and draft only when it is saving the input as a draft thread instead; omission of both means attempt the dispatch now, which allocates no queued row at all when nothing blocks it.",
+      "sendAt is present only when the caller is scheduling the dispatch; omission means attempt the dispatch now, which allocates no queued row at all when nothing blocks it.",
     fields: [
-      "createThreadRequestSchema.draft",
       "createThreadRequestSchema.sendAt",
       "sendMessageRequestSchema.sendAt",
     ],
@@ -966,12 +1023,21 @@ describe("public terminal contracts", () => {
   });
 
   it("defaults and validates the terminal websocket replay sequence", () => {
-    expect(terminalWebSocketQuerySchema.parse({})).toEqual({ sinceSeq: 0 });
-    expect(terminalWebSocketQuerySchema.parse({ sinceSeq: "12" })).toEqual({
+    expect(terminalWebSocketQuerySchema.parse({})).toEqual({
+      outputAcks: false,
+      sinceSeq: 0,
+    });
+    expect(
+      terminalWebSocketQuerySchema.parse({ outputAcks: "1", sinceSeq: "12" }),
+    ).toEqual({
+      outputAcks: true,
       sinceSeq: 12,
     });
     expect(
       terminalWebSocketQuerySchema.safeParse({ sinceSeq: "-1" }).success,
+    ).toBe(false);
+    expect(
+      terminalWebSocketQuerySchema.safeParse({ outputAcks: "true" }).success,
     ).toBe(false);
   });
 
@@ -1230,7 +1296,6 @@ describe("server-contract canonical schemas", () => {
           updatedAt: 2,
           runtime: {
             displayStatus: "idle",
-            hostReconnectGraceExpiresAt: null,
           },
           activity: {
             activeWorkflowCount: 0,
@@ -1446,10 +1511,17 @@ describe("server-contract canonical schemas", () => {
       }),
     ).toThrow("Project path must be an absolute path.");
 
+    expect(
+      contract.updateProjectSourceRequestSchema.parse({
+        type: "local_path",
+        path: " c:/Users/michael/bb/ ",
+      }),
+    ).toMatchObject({ path: "C:\\Users\\michael\\bb" });
+
     expect(() =>
       contract.updateProjectSourceRequestSchema.parse({
         type: "local_path",
-        path: " C:\\Users\\michael\\bb\\ ",
+        path: "\\\\server\\share\\bb",
       }),
     ).not.toThrow();
 
@@ -1979,12 +2051,6 @@ describe("server-contract clients", () => {
       }).pathname,
     ).toBe("/api/v1/projects/proj_123/paths");
     expect(
-      publicClient.projects[":id"].files.content.$url({
-        param: { id: "proj_123" },
-        query: { path: "src/app.ts" },
-      }).pathname,
-    ).toBe("/api/v1/projects/proj_123/files/content");
-    expect(
       publicClient.threads[":id"].timeline["turn-summary-details"].$url({
         param: { id: "thr_123" },
         query: {
@@ -2013,38 +2079,6 @@ describe("server-contract clients", () => {
         },
       }).pathname,
     ).toBe("/api/v1/threads/thr_123/thread-storage/paths");
-    expect(
-      publicClient.threads[":id"]["thread-storage"].content.$url({
-        param: { id: "thr_123" },
-        query: { path: "notes/plan.md" },
-      }).pathname,
-    ).toBe("/api/v1/threads/thr_123/thread-storage/content");
-    expect(
-      publicClient.threads[":id"]["host-files"].content.$url({
-        param: { id: "thr_123" },
-        query: { path: "/Users/me/notes/plan.md" },
-      }).pathname,
-    ).toBe("/api/v1/threads/thr_123/host-files/content");
-    expect(
-      publicClient.threads[":id"]["thread-storage"].files[":filePath{.+}"].$url(
-        {
-          param: { id: "thr_123", filePath: "reports/a%20b/preview.html" },
-        },
-      ).pathname,
-    ).toBe(
-      "/api/v1/threads/thr_123/thread-storage/files/reports/a%20b/preview.html",
-    );
-    expect(
-      publicClient.threads[":id"].worktree.files[":filePath{.+}"].$url({
-        param: { id: "thr_123", filePath: "public/report.html" },
-      }).pathname,
-    ).toBe("/api/v1/threads/thr_123/worktree/files/public/report.html");
-    expect(
-      publicClient.threads[":id"].files.raw.$url({
-        param: { id: "thr_123" },
-        query: { path: "/Users/me/report.html" },
-      }).pathname,
-    ).toBe("/api/v1/threads/thr_123/files/raw");
     expect(
       publicClient.threads[":id"].interactions.$url({
         param: { id: "thr_123" },
@@ -2079,11 +2113,6 @@ describe("server-contract clients", () => {
     expect(() =>
       contract.threadStorageFilesQuerySchema.parse({ query: longQuery }),
     ).toThrow();
-    expect(
-      contract.threadHostFileContentQuerySchema.parse({
-        path: "/Users/me/notes/plan.md",
-      }),
-    ).toEqual({ path: "/Users/me/notes/plan.md" });
   });
 
   it("keeps project command catalog queries snapshot-only", () => {

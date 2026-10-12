@@ -1,7 +1,9 @@
 import os from "node:os";
 import type { IPty } from "node-pty";
 import { describe, expect, it } from "vitest";
-import { resolveWindowsTerminalShell } from "./terminal-manager.js";
+import { access } from "node:fs/promises";
+import { constants } from "node:fs";
+import { resolveWindowsTerminalShell } from "./terminal-shell.js";
 
 const isWindows = process.platform === "win32";
 
@@ -13,7 +15,17 @@ interface TrackedPty {
 
 async function spawnWindowsShell(): Promise<{ pty: IPty; tracked: TrackedPty }> {
   const { spawn } = await import("node-pty");
-  const shell = await resolveWindowsTerminalShell();
+  const shell = await resolveWindowsTerminalShell({
+    env: process.env,
+    fileExists: async (filePath) => {
+      try {
+        await access(filePath, constants.X_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  });
   const pty = spawn(shell, ["-NoLogo", "-NoProfile"], {
     name: "xterm-256color",
     cols: 80,

@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
@@ -60,7 +61,12 @@ it("auto-cancels extension dialogs in a helper session without a UI handler", as
       // bb-fork(windows): only releases that handle after process exit, so wait
       // bb-fork(windows): for exit before removing and retry a lingering EBUSY.
       await session.waitForChildExit();
-      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      await rm(dir, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 100,
+      });
     }
   }
 });

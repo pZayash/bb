@@ -183,25 +183,24 @@ import { readFileSync } from "fs";
 import { basename } from "path";
 import { spawn } from "child_process";
 import { fileURLToPath } from "node:url";
-export default () => [typeof readFileSync, basename("/a/b"), typeof spawn, fileURLToPath("file:///tmp/test")];
+export default () => [typeof readFileSync, basename("/a/b"), typeof spawn, fileURLToPath(${JSON.stringify(pathToFileURL(resolve("/tmp/test")).href)})];
 `);
-        const { jsPath } = await buildPluginServer(
-          dir,
-          "0.0.0-test",
-          await testToolchain(),
-          {
-            format: "cjs",
-            fallbackResolve: (specifier) => sdkRequire.resolve(specifier),
-          },
-        );
-        expect(sdkRequire(jsPath).default()).toEqual([
-          "function",
-          "b",
-          "function",
-          "/tmp/test",
-        ]);
-      },
-    );
+      const { jsPath } = await buildPluginServer(
+        dir,
+        "0.0.0-test",
+        await testToolchain(),
+        {
+          format: "cjs",
+          fallbackResolve: (specifier) => sdkRequire.resolve(specifier),
+        },
+      );
+      expect(sdkRequire(jsPath).default()).toEqual([
+        "function",
+        "b",
+        "function",
+        resolve("/tmp/test"),
+      ]);
+    });
 
     it("uses runtime fallback for missing Zod and subpaths without weakening release validation", async () => {
       const dir = await fixture(`

@@ -22,7 +22,7 @@ describe("packed plugin SDK exports", () => {
     };
 
     expect(packageJson.private).not.toBe(true);
-    expect(packageJson.dependencies.zod).toBe("^4.3.6");
+    expect(packageJson.dependencies.zod).toBe("^4.6.5");
     expect(packageJson.peerDependencies.zod).toBeUndefined();
     expect(packageJson.files).toEqual(["bundled-types", "dist", "README.md"]);
     expect(Object.keys(packageJson.exports)).toEqual([
@@ -30,11 +30,13 @@ describe("packed plugin SDK exports", () => {
       "./provider-bridge",
       "./provider-bridge/testing",
       "./provider-bridge/acp",
+      "./provider-bridge/acp-next",
       "./environment-provider",
       "./machine-provider",
       "./app",
       "./host",
       "./internal/composer-customization-validation",
+      "./internal/composer-handle",
       "./internal/composer-view",
       "./internal/file-navigation-validation",
       "./internal/host-policy",

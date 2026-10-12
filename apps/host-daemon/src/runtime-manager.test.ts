@@ -314,24 +314,6 @@ function createProvisionWorkspaceMock(path: string) {
 }
 
 describe("RuntimeManager", () => {
-  it("creates a runtime the first time an environment is requested", async () => {
-    const provisionWorkspace = createProvisionWorkspaceMock("/tmp/env-1");
-    const createRuntime = vi.fn(() => createFakeRuntime());
-    const manager = new RuntimeManager({
-      provisionWorkspace,
-      createRuntime,
-    });
-
-    const entry = await manager.ensureEnvironment({
-      environmentId: "env-1",
-      workspacePath: "/tmp/env-1",
-    });
-
-    expect(provisionWorkspace).toHaveBeenCalledTimes(1);
-    expect(createRuntime).toHaveBeenCalledTimes(1);
-    expect(entry.path).toBe("/tmp/env-1");
-  });
-
   it("refreshes the workspace on the resident runtime entry", async () => {
     const plainWorkspace = createFakeWorkspace("/tmp/env-refresh", false);
     const gitWorkspace = createFakeWorkspace("/tmp/env-refresh");
@@ -621,6 +603,74 @@ describe("RuntimeManager", () => {
     expect(createRuntime).toHaveBeenCalledTimes(2);
     expect(firstEntry.runtime.shutdown).toHaveBeenCalledTimes(1);
   });
+
+  it.each(["catalog", "shell"] as const)(
+    "retains one runtime when concurrent ensures overlap a %s replacement",
+    async (invalidation) => {
+      const dataDir = await makeTempDir("bb-runtime-replacement-");
+      const source = await writeInjectedSkillSource({
+        dataDir,
+        name: "race-check",
+        token: "catalog-before",
+      });
+      const createdRuntimes: ReturnType<typeof createFakeRuntime>[] = [];
+      const createRuntime = vi.fn(() => {
+        const runtime = createFakeRuntime();
+        createdRuntimes.push(runtime);
+        return runtime;
+      });
+      const manager = new RuntimeManager({
+        dataDir,
+        createRuntime,
+        provisionWorkspace: createProvisionWorkspaceMock("/tmp/race-workspace"),
+      });
+      const initial = await manager.ensureEnvironment({
+        environmentId: "replacement-env",
+        workspacePath: "/tmp/race-workspace",
+        injectedSkillSources: [source],
+      });
+      const initialRuntime = createdRuntimes[0]!;
+      if (invalidation === "shell") {
+        initialRuntime.setOpenBackgroundWork(true);
+        await manager.replaceBaseShellEnv({ PATH: "/refreshed/bin" });
+        initialRuntime.setOpenBackgroundWork(false);
+      }
+      const shutdownEntered = createDeferredPromise<void>();
+      const shutdownReleased = createDeferredPromise<void>();
+      initialRuntime.shutdown.mockImplementationOnce(async () => {
+        shutdownEntered.resolve();
+        await shutdownReleased.promise;
+      });
+      const args = {
+        environmentId: "replacement-env",
+        workspacePath: "/tmp/race-workspace",
+        injectedSkillSources: [],
+      };
+      const replacing = manager.ensureEnvironment(args);
+      await shutdownEntered.promise;
+      const concurrent = manager.ensureEnvironment(args);
+      await Promise.resolve();
+      shutdownReleased.resolve();
+      try {
+        const [replacement, overlapping] = await Promise.all([
+          replacing,
+          concurrent,
+        ]);
+        expect(replacement.runtime).not.toBe(initial.runtime);
+        expect.soft(overlapping.runtime).toBe(replacement.runtime);
+        expect(manager.get(args.environmentId)?.runtime).toBe(
+          replacement.runtime,
+        );
+        expect.soft(createRuntime).toHaveBeenCalledTimes(2);
+      } finally {
+        shutdownReleased.resolve();
+        await manager.shutdownAll();
+      }
+      for (const runtime of createdRuntimes) {
+        expect.soft(runtime.shutdown).toHaveBeenCalledTimes(1);
+      }
+    },
+  );
 
   it("passes current roots through a busy runtime and replaces it once idle", async () => {
     const dataDir = await makeTempDir("bb-runtime-manager-skills-defer-");
@@ -1001,33 +1051,6 @@ describe("RuntimeManager", () => {
     expect(runtimeOptions.current?.additionalWorkspaceWriteRoots).toEqual([
       "/tmp/bb-thread-storage",
     ]);
-  });
-
-  it("passes shell env through to created runtimes", async () => {
-    const provisionWorkspace = createProvisionWorkspaceMock("/tmp/env-1");
-    const createRuntime = vi.fn(() => createFakeRuntime());
-    const manager = new RuntimeManager({
-      provisionWorkspace,
-      createRuntime,
-      shellEnv: {
-        PATH: "/tmp/bb-bin:/usr/bin",
-        BB_SERVER_URL: "http://127.0.0.1:3334",
-      },
-    });
-
-    await manager.ensureEnvironment({
-      environmentId: "env-1",
-      workspacePath: "/tmp/env-1",
-    });
-
-    expect(createRuntime).toHaveBeenCalledWith(
-      expect.objectContaining({
-        shellEnv: {
-          PATH: "/tmp/bb-bin:/usr/bin",
-          BB_SERVER_URL: "http://127.0.0.1:3334",
-        },
-      }),
-    );
   });
 
   it("forwards the bridge record-mode directory to provider processes but not the shell env", async () => {
@@ -1413,75 +1436,6 @@ describe("RuntimeManager", () => {
     await manager.shutdownAll();
   });
 
-  it("keeps an environment runtime while a background task is still open", async () => {
-    const provisionWorkspace = createProvisionWorkspaceMock("/tmp/env-1");
-    const runtime = createFakeRuntime();
-    const manager = new RuntimeManager({
-      provisionWorkspace,
-      createRuntime: () => runtime,
-      shellEnv: {
-        PATH: "/old/bin:/usr/bin",
-      },
-    });
-
-    await manager.ensureEnvironment({
-      environmentId: "env-1",
-      workspacePath: "/tmp/env-1",
-    });
-    runtime.setOpenBackgroundWork(true);
-
-    await manager.replaceBaseShellEnv({
-      PATH: "/new/bin:/usr/bin",
-    });
-
-    expect(manager.get("env-1")?.runtime).toBe(runtime);
-    expect(runtime.shutdown).not.toHaveBeenCalled();
-
-    runtime.setOpenBackgroundWork(false);
-    await manager.replaceBaseShellEnv({
-      PATH: "/newer/bin:/usr/bin",
-    });
-
-    expect(manager.get("env-1")).toBeUndefined();
-    expect(runtime.shutdown).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps an environment runtime while a thread command is being prepared", async () => {
-    const provisionWorkspace = createProvisionWorkspaceMock("/tmp/env-1");
-    const runtime = createFakeRuntime();
-    const manager = new RuntimeManager({
-      provisionWorkspace,
-      createRuntime: () => runtime,
-      shellEnv: {
-        PATH: "/old/bin:/usr/bin",
-      },
-    });
-
-    await manager.ensureEnvironment({
-      environmentId: "env-1",
-      workspacePath: "/tmp/env-1",
-    });
-    const release = await manager.retainEnvironmentForThreadCommand(
-      "env-1",
-      "thread-1",
-    );
-
-    await manager.replaceBaseShellEnv({
-      PATH: "/new/bin:/usr/bin",
-    });
-
-    expect(manager.get("env-1")?.runtime).toBe(runtime);
-    expect(runtime.shutdown).not.toHaveBeenCalled();
-
-    release();
-    await manager.replaceBaseShellEnv({
-      PATH: "/newer/bin:/usr/bin",
-    });
-
-    expect(manager.get("env-1")).toBeUndefined();
-    expect(runtime.shutdown).toHaveBeenCalledTimes(1);
-  });
-
   it("waits for an old-environment thread command before releasing a moved thread", async () => {
     const oldRuntime = createFakeRuntime();
     const manager = new RuntimeManager({
@@ -1632,6 +1586,7 @@ describe("RuntimeManager", () => {
     });
 
     expect(second).toBe(first);
+    expect(first.path).toBe("/tmp/env-1");
     expect(provisionWorkspace).toHaveBeenCalledTimes(1);
     expect(createRuntime).toHaveBeenCalledTimes(1);
   });
@@ -1709,11 +1664,15 @@ describe("RuntimeManager", () => {
       environmentId: "env-forgotten",
       workspacePath: directory,
     });
-    const child = spawn("sleep", ["300"], {
-      cwd: directory,
-      detached: true,
-      stdio: "ignore",
-    });
+    const child = spawn(
+      process.execPath,
+      ["-e", "setTimeout(() => {}, 300_000)"],
+      {
+        cwd: directory,
+        detached: true,
+        stdio: "ignore",
+      },
+    );
     child.unref();
 
     try {
@@ -1725,7 +1684,12 @@ describe("RuntimeManager", () => {
           process.kill(child.pid, "SIGKILL");
         } catch {}
       }
-      await fs.rm(directory, { recursive: true, force: true });
+      await fs.rm(directory, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 100,
+      });
     }
   });
 

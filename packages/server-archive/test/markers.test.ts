@@ -88,23 +88,24 @@ describe("server move marker files", () => {
       await writeServerImportFile(dataDir, IMPORT_FILE);
       await writeLastServerMoveFile(dataDir, lastMove);
 
-      expect(await readServerMovedFile(dataDir)).toEqual(MOVED_FILE);
-      expect(await readServerImportFile(dataDir)).toEqual(IMPORT_FILE);
-      expect(await readLastServerMoveFile(dataDir)).toEqual(lastMove);
-      expect((await readdir(dataDir)).sort()).toEqual(
-        [
-          LAST_SERVER_MOVE_FILE_NAME,
-          SERVER_IMPORT_FILE_NAME,
-          SERVER_MOVED_FILE_NAME,
-        ].sort(),
-      );
-      for (const fileName of await readdir(dataDir)) {
+    expect(await readServerMovedFile(dataDir)).toEqual(MOVED_FILE);
+    expect(await readServerImportFile(dataDir)).toEqual(IMPORT_FILE);
+    expect(await readLastServerMoveFile(dataDir)).toEqual(lastMove);
+    expect((await readdir(dataDir)).sort()).toEqual(
+      [
+        LAST_SERVER_MOVE_FILE_NAME,
+        SERVER_IMPORT_FILE_NAME,
+        SERVER_MOVED_FILE_NAME,
+      ].sort(),
+    );
+    for (const fileName of await readdir(dataDir)) {
+      if (process.platform !== "win32") {
         expect((await stat(path.join(dataDir, fileName))).mode & 0o777).toBe(
           0o600,
         );
       }
-    },
-  );
+    }
+  });
 
   // bb-fork(windows): `chmod 0600` modes are not enforced on Windows.
   it.skipIf(process.platform === "win32")(
@@ -122,11 +123,13 @@ describe("server move marker files", () => {
       };
       await writeServerConnectHoldFile(dataDir, hold);
 
-      expect(await readServerConnectHoldFile(dataDir)).toEqual(hold);
+    expect(await readServerConnectHoldFile(dataDir)).toEqual(hold);
+    if (process.platform !== "win32") {
       expect(
         (await stat(path.join(dataDir, SERVER_CONNECT_HOLD_FILE_NAME))).mode &
           0o777,
       ).toBe(0o600);
+    }
 
       await writeFile(
         path.join(dataDir, SERVER_CONNECT_HOLD_FILE_NAME),

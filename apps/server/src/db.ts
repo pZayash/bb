@@ -16,6 +16,8 @@ type InitDbLogger = MigrationWarningLogger &
 
 interface InitDbOptions {
   dataDir?: string;
+  slowQueryThresholdMs?: number | (() => number);
+  slowQueryDiagnosticsEnabled?: () => boolean;
   logger?: InitDbLogger;
 }
 
@@ -25,6 +27,8 @@ export function initDb(
 ): DbConnection {
   const db = createConnection(databasePath, {
     slowQueryLogger: options.logger,
+    slowQueryThresholdMs: options.slowQueryThresholdMs,
+    slowQueryDiagnosticsEnabled: options.slowQueryDiagnosticsEnabled,
   });
   try {
     if (options.dataDir !== undefined && options.logger !== undefined) {
@@ -38,15 +42,11 @@ export function initDb(
         "Cannot migrate legacy automations without dataDir and logger; refusing to drop kernel automation rows before exporting them for the automations plugin",
       );
     }
-    migrate(db, {
-      deferDestructiveLegacyCleanup: true,
-      logger: options.logger,
-    });
+    migrate(db, { logger: options.logger });
     ensurePersonalProject(db);
-    return db;
   } catch (error) {
-    // bb-fork(windows): a failed init must not leak a locked database file.
     db.$client.close();
     throw error;
   }
+  return db;
 }

@@ -59,9 +59,11 @@ it("ships a recorded cell for the echo provider", () => {
   });
 });
 
-// bb-fork(windows): the recorded lanes embed the recording host's POSIX cwd.
+const replayJoinsNativeSeparatorsUnlikeThePosixRecording =
+  process.platform === "win32";
+
 it
-  .skipIf(process.platform === "win32")
+  .skipIf(replayJoinsNativeSeparatorsUnlikeThePosixRecording)
   .each(cells.map((cell) => [cellKey(cell), cell] as const))(
   "%s replays through the current bridge with zero diffs",
   async (_key, cell) => {
@@ -137,7 +139,7 @@ it
   120_000,
 );
 
-it.skipIf(process.platform === "win32")(
+it.skipIf(replayJoinsNativeSeparatorsUnlikeThePosixRecording)(
   "re-records the bridge lane beside a copy of the recording and replays from it",
   async () => {
     const cell = cells[0]!;

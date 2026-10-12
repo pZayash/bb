@@ -1,6 +1,7 @@
 import type {
   PluginSidebarThread,
   PluginSidebarThreadIndicator,
+  PluginSidebarThreadRowStatus,
 } from "@get-bb/plugin-sdk/app";
 
 type ThreadStatusShape = Pick<
@@ -15,7 +16,6 @@ const RUNNING_RUNTIME_STATUSES: Record<
   boolean
 > = {
   active: true,
-  "host-reconnecting": true,
   provisioning: true,
   starting: true,
   stopping: true,
@@ -116,6 +116,31 @@ export function getThreadListIndicatorLabel(
   return kind === "none" ? null : THREAD_LIST_INDICATOR_LABELS[kind];
 }
 
+interface ThreadStatusResolution {
+  accessibleLabel: string | null;
+  indicatorKind: ThreadListIndicatorKind;
+  rowStatusIsVisible: boolean;
+}
+
+export function resolveThreadStatus(
+  state: ThreadListIndicatorState,
+  rowStatus: PluginSidebarThreadRowStatus | null,
+): ThreadStatusResolution {
+  const indicatorKind = resolveThreadListIndicator(state);
+  const rowStatusIsVisible =
+    rowStatus !== null &&
+    indicatorKind !== "runtime" &&
+    indicatorKind !== "unread-error" &&
+    indicatorKind !== "waiting-for-input";
+  return {
+    accessibleLabel: rowStatusIsVisible
+      ? rowStatus.label
+      : getThreadListIndicatorLabel(indicatorKind),
+    indicatorKind,
+    rowStatusIsVisible,
+  };
+}
+
 export function hasThreadListWorkingActivity(
   state: ThreadListIndicatorState,
   hasRunningPluginStatus = false,
@@ -176,9 +201,9 @@ export function resolveThreadListIndicator(
 }
 
 export interface CollapsedChildActivity {
+  threadIds: readonly string[];
   pending: boolean;
   working: boolean;
-  hasUnsubmittedDraft: boolean;
   runtimeWorking: boolean;
   workflow: boolean;
   backgroundAgent: boolean;
@@ -190,9 +215,9 @@ export interface CollapsedChildActivity {
 }
 
 export const NO_COLLAPSED_CHILD_ACTIVITY: CollapsedChildActivity = {
+  threadIds: [],
   pending: false,
   working: false,
-  hasUnsubmittedDraft: false,
   runtimeWorking: false,
   workflow: false,
   backgroundAgent: false,
@@ -207,15 +232,12 @@ type ThreadActivityShape = ThreadStatusShape &
   ThreadRuntimeShape &
   Pick<PluginSidebarThread, "id" | "activity" | "hasPendingInteraction">;
 
-const EMPTY_DRAFT_THREAD_IDS: ReadonlySet<string> = new Set();
-
 export function getCollapsedChildActivity(
   threads: readonly ThreadActivityShape[],
-  draftThreadIds: ReadonlySet<string> = EMPTY_DRAFT_THREAD_IDS,
 ): CollapsedChildActivity {
+  const threadIds: string[] = [];
   let pending = false;
   let working = false;
-  let hasUnsubmittedDraft = false;
   let runtimeWorking = false;
   let workflow = false;
   let backgroundAgent = false;
@@ -225,9 +247,7 @@ export function getCollapsedChildActivity(
   let unread = false;
   let unreadError = false;
   for (const thread of threads) {
-    if (draftThreadIds.has(thread.id)) {
-      hasUnsubmittedDraft = true;
-    }
+    threadIds.push(thread.id);
     const childUnreadDone = isUnreadDoneThread(thread);
     if (childUnreadDone && thread.status === "error") {
       unreadError = true;
@@ -247,9 +267,9 @@ export function getCollapsedChildActivity(
     if (hasActiveGoalActivity(thread)) goal = true;
   }
   return {
+    threadIds,
     pending,
     working,
-    hasUnsubmittedDraft,
     runtimeWorking,
     workflow,
     backgroundAgent,

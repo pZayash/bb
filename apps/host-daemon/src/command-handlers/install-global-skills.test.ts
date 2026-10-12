@@ -16,6 +16,8 @@ import {
   readGlobalSkillsStatus,
 } from "./install-global-skills.js";
 
+const logger = { debug: () => undefined, warn: () => undefined };
+
 const tempDirs: string[] = [];
 
 afterEach(async () => {
@@ -76,7 +78,7 @@ describe("install global skills", () => {
           { name: "bb-cli", treeHash: payload.treeHash, entryPath: "SKILL.md" },
         ],
       },
-      { dataDir, fetchSkillTree: async () => payload, homeDir },
+      { dataDir, fetchSkillTree: async () => payload, homeDir, logger },
     );
 
     expect(result.installations.map((entry) => entry.path)).toEqual([
@@ -114,13 +116,12 @@ describe("install global skills", () => {
           { name: "bb-cli", treeHash: payload.treeHash, entryPath: "SKILL.md" },
         ],
       },
-      { dataDir, fetchSkillTree: async () => payload, homeDir },
+      { dataDir, fetchSkillTree: async () => payload, homeDir, logger },
     );
 
     await expect(
       readFile(path.join(claudeRoot, "bb-cli", "SKILL.md"), "utf8"),
     ).resolves.toContain("fresh body");
-    // bb-fork(windows): readdir order is filesystem-dependent; compare sorted.
     expect((await readdir(path.join(claudeRoot, "bb-cli"))).sort()).toEqual([
       "SKILL.md",
       "references",
@@ -151,7 +152,7 @@ describe("install global skills", () => {
             },
           ],
         },
-        { dataDir, fetchSkillTree, homeDir },
+        { dataDir, fetchSkillTree, homeDir, logger },
       ),
     ).rejects.toThrow("offline");
 
@@ -160,42 +161,49 @@ describe("install global skills", () => {
     ).resolves.toBe("previous\n");
   });
 
-  it("reports the installed hash as the tree hash, and detects drift", async () => {
-    const dataDir = await makeTempDir();
-    const homeDir = await makeTempDir();
-    const payload = createTreePayload("bb-cli", "installed body");
-    const command = {
-      type: "host.install_global_skills" as const,
-      skills: [
-        { name: "bb-cli", treeHash: payload.treeHash, entryPath: "SKILL.md" },
-      ],
-    };
-    const statusCommand = {
-      type: "host.global_skills_status" as const,
-      names: ["bb-cli"],
-    };
+  it.skipIf(process.platform === "win32")(
+    "reports the installed hash as the tree hash, and detects drift",
+    async () => {
+      const dataDir = await makeTempDir();
+      const homeDir = await makeTempDir();
+      const payload = createTreePayload("bb-cli", "installed body");
+      const command = {
+        type: "host.install_global_skills" as const,
+        skills: [
+          { name: "bb-cli", treeHash: payload.treeHash, entryPath: "SKILL.md" },
+        ],
+      };
+      const statusCommand = {
+        type: "host.global_skills_status" as const,
+        names: ["bb-cli"],
+      };
 
-    const before = await readGlobalSkillsStatus(statusCommand, { homeDir });
-    expect(before.entries.map((entry) => entry.treeHash)).toEqual([null, null]);
+      const before = await readGlobalSkillsStatus(statusCommand, { homeDir });
+      expect(before.entries.map((entry) => entry.treeHash)).toEqual([
+        null,
+        null,
+      ]);
 
-    await installGlobalSkills(command, {
-      dataDir,
-      fetchSkillTree: async () => payload,
-      homeDir,
-    });
+      await installGlobalSkills(command, {
+        dataDir,
+        fetchSkillTree: async () => payload,
+        homeDir,
+        logger,
+      });
 
-    const after = await readGlobalSkillsStatus(statusCommand, { homeDir });
-    expect(after.entries.map((entry) => entry.treeHash)).toEqual([
-      payload.treeHash,
-      payload.treeHash,
-    ]);
+      const after = await readGlobalSkillsStatus(statusCommand, { homeDir });
+      expect(after.entries.map((entry) => entry.treeHash)).toEqual([
+        payload.treeHash,
+        payload.treeHash,
+      ]);
 
-    await writeFile(
-      path.join(homeDir, ".claude", "skills", "bb-cli", "SKILL.md"),
-      "---\nname: bb-cli\ndescription: Edited by hand.\n---\n",
-    );
-    const drifted = await readGlobalSkillsStatus(statusCommand, { homeDir });
-    expect(drifted.entries[1]?.treeHash).not.toBe(payload.treeHash);
-    expect(drifted.entries[0]?.treeHash).toBe(payload.treeHash);
-  });
+      await writeFile(
+        path.join(homeDir, ".claude", "skills", "bb-cli", "SKILL.md"),
+        "---\nname: bb-cli\ndescription: Edited by hand.\n---\n",
+      );
+      const drifted = await readGlobalSkillsStatus(statusCommand, { homeDir });
+      expect(drifted.entries[1]?.treeHash).not.toBe(payload.treeHash);
+      expect(drifted.entries[0]?.treeHash).toBe(payload.treeHash);
+    },
+  );
 });

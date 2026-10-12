@@ -1,3 +1,5 @@
+// bb-fork(windows): ACP paths are host paths; keep their own convention.
+import { isHostPathWithin, normalizeHostPath } from "@bb/domain";
 import path from "node:path";
 import { toOptionalString } from "@bb/provider-bridge-protocol/bridge-kit";
 import { z } from "zod";
@@ -135,29 +137,41 @@ export function resolveAcpFileChangeWriteScope(
       ? path.win32
       : path.posix;
   const separator = pathApi === path.win32 ? "\\" : "/";
-  const normalized = paths.filter(isNonBlank).map((entry) => {
-    const value = pathApi.normalize(entry);
-    return value.length > 1 && value.endsWith(separator)
-      ? value.slice(0, -1)
-      : value;
+  const entries = paths.filter(isNonBlank).map((entry) => {
+    const value = normalizeHostPath(entry) ?? entry;
+    const comparable =
+      value.length > 1 &&
+      value.endsWith(separator) &&
+      !/^[A-Za-z]:[\\/]$/u.test(value) &&
+      value !== "\\"
+        ? value.slice(0, -1)
+        : value;
+    return { original: entry, comparable };
   });
-  const [first, ...rest] = normalized;
+  const [first, ...rest] = entries;
   if (first === undefined) {
     return null;
   }
   let candidate = first;
   for (const entry of rest) {
-    if (entry.length < candidate.length) {
+    if (entry.comparable.length < candidate.comparable.length) {
       candidate = entry;
     }
   }
-  const prefix = candidate.endsWith(separator)
-    ? candidate
-    : candidate + separator;
-  for (const entry of normalized) {
-    if (entry !== candidate && !entry.startsWith(prefix)) {
+  for (const entry of entries) {
+    if (
+      !isHostPathWithin({
+        rootPath: candidate.comparable,
+        candidatePath: entry.comparable,
+      })
+    ) {
       return null;
     }
   }
-  return candidate;
+  return candidate.original.length > 1 &&
+    candidate.original.endsWith(separator) &&
+    !/^[A-Za-z]:[\\/]$/u.test(candidate.original) &&
+    candidate.original !== "\\"
+    ? candidate.original.slice(0, -1)
+    : candidate.original;
 }

@@ -9,7 +9,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@bb/shared-ui/tooltip";
-import { TruncatedList } from "@/components/ui/truncated-list.js";
 import { cn } from "@bb/shared-ui/lib/utils";
 import { formatWorkspaceFileStatus } from "@/components/workspace/workspace-change-summary";
 
@@ -21,6 +20,7 @@ type WorkspaceChangedFileClickHandler = (file: WorkspaceChangedFile) => void;
 interface WorkspaceChangesListProps {
   files: readonly WorkspaceChangedFile[];
   className?: string;
+  // bb-fork(diff-action): callers may add a split-diff hover action per row.
   onFileClick?: WorkspaceChangedFileClickHandler;
   onOpenDiffClick?: WorkspaceChangedFileClickHandler;
   limit?: number;
@@ -36,7 +36,7 @@ const WORKSPACE_CHANGE_ROW_CLASS =
   "grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-start gap-x-3";
 
 const WORKSPACE_CHANGE_ROW_ACTION_CLASS =
-  "flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&_[data-icon-root]]:size-3.5 max-md:pointer-coarse:size-8 max-md:pointer-coarse:[&_[data-icon-root]]:size-4";
+  "inline-flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100";
 
 export const WORKSPACE_CHANGES_LIST_MAX_ROWS = 200;
 
@@ -76,6 +76,7 @@ function WorkspaceChangesListItem({
     </>
   );
 
+  // bb-fork(diff-action): the optional diff action floats beside the row name.
   const diffAction = onOpenDiffClick ? (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -94,7 +95,7 @@ function WorkspaceChangesListItem({
 
   if (!onFileClick) {
     return (
-      <div className="flex items-start gap-1">
+      <div className="group flex items-start gap-1">
         <div className={cn(WORKSPACE_CHANGE_ROW_CLASS, "min-w-0 flex-1")}>
           {rowContent}
         </div>
@@ -104,12 +105,12 @@ function WorkspaceChangesListItem({
   }
 
   return (
-    <div className="flex items-start gap-1">
+    <div className="group flex items-start gap-1">
       <button
         type="button"
         className={cn(
           WORKSPACE_CHANGE_ROW_CLASS,
-          "group min-w-0 flex-1 rounded px-1 text-left transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "min-w-0 flex-1 rounded px-1 text-left transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         )}
         aria-label={`Open ${file.path}`}
         onClick={() => onFileClick(file)}
@@ -132,69 +133,29 @@ export function WorkspaceChangesList({
     return <EmptyState message="No changed files detected." />;
   }
 
-  const list =
-    limit !== undefined ? (
-      <TruncatedList
-        items={files}
-        getKey={fileKey}
-        limit={limit}
-        renderItem={(file) => (
-          <WorkspaceChangesListItem
-            file={file}
-            onFileClick={onFileClick}
-            onOpenDiffClick={onOpenDiffClick}
-          />
-        )}
-      />
-    ) : (
-      <WorkspaceChangesListRows
-        className={className}
-        files={files}
-        onFileClick={onFileClick}
-        onOpenDiffClick={onOpenDiffClick}
-      />
-    );
-
-  return onOpenDiffClick === undefined ? (
-    list
-  ) : (
-    <TooltipProvider delayDuration={300}>{list}</TooltipProvider>
-  );
-}
-
-function WorkspaceChangesListRows({
-  className,
-  files,
-  onFileClick,
-  onOpenDiffClick,
-}: {
-  className: string;
-  files: readonly WorkspaceChangedFile[];
-  onFileClick?: WorkspaceChangedFileClickHandler;
-  onOpenDiffClick?: WorkspaceChangedFileClickHandler;
-}) {
+  const maxRows = limit ?? WORKSPACE_CHANGES_LIST_MAX_ROWS;
   const visibleFiles =
-    files.length > WORKSPACE_CHANGES_LIST_MAX_ROWS
-      ? files.slice(0, WORKSPACE_CHANGES_LIST_MAX_ROWS)
-      : files;
+    files.length > maxRows ? files.slice(0, maxRows) : files;
   const hiddenFileCount = files.length - visibleFiles.length;
 
   return (
-    <ul className={cn("space-y-1 overflow-auto", className)}>
-      {visibleFiles.map((file) => (
-        <li key={fileKey(file)}>
-          <WorkspaceChangesListItem
-            file={file}
-            onFileClick={onFileClick}
-            onOpenDiffClick={onOpenDiffClick}
-          />
-        </li>
-      ))}
-      {hiddenFileCount > 0 ? (
-        <li className="px-1 text-xs leading-5 text-muted-foreground">
-          {formatHiddenFileCount(hiddenFileCount)}
-        </li>
-      ) : null}
-    </ul>
+    <TooltipProvider>
+      <ul className={cn("space-y-1 overflow-auto", className)}>
+        {visibleFiles.map((file) => (
+          <li key={fileKey(file)}>
+            <WorkspaceChangesListItem
+              file={file}
+              onFileClick={onFileClick}
+              onOpenDiffClick={onOpenDiffClick}
+            />
+          </li>
+        ))}
+        {hiddenFileCount > 0 ? (
+          <li className="px-1 text-xs leading-5 text-muted-foreground">
+            {formatHiddenFileCount(hiddenFileCount)}
+          </li>
+        ) : null}
+      </ul>
+    </TooltipProvider>
   );
 }

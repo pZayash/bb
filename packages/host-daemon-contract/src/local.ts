@@ -140,13 +140,11 @@ export const pathsExistResponseSchema = z.object({
 });
 export type PathsExistResponse = z.infer<typeof pathsExistResponseSchema>;
 
-// bb-fork(windows): "windows" is a fork wire delta; keep the protocol version
-// at max(upstream) + 1 on every merge.
 export const hostPlatformSchema = z.enum([
   "darwin",
   "linux",
   "wsl",
-  "windows",
+  "win32",
   "unknown",
 ]);
 export type HostPlatform = z.infer<typeof hostPlatformSchema>;
@@ -249,9 +247,6 @@ const providerCliInstallCompletedEventSchema = z.object({
   signal: z.string().min(1).nullable(),
   success: z.boolean(),
 });
-export type ProviderCliInstallCompletedEvent = z.infer<
-  typeof providerCliInstallCompletedEventSchema
->;
 
 const providerCliInstallErrorEventSchema = z.object({
   type: z.literal("error"),

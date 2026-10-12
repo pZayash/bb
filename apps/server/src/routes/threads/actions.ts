@@ -42,9 +42,13 @@ import {
   requirePublicThread,
 } from "../../services/lib/entity-lookup.js";
 import { parseSafeRelativeRoutePath } from "../relative-route-path.js";
-import { validatePromptAttachmentReferences } from "../../services/projects/attachments.js";
+import { resolvePromptAttachmentReferences } from "../../services/projects/attachments.js";
+import { threadTargetHostId } from "../../services/threads/dispatch-attempt.js";
 import {
   createQueuedMessageForThread,
+  holdQueuedMessageForEdit,
+  releaseQueuedMessageEditHold,
+  requestEditReleasedQueuedMessageDispatch,
   sendQueuedMessageNow,
 } from "../../services/threads/queued-messages.js";
 import {
@@ -54,7 +58,6 @@ import {
   sendThreadMessage,
 } from "../../services/threads/thread-send.js";
 import { acceptThreadSendRequest } from "../../services/threads/thread-send-request.js";
-import { updateThreadDraft } from "../../services/threads/thread-draft.js";
 import { editThreadMessage } from "../../services/threads/thread-edit-message.js";
 import { clearThreadContext } from "../../services/threads/thread-context-clear.js";
 import {
@@ -232,7 +235,7 @@ function assertPinnedThreadOrderResult(
 }
 
 export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
-  const { post, patch, put, del } = typedRoutes<PublicApiSchema>(app, {
+  const { post, patch, del } = typedRoutes<PublicApiSchema>(app, {
     onValidationError: (msg) => new ApiError(400, "invalid_request", msg),
   });
   const routes = publicApiRoutes.threads;
@@ -271,16 +274,6 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
       thread,
     });
     return context.json(queuedMessage, 201);
-  });
-
-  put(routes.updateDraft, async (context, payload) => {
-    const thread = requirePublicThread(deps.db, context.req.param("id"));
-    await updateThreadDraft(deps, { input: payload.input, thread });
-    return context.json(
-      toThreadResponseFromThread(deps, {
-        thread: requirePublicThread(deps.db, thread.id),
-      }),
-    );
   });
 
   post(routes.sendQueuedMessage, async (context, payload) => {
@@ -333,14 +326,15 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
   patch(routes.updateQueuedMessage, async (context, payload) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
     ensureThreadQueueIsWritable(thread);
-    await validatePromptAttachmentReferences({
+    const input = await resolvePromptAttachmentReferences({
       db: deps.db,
       dataDir: deps.config.dataDir,
       input: payload.input,
       projectId: thread.projectId,
+      hostId: threadTargetHostId(deps, thread),
     });
     const result = updateQueuedThreadMessage(deps.db, deps.hub, {
-      content: payload.input,
+      content: input,
       expectedUpdatedAt: payload.expectedUpdatedAt,
       id: context.req.param("queuedMessageId"),
       threadId: thread.id,
@@ -362,7 +356,33 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
         "Queued message changed since editing began",
       );
     }
+    if (result.releasedEditHold) {
+      requestEditReleasedQueuedMessageDispatch(deps, {
+        queuedMessageId: result.queuedMessage.id,
+        threadId: thread.id,
+      });
+    }
     return context.json(toThreadQueuedMessage(result.queuedMessage));
+  });
+
+  post(routes.holdQueuedMessageForEdit, (context) => {
+    const thread = requirePublicThread(deps.db, context.req.param("id"));
+    ensureThreadQueueIsWritable(thread);
+    return context.json(
+      holdQueuedMessageForEdit(deps, {
+        queuedMessageId: context.req.param("queuedMessageId"),
+        threadId: thread.id,
+      }),
+    );
+  });
+
+  del(routes.releaseQueuedMessageEditHold, (context) => {
+    const thread = requirePublicThread(deps.db, context.req.param("id"));
+    releaseQueuedMessageEditHold(deps, {
+      queuedMessageId: context.req.param("queuedMessageId"),
+      threadId: thread.id,
+    });
+    return context.json({ ok: true });
   });
 
   del(routes.deleteQueuedMessage, (context) => {
@@ -572,8 +592,11 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
 
   post(routes.unarchive, (context) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
+    if (thread.archivedAt === null) return context.json({ ok: true });
     const providerThreadId = getLastProviderThreadId(deps, thread.id);
     if (!unarchiveThread(deps.db, deps.hub, thread.id)) {
+      if (getThread(deps.db, thread.id)?.archivedAt === null)
+        return context.json({ ok: true });
       throw new ApiError(
         409,
         "invalid_request",

@@ -89,7 +89,7 @@ function joinUnderDataDir(base: string, ...segments: string[]): string {
 // bb-fork(windows): the worktree root is under the local plugin data dir, so it
 // must keep that dir's separators rather than always using `/`.
 export function resolveWorktreesRoot(dataDir: string): string {
-  return joinUnderDataDir(dataDir, "worktrees");
+  return path.join(dataDir, "worktrees");
 }
 
 export function resolveWorktreeAttemptRoot(args: {
@@ -109,7 +109,7 @@ export function resolveWorktreeAttemptRoot(args: {
       "A worktree path key must be a single path segment",
     );
   }
-  return joinUnderDataDir(resolveWorktreesRoot(args.dataDir), args.pathKey);
+  return path.join(resolveWorktreesRoot(args.dataDir), args.pathKey);
 }
 
 export function resolveWorktreeTargetPath(args: {
@@ -117,7 +117,7 @@ export function resolveWorktreeTargetPath(args: {
   pathKey: string;
   sourcePath: string;
 }): string {
-  return joinUnderDataDir(
+  return path.join(
     resolveWorktreeAttemptRoot(args),
     deriveRepoDirName(args.sourcePath),
   );
@@ -139,5 +139,5 @@ export function resolveWorktreeChildPath(args: {
       "A managed worktree directory name must be a safe path segment",
     );
   }
-  return joinUnderDataDir(resolveWorktreeAttemptRoot(args), args.childName);
+  return path.join(resolveWorktreeAttemptRoot(args), args.childName);
 }

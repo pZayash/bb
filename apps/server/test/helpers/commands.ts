@@ -117,6 +117,7 @@ export interface TestHostRpcSocket {
 }
 
 function isRuntimeWorkspaceFileCommand(command: HostDaemonRpcCommand): boolean {
+  if (command.type === "host.read_workspace_agent_context") return true;
   // bb-fork(windows): project skills are enumerated via host.list_skills.
   if (command.type === "host.list_skills") {
     return command.cwd !== null;
@@ -131,6 +132,52 @@ function isRuntimeWorkspaceFileCommand(command: HostDaemonRpcCommand): boolean {
   );
 }
 
+function readWorkspaceAgentContextFromDisk(
+  rootPath: string,
+): HostDaemonOnlineRpcResult<"host.read_workspace_agent_context"> {
+  const skillsRootPath = path.join(rootPath, ".bb", "skills");
+  let directoryNames: string[] = [];
+  try {
+    directoryNames = readdirSync(skillsRootPath, { withFileTypes: true })
+      .filter((entry) => !entry.isSymbolicLink() && entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort((left, right) => left.localeCompare(right));
+  } catch {
+    directoryNames = [];
+  }
+  const projectSkills = directoryNames.flatMap((directoryName) => {
+    const skillFilePath = path.join(skillsRootPath, directoryName, "SKILL.md");
+    try {
+      if (!lstatSync(skillFilePath).isFile()) return [];
+      return [
+        {
+          kind: "file" as const,
+          directoryName,
+          content: readFileSync(skillFilePath, "utf8"),
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
+  let agentInstructions: string | null = null;
+  try {
+    const trimmed = readFileSync(
+      path.join(rootPath, ".bb", "AGENTS.md"),
+      "utf8",
+    ).trim();
+    agentInstructions = trimmed.length > 0 ? trimmed : null;
+  } catch {
+    agentInstructions = null;
+  }
+  return {
+    agentInstructions,
+    projectSkills,
+    projectSkillsTruncated: false,
+    sharedSkills: [],
+  };
+}
+
 function respondToRuntimeWorkspaceFileCommand(
   deps: Pick<TestAppHarness, "hub">,
   args: RegisterTestHostRpcCaptureArgs,
@@ -138,6 +185,20 @@ function respondToRuntimeWorkspaceFileCommand(
 ): boolean {
   const command = message.command;
   if (!isRuntimeWorkspaceFileCommand(command)) return false;
+
+  if (command.type === "host.read_workspace_agent_context") {
+    deps.hub.recordHostOnlineRpcResponse({
+      message: hostDaemonOnlineRpcResponseMessageSchema.parse({
+        type: "host-rpc.response",
+        requestId: message.requestId,
+        commandType: command.type,
+        ok: true,
+        result: readWorkspaceAgentContextFromDisk(command.rootPath),
+      }),
+      sessionId: args.sessionId,
+    });
+    return true;
+  }
 
   if (command.type === "host.list_files") {
     let files: Array<{ name: string; path: string }> = [];

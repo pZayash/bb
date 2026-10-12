@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PluginThreadListProps } from "@get-bb/plugin-sdk/app";
 import {
@@ -265,11 +271,12 @@ describe("thread-list plugin", () => {
       await screen.findByRole("button", { name: "New thread in Laptop" }),
     );
 
-    expect(inspection.sidebarActionCalls).toContainEqual({
-      method: "openNewThread",
+    expect(inspection.navigateCalls).toContainEqual({
+      method: "toCompose",
       options: {
         projectId: PERSONAL_PROJECT_ID,
         hostId: "host_laptop",
+        placement: { sectionId: null, pinned: false },
         focusPrompt: true,
       },
     });

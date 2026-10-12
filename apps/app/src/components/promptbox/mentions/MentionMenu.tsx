@@ -169,6 +169,10 @@ function getMentionTitle(item: PromptMentionSuggestion): string {
     return `${item.providerLabel}: ${item.title}`;
   }
 
+  if (item.kind === "attachment") {
+    return `Attachment: ${item.name}`;
+  }
+
   return `${getPathSectionLabel(item)}: ${item.path}`;
 }
 
@@ -189,6 +193,9 @@ function getMentionKey(item: PromptMentionSuggestion): string {
   }
   if (item.kind === "project") {
     return JSON.stringify([item.kind, item.projectId]);
+  }
+  if (item.kind === "attachment") {
+    return JSON.stringify([item.kind, item.path]);
   }
   return JSON.stringify([item.kind, item.sectionId]);
 }
@@ -434,6 +441,8 @@ function MentionResults({
                 primary = item.name;
               } else if (item.kind === "section") {
                 primary = item.name;
+              } else if (item.kind === "attachment") {
+                primary = item.name;
               } else if (item.kind === "plugin") {
                 primary = item.title;
                 secondaryContext = item.subtitle;
@@ -620,8 +629,8 @@ export function MentionMenu({
   }, [resultsLength, selectedIndex]);
 
   return (
-    <div className="@container/mention-menu overflow-hidden rounded-md border border-border bg-popover text-popover-foreground">
-      <div className="max-h-48 overflow-y-auto" onScroll={handleScroll}>
+    <div className="@container/mention-menu flex max-h-(--promptbox-typeahead-max-height) flex-col overflow-hidden rounded-md border border-border bg-popover text-popover-foreground">
+      <div className="max-h-48 min-h-0 overflow-y-auto" onScroll={handleScroll}>
         {innerState.kind === "hint" ? (
           <MenuStatusRow
             onDismiss={onDismiss}

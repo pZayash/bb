@@ -1,6 +1,7 @@
 import { assertEnvironmentPathAvailable } from "../environments/path-admission.js";
 import { z } from "zod";
 import {
+  getLatestThreadSequence,
   createEnvironment,
   type EnvironmentRow,
   createEventId,
@@ -9,7 +10,12 @@ import {
   getThread,
   updateThread,
 } from "@bb/db";
-import { turnScope } from "@bb/domain";
+import {
+  canonicalizeHostPath,
+  isAbsoluteHostPath,
+  isHostPathRoot,
+  turnScope,
+} from "@bb/domain";
 import type { DynamicTool, Thread, ToolCallResponse } from "@bb/domain";
 import type { AppDeps } from "../../types.js";
 import { runLiveHostCommand } from "../hosts/live-command.js";
@@ -86,28 +92,16 @@ function toolCallSuccess(text: string): ToolCallResponse {
   return toolCallTextResponse(true, text);
 }
 
-// bb-fork(windows): accept drive-letter and UNC paths alongside POSIX ones.
-function isAbsoluteHostPath(value: string): boolean {
-  return (
-    value.startsWith("/") ||
-    /^[A-Za-z]:[\\/]/u.test(value) ||
-    value.startsWith("\\\\")
-  );
-}
 
 function normalizeDirectoryPath(path: string): string {
-  const trimmed = path.trim();
-  if (trimmed === "/" || /^[A-Za-z]:[\\/]?$/u.test(trimmed)) {
-    return trimmed;
-  }
-  return trimmed.replace(/[\\/]+$/u, "");
+  return canonicalizeHostPath(path.trim());
 }
 
 function validateDirectoryPath(path: string): string | null {
   if (!isAbsoluteHostPath(path)) {
     return "Path must be an absolute path on the current host.";
   }
-  if (path === "/" || /^[A-Za-z]:[\\/]?$/u.test(path)) {
+  if (isHostPathRoot(path)) {
     return "Path must name a project directory, not the filesystem root.";
   }
   if (path.includes("\0")) {
@@ -212,6 +206,9 @@ function attachReadyEnvironment(
 
   if (result.kind === "attached" && result.changed) {
     deps.hub.notifyThread(args.thread.id, ["events-appended"], {
+      timelineSequence: getLatestThreadSequence(deps.db, {
+        threadId: args.thread.id,
+      }),
       eventTypes: ["system/operation"],
     });
   }

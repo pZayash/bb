@@ -1,1 +1,0 @@
-ALTER TABLE `threads` ADD `parent_notifications_muted_at` integer;

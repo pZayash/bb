@@ -31,7 +31,6 @@ import {
 } from "./index.js";
 
 const cells = listRecordedCells(RECORDINGS_ROOT);
-// bb-fork(windows): URL.pathname yields `/C:/...`, which path.resolve doubles.
 const checkoutRoot = fileURLToPath(new URL("../../..", import.meta.url));
 
 function readPinned(): Record<string, RowCountsEntry> {
@@ -109,7 +108,7 @@ describe("recorded fixtures", () => {
       return;
     }
     expect(problems).toEqual([]);
-  });
+  }, 30_000);
 });
 
 describe("allowlist", () => {

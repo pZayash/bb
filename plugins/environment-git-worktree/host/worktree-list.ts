@@ -32,7 +32,7 @@ export function parseWorktreeListPorcelain(stdout: string): GitWorktreeEntry[] {
     if (key === "worktree") {
       flush();
       current = {
-        path: value,
+        path: path.sep === "\\" ? value.replaceAll("/", path.sep) : value,
         branch: null,
         isMain: entries.length === 0,
         isBare: false,
@@ -70,21 +70,23 @@ export function selectAdoptableWorktrees(args: {
 }
 
 function isInside(root: string, candidate: string): boolean {
-  const relative = path.relative(comparisonKey(root), comparisonKey(candidate));
-  return !relative.startsWith("..") && !path.isAbsolute(relative);
+  const relativePath = path.relative(root, candidate);
+  return (
+    relativePath === "" ||
+    (relativePath !== ".." &&
+      !relativePath.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relativePath))
+  );
 }
 
 export function findWorktreeEntry(
   entries: readonly GitWorktreeEntry[],
-  path: string,
+  targetPath: string,
 ): GitWorktreeEntry | null {
-  const key = comparisonKey(path);
-  return entries.find((entry) => comparisonKey(entry.path) === key) ?? null;
-}
-
-// bb-fork(windows): git prints worktree paths with `/`; compare native resolved
-// paths and fold case on Windows.
-function comparisonKey(value: string): string {
-  const normalized = path.resolve(value);
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  return (
+    entries.find(
+      (entry) =>
+        entry.path !== "" && path.relative(entry.path, targetPath) === "",
+    ) ?? null
+  );
 }

@@ -1,10 +1,11 @@
 import { and, eq } from "drizzle-orm";
-import { join, resolve } from "node:path";
+import { join } from "node:path/posix";
 import {
   claimQueuedThreadMessageGroup,
   createQueuedThreadMessageId,
   createThreadSection,
   deleteQueuedThreadMessage,
+  deleteThreadEventSuffixInTransaction,
   environments,
   events,
   getEnvironment,
@@ -53,6 +54,7 @@ import {
 import {
   registerHostRpcResponder,
   type HostRpcHandlerResult,
+  EMPTY_WORKSPACE_AGENT_CONTEXT,
 } from "../helpers/host-rpc.js";
 import { readJson } from "../helpers/json.js";
 import { textInput } from "../helpers/prompt-input.js";
@@ -96,6 +98,10 @@ type TimelineTurnRow = Extract<TimelineRow, { kind: "turn" }>;
 describe("public thread data routes", () => {
   it("manages sections through the canonical public route lifecycle", async () => {
     await withTestHarness(async (harness) => {
+      const initialList = await harness.app.request("/api/v1/thread-sections");
+      expect(initialList.status).toBe(200);
+      expect(await readJson(initialList)).toEqual([]);
+
       const { host } = seedHostSession(harness.deps);
       const { project } = seedProjectWithSource(harness.deps, {
         hostId: host.id,
@@ -169,6 +175,9 @@ describe("public thread data routes", () => {
       expect(bootstrap.sections).toContainEqual(
         expect.objectContaining({ id: section.id, name: "Ship room" }),
       );
+      const listResponse = await harness.app.request("/api/v1/thread-sections");
+      expect(listResponse.status).toBe(200);
+      expect(await readJson(listResponse)).toEqual(bootstrap.sections);
 
       const deleteResponse = await harness.app.request(
         "/api/v1/thread-sections",
@@ -189,6 +198,8 @@ describe("public thread data routes", () => {
         updatedThreadCount: 1,
       });
       expect(getThread(harness.db, thread.id)?.sectionId).toBeNull();
+      const emptyList = await harness.app.request("/api/v1/thread-sections");
+      expect(await readJson(emptyList)).toEqual([]);
 
       const missingResponse = await harness.app.request(
         "/api/v1/thread-sections",
@@ -545,43 +556,6 @@ describe("public thread data routes", () => {
     });
   });
 
-  it("returns timeline rows from thread events", async () => {
-    await withTestHarness(async (harness) => {
-      const { environment, thread } = seedThreadFixture(harness);
-
-      seedEvent(harness.deps, {
-        threadId: thread.id,
-        environmentId: environment.id,
-        sequence: 1,
-        type: "system/manager/user_message",
-        scope: threadScope(),
-        data: { text: "Legacy note one" },
-      });
-      seedEvent(harness.deps, {
-        threadId: thread.id,
-        environmentId: environment.id,
-        sequence: 2,
-        type: "system/manager/user_message",
-        scope: threadScope(),
-        data: { text: "Legacy note two" },
-      });
-
-      const timelineResponse = await harness.app.request(
-        `/api/v1/threads/${thread.id}/timeline`,
-      );
-      expect(timelineResponse.status).toBe(200);
-      await expect(readJson(timelineResponse)).resolves.toEqual(
-        expect.objectContaining({
-          rows: expect.arrayContaining([
-            expect.objectContaining({
-              kind: "conversation",
-            }),
-          ]),
-        }),
-      );
-    });
-  });
-
   it("returns a timeline when a stored history holds a duplicate turn/started from a daemon replay", async () => {
     await withTestHarness(async (harness) => {
       const { environment, thread } = seedThreadFixture(harness);
@@ -767,6 +741,20 @@ describe("public thread data routes", () => {
         "Third question",
         "Third question — answered.",
       ]);
+      for (const role of ["user", "assistant"] as const) {
+        const roleResponse = await harness.app.request(
+          `/api/v1/threads/${thread.id}/conversation-outline?role=${role}`,
+        );
+        expect(roleResponse.status).toBe(200);
+        expect(
+          threadConversationOutlineResponseSchema.parse(
+            await readJson(roleResponse),
+          ),
+        ).toEqual({
+          items: outline.items.filter((item) => item.role === role),
+          maxSeq: outline.maxSeq,
+        });
+      }
 
       const outlineIds = new Set(outline.items.map((item) => item.id));
       for (const id of windowedConversationIds) {
@@ -875,6 +863,34 @@ describe("public thread data routes", () => {
         "New visible response",
       ]);
       expect(countFullOutlineQueries()).toBe(2);
+      harness.db.transaction((tx) =>
+        deleteThreadEventSuffixInTransaction(tx, {
+          threadId: thread.id,
+          cutoffSequence: 3,
+          oldMaxSequence: 3,
+        }),
+      );
+      seedEvent(harness.deps, {
+        threadId: thread.id,
+        environmentId: environment.id,
+        sequence: 3,
+        type: "system/manager/user_message",
+        scope: threadScope(),
+        data: { text: "Replacement response" },
+      });
+      const rewrittenResponse = await harness.app.request(
+        `/api/v1/threads/${thread.id}/conversation-outline`,
+      );
+      expect(rewrittenResponse.status).toBe(200);
+      const rewritten = threadConversationOutlineResponseSchema.parse(
+        await readJson(rewrittenResponse),
+      );
+      expect(rewritten.maxSeq).toBe(3);
+      expect(rewritten.items.map((item) => item.preview)).toEqual([
+        "Visible response",
+        "Replacement response",
+      ]);
+      expect(countFullOutlineQueries()).toBe(3);
     });
   });
 
@@ -1059,6 +1075,13 @@ describe("public thread data routes", () => {
         imageUrls: [],
         localImagePaths: [],
         localFilePaths: [uploaded.path],
+        localFileDetails: [
+          {
+            path: uploaded.path,
+            name: uploaded.name,
+            sizeBytes: uploaded.sizeBytes,
+          },
+        ],
       });
     });
   });
@@ -1840,7 +1863,7 @@ describe("public thread data routes", () => {
       }
 
       const detailsResponse = await harness.app.request(
-        `/api/v1/threads/${thread.id}/timeline/turn-summary-details?turnId=${parentTurnRow.turnId}&sourceSeqStart=${parentTurnRow.sourceSeqStart}&sourceSeqEnd=${parentTurnRow.sourceSeqEnd}`,
+        `/api/v1/threads/${thread.id}/timeline/turn-summary-details?turnId=${parentTurnRow.turnId}&sourceSeqStart=${parentTurnRow.sourceSeqStart}&sourceSeqEnd=${parentTurnRow.sourceSeqEnd}&deferContent=true`,
       );
       expect(detailsResponse.status).toBe(200);
       const details = timelineTurnSummaryDetailsResponseSchema.parse(
@@ -1855,14 +1878,30 @@ describe("public thread data routes", () => {
         > => row.kind === "work" && row.workKind === "delegation",
       );
 
-      expect(delegation).toBeDefined();
-      expect(delegation?.callId).toBe("agent-call");
-      expect(delegation?.childRows).toContainEqual(
-        expect.objectContaining({
-          kind: "conversation",
-          text: "Child mapped the Telegram integration.",
-        }),
+      if (!delegation) {
+        throw new Error("Expected delegation row");
+      }
+      expect(delegation.callId).toBe("agent-call");
+      expect(delegation.childRows).toBeNull();
+
+      const delegationResponse = await harness.app.request(
+        `/api/v1/threads/${thread.id}/timeline/turn-summary-details?turnId=${delegation.turnId}&sourceSeqStart=${delegation.sourceSeqStart}&sourceSeqEnd=${delegation.sourceSeqEnd}&itemId=${delegation.callId}`,
       );
+      expect(delegationResponse.status).toBe(200);
+      const delegationDetails = timelineTurnSummaryDetailsResponseSchema.parse(
+        await readJson(delegationResponse),
+      );
+      expect(delegationDetails.rows).toEqual([
+        expect.objectContaining({
+          callId: "agent-call",
+          childRows: expect.arrayContaining([
+            expect.objectContaining({
+              kind: "conversation",
+              text: "Child mapped the Telegram integration.",
+            }),
+          ]),
+        }),
+      ]);
     });
   });
 
@@ -3918,21 +3957,8 @@ describe("public thread data routes", () => {
               result: { providerThreadId: "provider-immediate-reprovision" },
             };
           }
-          if (request.command.type === "host.list_files") {
-            return {
-              ok: true,
-              result: { files: [], truncated: false },
-            };
-          }
-          if (request.command.type === "host.list_skills") {
-            return { ok: true, result: { skills: [] } };
-          }
-          if (request.command.type === "host.read_file") {
-            return {
-              ok: false,
-              errorCode: "ENOENT",
-              errorMessage: `Path does not exist: ${request.command.path}`,
-            };
+          if (request.command.type === "host.read_workspace_agent_context") {
+            return { ok: true, result: EMPTY_WORKSPACE_AGENT_CONTEXT };
           }
           throw new Error(`Unexpected RPC command ${request.command.type}`);
         },
@@ -4560,20 +4586,7 @@ describe("public thread data routes", () => {
 
   it("serves thread storage file content as raw bytes", async () => {
     await withTestHarness(async (harness) => {
-      const { host } = seedHostSession(harness.deps);
-      const { project } = seedProjectWithSource(harness.deps, {
-        hostId: host.id,
-        path: "/tmp/project-source",
-      });
-      const environment = seedEnvironment(harness.deps, {
-        hostId: host.id,
-        projectId: project.id,
-        path: "/tmp/project-source",
-      });
-      const thread = seedThread(harness.deps, {
-        projectId: project.id,
-        environmentId: environment.id,
-      });
+      const { host, session, thread } = seedThreadFixture(harness);
       const pngBytes = Uint8Array.from([137, 80, 78, 71]);
       const threadStorageRoot = join(
         "/tmp",
@@ -4587,28 +4600,33 @@ describe("public thread data routes", () => {
         "images/diagram.png",
       );
 
-      const filePromise = harness.app.request(
-        `/api/v1/threads/${thread.id}/thread-storage/content?path=${encodeURIComponent("images/diagram.png")}`,
-      );
-      const fileCommand = await waitForQueuedCommand(
-        harness,
-        ({ command }) =>
-          command.type === "host.read_file" &&
-          command.path === threadStorageFilePath,
-      );
-      expect(fileCommand.command).toMatchObject({
-        path: threadStorageFilePath,
-        rootPath: threadStorageRoot,
+      registerHostRpcResponder(harness, {
+        hostId: host.id,
+        sessionId: session.id,
+        handle: ({ command }) => {
+          if (command.type !== "host.read_file_chunk")
+            throw new Error("Unexpected command");
+          expect(command.path).toBe(threadStorageFilePath);
+          expect(command.rootPath).toBe(threadStorageRoot);
+          return {
+            ok: true,
+            result: {
+              path: command.path,
+              content: Buffer.from(pngBytes)
+                .subarray(command.offset, command.offset + command.length)
+                .toString("base64"),
+              offset: command.offset,
+              mimeType: "image/png",
+              modifiedAtMs: 1234,
+              sizeBytes: pngBytes.byteLength,
+              revision: "0".repeat(64),
+            },
+          };
+        },
       });
-      await reportQueuedCommandSuccess(harness, fileCommand, {
-        path: threadStorageFilePath,
-        content: Buffer.from(pngBytes).toString("base64"),
-        contentEncoding: "base64",
-        mimeType: "image/png",
-        sizeBytes: pngBytes.byteLength,
-        sha256: "0".repeat(64),
-      });
-      const fileResponse = await filePromise;
+      const fileResponse = await harness.app.request(
+        `/api/v1/threads/${thread.id}/thread-storage/files/images/diagram.png`,
+      );
       expect(fileResponse.status).toBe(200);
       expect(fileResponse.headers.get("content-type")).toBe("image/png");
       expect(fileResponse.headers.get("x-bb-content-encoding")).toBeNull();
@@ -4616,101 +4634,6 @@ describe("public thread data routes", () => {
       expect(new Uint8Array(await fileResponse.arrayBuffer())).toEqual(
         pngBytes,
       );
-    });
-  });
-
-  it("privately revalidates worktree images", async () => {
-    await withTestHarness(async (harness) => {
-      const { host, session, environment, thread } = seedThreadFixture(harness);
-      registerHostRpcResponder(harness, {
-        hostId: host.id,
-        sessionId: session.id,
-        handle: (request) => {
-          expect(request.command).toMatchObject({
-            type: "host.read_file",
-            ifNoneMatch: {
-              kind: "sha256",
-              values: ["0".repeat(64)],
-            },
-          });
-          return {
-            ok: true,
-            result: {
-              path: `${environment.path}/public/chart.png`,
-              contentEncoding: "base64",
-              mimeType: "image/png",
-              sizeBytes: 4,
-              sha256: "0".repeat(64),
-              notModified: true,
-            },
-          };
-        },
-      });
-
-      const fileResponse = await harness.app.request(
-        `/api/v1/threads/${thread.id}/worktree/files/public/chart.png`,
-        { headers: { "if-none-match": `"${"0".repeat(64)}"` } },
-      );
-      expect(fileResponse.status).toBe(304);
-      expect(fileResponse.headers.get("cache-control")).toBe(
-        "private, no-cache",
-      );
-    });
-  });
-
-  it("serves worktree HTML preview content as raw text/html without app bridge injection", async () => {
-    await withTestHarness(async (harness) => {
-      const { host } = seedHostSession(harness.deps);
-      const { project } = seedProjectWithSource(harness.deps, {
-        hostId: host.id,
-        path: "/tmp/project-source",
-      });
-      const environment = seedEnvironment(harness.deps, {
-        hostId: host.id,
-        projectId: project.id,
-        path: "/tmp/project-source",
-      });
-      const thread = seedThread(harness.deps, {
-        projectId: project.id,
-        environmentId: environment.id,
-      });
-      const html = "<!doctype html><script>window.localOnly = true</script>";
-
-      const filePromise = harness.app.request(
-        `/api/v1/threads/${thread.id}/worktree/files/public/report.html`,
-      );
-      const fileCommand = await waitForQueuedCommand(
-        harness,
-        ({ command }) =>
-          command.type === "host.read_file" &&
-          command.path === join("/tmp/project-source", "public/report.html"),
-      );
-      expect(fileCommand.command).toMatchObject({
-        type: "host.read_file",
-        path: join("/tmp/project-source", "public/report.html"),
-        rootPath: "/tmp/project-source",
-      });
-      await reportQueuedCommandSuccess(harness, fileCommand, {
-        path: join("/tmp/project-source", "public/report.html"),
-        content: html,
-        contentEncoding: "utf8",
-        mimeType: "text/html",
-        sizeBytes: Buffer.byteLength(html),
-        sha256: "0".repeat(64),
-      });
-
-      const fileResponse = await filePromise;
-      expect(fileResponse.status).toBe(200);
-      expect(fileResponse.headers.get("content-type")).toBe(
-        "text/html; charset=utf-8",
-      );
-      expect(fileResponse.headers.get("content-security-policy")).toBe(
-        "sandbox allow-scripts",
-      );
-      expect(fileResponse.headers.get("cache-control")).toBe("no-store");
-      const body = await fileResponse.text();
-      expect(body).toBe(html);
-      expect(body).not.toContain("window.bb");
     });
   });
 
@@ -4846,188 +4769,10 @@ describe("public thread data routes", () => {
     });
   });
 
-  it("rejects oversized storage HTML before requesting content", async () => {
-    await withTestHarness(async (harness) => {
-      const { host, session, thread } = seedThreadFixture(harness);
-      registerHostRpcResponder(harness, {
-        hostId: host.id,
-        sessionId: session.id,
-        handle: ({ command }) => {
-          expect(command).toMatchObject({
-            type: "host.read_file_chunk",
-            length: 0,
-          });
-          return {
-            ok: true,
-            result: {
-              path: "/tmp/report.html",
-              offset: 0,
-              content: "",
-              mimeType: "text/html",
-              sizeBytes: 6 * 1024 * 1024,
-              modifiedAtMs: 1234,
-              revision: "0".repeat(64),
-            },
-          };
-        },
-      });
-      const response = await harness.app.request(
-        `/api/v1/threads/${thread.id}/thread-storage/files/report.html`,
-      );
-      expect(response.status).toBe(413);
-    });
-  });
-
-  it("serves absolute-path HTML files via files/raw with preview headers", async () => {
-    await withTestHarness(async (harness) => {
-      const { host } = seedHostSession(harness.deps);
-      const { project } = seedProjectWithSource(harness.deps, {
-        hostId: host.id,
-        path: "/tmp/project-source",
-      });
-      const environment = seedEnvironment(harness.deps, {
-        hostId: host.id,
-        projectId: project.id,
-        path: "/tmp/project-source",
-      });
-      const thread = seedThread(harness.deps, {
-        projectId: project.id,
-        environmentId: environment.id,
-      });
-      const html = "<!doctype html><h1>Raw preview</h1>";
-      // bb-fork(windows): the route resolves an absolute host path natively.
-      const anywhereReportPath = resolve("/tmp", "anywhere", "report.html");
-
-      const filePromise = harness.app.request(
-        `/api/v1/threads/${thread.id}/files/raw?path=${encodeURIComponent(anywhereReportPath)}`,
-      );
-      const fileCommand = await waitForQueuedCommand(
-        harness,
-        ({ command }) =>
-          command.type === "host.read_file" &&
-          command.path === anywhereReportPath,
-      );
-      expect(fileCommand.command).toMatchObject({
-        type: "host.read_file",
-        path: anywhereReportPath,
-      });
-      await reportQueuedCommandSuccess(harness, fileCommand, {
-        path: anywhereReportPath,
-        content: html,
-        contentEncoding: "utf8",
-        mimeType: "text/html",
-        sizeBytes: Buffer.byteLength(html),
-        sha256: "0".repeat(64),
-      });
-
-      const fileResponse = await filePromise;
-      expect(fileResponse.status).toBe(200);
-      expect(fileResponse.headers.get("content-type")).toBe(
-        "text/html; charset=utf-8",
-      );
-      expect(fileResponse.headers.get("content-security-policy")).toBe(
-        "sandbox allow-scripts",
-      );
-      expect(fileResponse.headers.get("cache-control")).toBe("no-store");
-      expect(fileResponse.headers.get("x-content-type-options")).toBe(
-        "nosniff",
-      );
-      expect(await fileResponse.text()).toBe(html);
-    });
-  });
-
-  it("rejects relative and non-HTML files/raw paths without contacting the host", async () => {
-    await withTestHarness(async (harness) => {
-      const { host } = seedHostSession(harness.deps);
-      const { project } = seedProjectWithSource(harness.deps, {
-        hostId: host.id,
-        path: "/tmp/project-source",
-      });
-      const environment = seedEnvironment(harness.deps, {
-        hostId: host.id,
-        projectId: project.id,
-        path: "/tmp/project-source",
-      });
-      const thread = seedThread(harness.deps, {
-        projectId: project.id,
-        environmentId: environment.id,
-      });
-
-      const relativeResponse = await harness.app.request(
-        `/api/v1/threads/${thread.id}/files/raw?path=${encodeURIComponent("relative/report.html")}`,
-      );
-      expect(relativeResponse.status).toBe(400);
-      await expect(readJson(relativeResponse)).resolves.toMatchObject({
-        code: "invalid_path",
-      });
-
-      const nonHtmlResponse = await harness.app.request(
-        `/api/v1/threads/${thread.id}/files/raw?path=${encodeURIComponent("/tmp/anywhere/data.json")}`,
-      );
-      expect(nonHtmlResponse.status).toBe(415);
-      await expect(readJson(nonHtmlResponse)).resolves.toMatchObject({
-        code: "unsupported_media_type",
-      });
-
-      const missingPathResponse = await harness.app.request(
-        `/api/v1/threads/${thread.id}/files/raw`,
-      );
-      expect(missingPathResponse.status).toBe(400);
-      await expect(readJson(missingPathResponse)).resolves.toMatchObject({
-        code: "invalid_request",
-      });
-    });
-  });
-
-  it("caps generic HTML preview responses at 5 MB", async () => {
-    await withTestHarness(async (harness) => {
-      const { host } = seedHostSession(harness.deps);
-      const { project } = seedProjectWithSource(harness.deps, {
-        hostId: host.id,
-        path: "/tmp/project-source",
-      });
-      const environment = seedEnvironment(harness.deps, {
-        hostId: host.id,
-        projectId: project.id,
-        path: "/tmp/project-source",
-      });
-      const thread = seedThread(harness.deps, {
-        projectId: project.id,
-        environmentId: environment.id,
-      });
-
-      const filePromise = harness.app.request(
-        `/api/v1/threads/${thread.id}/worktree/files/large.html`,
-      );
-      const fileCommand = await waitForQueuedCommand(
-        harness,
-        ({ command }) =>
-          command.type === "host.read_file" &&
-          command.path === join("/tmp/project-source", "large.html"),
-      );
-      await reportQueuedCommandSuccess(harness, fileCommand, {
-        path: join("/tmp/project-source", "large.html"),
-        content: "",
-        contentEncoding: "utf8",
-        mimeType: "text/html",
-        sizeBytes: 5 * 1024 * 1024 + 1,
-        sha256: "0".repeat(64),
-      });
-
-      const fileResponse = await filePromise;
-      expect(fileResponse.status).toBe(413);
-      await expect(readJson(fileResponse)).resolves.toEqual({
-        code: "file_too_large",
-        message: "HTML preview exceeds the 5 MB limit",
-        retryable: false,
-      });
-    });
-  });
-
   it("serves host file content from the thread environment host without requiring a ready environment", async () => {
     await withTestHarness(async (harness) => {
       seedHostSession(harness.deps, { id: "host-other" });
-      const { host } = seedHostSession(harness.deps, {
+      const { host, session } = seedHostSession(harness.deps, {
         id: "host-thread-environment",
       });
       const { project } = seedProjectWithSource(harness.deps, {
@@ -5056,34 +4801,33 @@ describe("public thread data routes", () => {
       const hostFilePath = "/Users/me/notes/plan.md";
       const fileBytes = new TextEncoder().encode("# Plan\n");
 
-      const filePromise = harness.app.request(
-        `/api/v1/threads/${thread.id}/host-files/content?path=${encodeURIComponent(hostFilePath)}`,
-      );
-      const fileCommand = await waitForQueuedCommand(
-        harness,
-        ({ command, row }) =>
-          row.hostId === host.id &&
-          command.type === "host.read_file" &&
-          command.path === hostFilePath,
-      );
-      expect(fileCommand.command).toEqual({
-        type: "host.read_file",
-        path: hostFilePath,
-      });
-      await reportQueuedCommandSuccess(
-        harness,
-        fileCommand,
-        {
-          path: hostFilePath,
-          content: "# Plan\n",
-          contentEncoding: "utf8",
-          mimeType: "text/markdown",
-          sizeBytes: fileBytes.byteLength,
-          sha256: "0".repeat(64),
+      registerHostRpcResponder(harness, {
+        hostId: host.id,
+        sessionId: session.id,
+        handle: ({ command }) => {
+          if (command.type !== "host.read_file_chunk")
+            throw new Error("Unexpected command");
+          expect(command.path).toBe(hostFilePath);
+          expect(command.rootPath).toBe("/");
+          return {
+            ok: true,
+            result: {
+              path: command.path,
+              content: Buffer.from(fileBytes)
+                .subarray(command.offset, command.offset + command.length)
+                .toString("base64"),
+              offset: command.offset,
+              mimeType: "text/markdown",
+              modifiedAtMs: 1234,
+              sizeBytes: fileBytes.byteLength,
+              revision: "0".repeat(64),
+            },
+          };
         },
-        { hostId: host.id },
+      });
+      const fileResponse = await harness.app.request(
+        `/api/v1/threads/${thread.id}/host-files/Users/me/notes/plan.md`,
       );
-      const fileResponse = await filePromise;
       expect(fileResponse.status).toBe(200);
       expect(fileResponse.headers.get("content-type")).toBe("text/markdown");
       expect(new Uint8Array(await fileResponse.arrayBuffer())).toEqual(
@@ -5104,7 +4848,7 @@ describe("public thread data routes", () => {
       });
 
       const response = await harness.app.request(
-        `/api/v1/threads/${thread.id}/host-files/content?path=${encodeURIComponent("/Users/me/notes/plan.md")}`,
+        `/api/v1/threads/${thread.id}/host-files/Users/me/notes/plan.md`,
       );
 
       expect(response.status).toBe(409);
@@ -5153,12 +4897,13 @@ describe("public thread data routes", () => {
         const hostFilePath = "/Users/me/notes/plan.md";
 
         const filePromise = harness.app.request(
-          `/api/v1/threads/${thread.id}/host-files/content?path=${encodeURIComponent(hostFilePath)}`,
+          `/api/v1/threads/${thread.id}/host-files/Users/me/notes/plan.md`,
         );
         const fileCommand = await waitForQueuedCommand(
           harness,
           ({ command }) =>
-            command.type === "host.read_file" && command.path === hostFilePath,
+            command.type === "host.read_file_chunk" &&
+            command.path === hostFilePath,
         );
         const fileErrorResponse = await reportQueuedCommandError(
           harness,
@@ -5193,12 +4938,12 @@ describe("public thread data routes", () => {
       );
 
       const filePromise = harness.app.request(
-        `/api/v1/threads/${thread.id}/thread-storage/content?path=${encodeURIComponent("notes/secrets")}`,
+        `/api/v1/threads/${thread.id}/thread-storage/files/notes/secrets`,
       );
       const fileCommand = await waitForQueuedCommand(
         harness,
         ({ command }) =>
-          command.type === "host.read_file" &&
+          command.type === "host.read_file_chunk" &&
           command.path === join(threadStorageRoot, "notes", "secrets"),
       );
       expect(fileCommand.command).toMatchObject({
@@ -5259,37 +5004,6 @@ describe("public thread data routes", () => {
         files: [],
         truncated: false,
         storageRootPath: threadStoragePath,
-      });
-    });
-  });
-
-  it("maps thread storage file read failures to user-facing 4xx responses", async () => {
-    await withTestHarness(async (harness) => {
-      const { thread } = seedThreadFixture(harness);
-
-      const filePromise = harness.app.request(
-        `/api/v1/threads/${thread.id}/thread-storage/content?path=${encodeURIComponent("notes/missing.txt")}`,
-      );
-      const fileCommand = await waitForQueuedCommand(
-        harness,
-        ({ command }) => command.type === "host.read_file",
-      );
-      const fileErrorResponse = await reportQueuedCommandError(
-        harness,
-        fileCommand,
-        {
-          errorCode: "file_too_large",
-          errorMessage: "File exceeds limit",
-        },
-      );
-      expect(fileErrorResponse.status).toBe(200);
-
-      const fileResponse = await filePromise;
-      expect(fileResponse.status).toBe(413);
-      await expect(readJson(fileResponse)).resolves.toEqual({
-        code: "file_too_large",
-        message: "File exceeds limit",
-        retryable: false,
       });
     });
   });

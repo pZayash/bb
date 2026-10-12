@@ -232,6 +232,7 @@ function FileDiffReadyBody({
     fileDiff,
     onRequestFileContents,
     patchText,
+    renderBeforeVisible: false,
   });
   const presentation: DiffPresentation = {
     expandUnchanged: true,

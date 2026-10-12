@@ -14,6 +14,7 @@ import {
 } from "../src/server-moved.js";
 
 const tempDirs: string[] = [];
+const posixDescribe = process.platform === "win32" ? describe.skip : describe;
 
 const MOVE: DesktopServerMove = {
   moveId: "move-1",
@@ -89,9 +90,7 @@ function createHarness(args: {
   };
 }
 
-// bb-fork(windows): the machine installer runs a POSIX shell script through
-// bb-fork(windows): `/bin/sh`, which Windows machines do not have.
-describe.skipIf(process.platform === "win32")("runMachineInstaller", () => {
+posixDescribe("runMachineInstaller", () => {
   it("adopts the data directory and appends the installer output to its log", async () => {
     const dir = await createTempDir();
     const logPath = join(dir, "logs", "install-machine-service.log");

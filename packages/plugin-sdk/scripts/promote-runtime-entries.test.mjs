@@ -42,16 +42,16 @@ describe("promoteRuntimeEntries", () => {
         }
       })();
 
-      await promoteRuntimeEntries({
-        distDir,
-        stagingDir,
-        relativeOutputs: ["provider-bridge.js", "internal/host.js"],
-      });
-      observed.push(
-        await readFile(path.join(distDir, "provider-bridge.js"), "utf8"),
-      );
-      keepReading = false;
-      await reader;
+    await promoteRuntimeEntries({
+      distDir,
+      stagingDir,
+      relativeOutputs: ["provider-bridge.js", path.join("internal", "host.js")],
+    });
+    observed.push(
+      await readFile(path.join(distDir, "provider-bridge.js"), "utf8"),
+    );
+    keepReading = false;
+    await reader;
 
       expect(observed.length).toBeGreaterThan(0);
       expect(new Set(observed)).toEqual(new Set(["old bridge", "new bridge"]));

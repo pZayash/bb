@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import {
   mkdirSync,
@@ -8,7 +9,6 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
 const REDACT_SCRIPT = new URL(

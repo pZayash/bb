@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import { PERSONAL_PROJECT_ID } from "@bb/domain";
 import { describe, expect, it } from "vitest";
 import { withHarness } from "../../helpers/harness.js";
@@ -25,9 +26,14 @@ describe.sequential("personal workspace plugin integration", () => {
         if (workspacePath === null) {
           throw new Error("Personal workspace path was not assigned");
         }
-        // bb-fork(windows): the expected relative path uses `/`.
-        expect(workspacePath.replaceAll("\\", "/")).toContain(
-          `plugins/environment-personal-workspace/host-data/workspaces/${first.thread.id}`,
+        expect(workspacePath).toContain(
+          path.join(
+            "plugins",
+            "environment-personal-workspace",
+            "host-data",
+            "workspaces",
+            first.thread.id,
+          ),
         );
         await fs.access(workspacePath);
 
@@ -38,8 +44,14 @@ describe.sequential("personal workspace plugin integration", () => {
 
         expect(second.environment.id).not.toBe(first.environment.id);
         expect(second.thread.environmentId).toBe(second.environment.id);
-        expect(String(second.environment.path).replaceAll("\\", "/")).toContain(
-          `plugins/environment-personal-workspace/host-data/workspaces/${second.thread.id}`,
+        expect(second.environment.path).toContain(
+          path.join(
+            "plugins",
+            "environment-personal-workspace",
+            "host-data",
+            "workspaces",
+            second.thread.id,
+          ),
         );
         expect(second.environment.path).not.toBe(workspacePath);
       },

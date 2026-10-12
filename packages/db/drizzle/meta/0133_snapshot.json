@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "9c320e3a-98f2-4f0d-b730-a90b31cb38be",
+  "id": "a1401b47-32c9-4811-9823-7e216e518bdf",
   "prevId": "f909d66b-b58a-45f2-a338-525589322794",
   "tables": {
     "app_settings": {
@@ -4671,23 +4671,9 @@
           "notNull": false,
           "autoincrement": false
         },
-        "draft": {
-          "name": "draft",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "parent_thread_id": {
           "name": "parent_thread_id",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "parent_notifications_muted_at": {
-          "name": "parent_notifications_muted_at",
-          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

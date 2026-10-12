@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,23 +43,6 @@ interface CodexTopologyRuntime {
   launch(digest: string): AgentRuntimeBridgeLaunch;
 }
 
-// bb-fork(windows): a just-shut-down runtime can still hold files in the dir.
-async function removeWorkspaceDir(dir: string): Promise<void> {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      rmSync(dir, { recursive: true, force: true });
-      return;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      const retryable =
-        code === "EBUSY" || code === "EPERM" || code === "ENOTEMPTY";
-      if (!retryable || attempt >= 20) {
-        throw error;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-  }
-}
 
 describe("codex process topology", () => {
   let workspaceDir: string;
@@ -70,7 +54,12 @@ describe("codex process topology", () => {
 
   afterEach(async () => {
     await Promise.all(runtimes.splice(0).map((runtime) => runtime.shutdown()));
-    await removeWorkspaceDir(workspaceDir);
+    await rm(workspaceDir, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
   });
 
   function createCodexTopologyRuntime(

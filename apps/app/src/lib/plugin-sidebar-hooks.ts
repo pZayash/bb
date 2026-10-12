@@ -1,12 +1,13 @@
 import { useCallback, useMemo } from "react";
 import { useStore } from "jotai";
+import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import {
   PERSONAL_PROJECT_ID,
   type Host,
+  type Thread,
   type ThreadListEntry,
 } from "@bb/domain";
 import { useIsCompactViewport } from "@bb/shared-ui/hooks/use-compact-viewport";
-import { isDraftThread } from "@bb/client-core";
 import type {
   PluginSdkApp,
   PluginSidebarProject,
@@ -19,6 +20,7 @@ import type {
   PluginSidebarThreadShortcut,
   PluginSidebarThreadsState,
 } from "@get-bb/plugin-sdk";
+import { sdk } from "@/lib/sdk";
 import { useSidebarThreadShortcut as useHostSidebarThreadShortcut } from "@/components/sidebar/sidebarThreadShortcuts";
 import {
   useThreadTitleMentionResources,
@@ -41,6 +43,11 @@ import {
 import { useHosts } from "@/hooks/queries/host-queries";
 import { useArchivedThreads } from "@/hooks/queries/thread-queries";
 import { useSidebarNavigation } from "@/hooks/queries/sidebar-navigation-query";
+import {
+  archivedThreadsListQueryKey,
+  sidebarNavigationQueryKey,
+  threadQueryKey,
+} from "@/hooks/queries/query-keys";
 import {
   usePinThread,
   useUnpinThread,
@@ -260,6 +267,36 @@ function useThreadEntryMap(): ReadonlyMap<string, ThreadListEntry> {
   }, [data, archived.data]);
 }
 
+export function lookupCachedThread(
+  queryClient: QueryClient,
+  threadId: string,
+): Thread | null {
+  const detail = queryClient.getQueryData<Thread>(threadQueryKey(threadId));
+  if (detail !== undefined) return detail;
+  const active = threadEntryMapFor(
+    queryClient.getQueryData<ReturnType<typeof useSidebarNavigation>["data"]>(
+      sidebarNavigationQueryKey(),
+    ),
+  ).get(threadId);
+  if (active !== undefined) return active;
+  const archived = queryClient.getQueryData<
+    InfiniteData<readonly ThreadListEntry[]>
+  >(archivedThreadsListQueryKey({}));
+  return (
+    archived?.pages.flat().find((thread) => thread.id === threadId) ?? null
+  );
+}
+
+export async function resolveThread(
+  queryClient: QueryClient,
+  threadId: string,
+): Promise<Thread> {
+  return (
+    lookupCachedThread(queryClient, threadId) ??
+    (await sdk.threads.get({ threadId }))
+  );
+}
+
 export function useSidebarThreadEntry(
   threadId: string,
 ): ThreadListEntry | null {
@@ -314,6 +351,10 @@ export function useSidebarThreadActions(): PluginSidebarThreadActions {
           setRootComposeProjectId(projectId);
         }
         const state = {
+          placement: options?.experimental_placement ?? {
+            sectionId: options?.sectionId ?? null,
+            pinned: false,
+          },
           ...(options?.focusPrompt ? { focusPrompt: true } : {}),
           ...(options?.sectionId !== undefined
             ? { sectionId: options.sectionId }
@@ -352,6 +393,9 @@ export function useSidebarThreadActions(): PluginSidebarThreadActions {
       archive(threadId) {
         hostActions.requestArchive(requireEntry(threadId));
       },
+      experimental_archiveEnvironmentThreads(environmentId) {
+        return hostActions.archiveEnvironmentThreads(environmentId);
+      },
       requestDelete(threadId) {
         hostActions.requestDelete(requireEntry(threadId));
       },
@@ -388,22 +432,14 @@ export function useSidebarThreadDraft(
     projectId: entry?.projectId ?? "",
     threadId,
   });
-  return entry !== null && (hasDraft || isDraftThread(entry))
-    ? HAS_DRAFT
-    : NO_DRAFT;
+  return entry !== null && hasDraft ? HAS_DRAFT : NO_DRAFT;
 }
 
 export function useSidebarThreadDraftIds(): ReadonlySet<string> {
   const entries = useThreadEntryMap();
   const refs = useMemo(() => [...entries.values()], [entries]);
-  const localDraftIds = usePromptDraftInputThreadIds(refs);
-  return useMemo(() => {
-    const ids = new Set(localDraftIds);
-    for (const entry of refs) {
-      if (isDraftThread(entry)) ids.add(entry.id);
-    }
-    return ids.size === 0 ? EMPTY_DRAFT_IDS : ids;
-  }, [localDraftIds, refs]);
+  const ids = usePromptDraftInputThreadIds(refs);
+  return ids.size === 0 ? EMPTY_DRAFT_IDS : ids;
 }
 
 export function useSidebarThreadRowStatus(
@@ -445,6 +481,13 @@ export function useSidebarThreadPullRequest(
               url: pullRequest.url,
               state: pullRequest.state,
               attention: pullRequest.attention,
+              experimental_autoMerge: pullRequest.autoMerge,
+              experimental_inMergeQueue: pullRequest.inMergeQueue,
+              experimental_checks: { state: pullRequest.checks.state },
+              experimental_review: { state: pullRequest.review.state },
+              experimental_mergeability: {
+                state: pullRequest.mergeability.state,
+              },
             },
     }),
     [environmentId, pullRequest, query.isPending],

@@ -182,7 +182,6 @@ describe("mergeImportedManagedConfig", () => {
     const merged = mergeImportedManagedConfig({
       importedConfig: {
         config: { BB_LOG_LEVEL: "info" },
-        customAcpAgents: [{ id: "raw-agent", futureField: 1 }],
         serverUrl: "https://ignored.example",
         machineCredential: "source-credential",
       },
@@ -198,18 +197,16 @@ describe("mergeImportedManagedConfig", () => {
 
     expect(merged).toEqual({
       config: { BB_LOG_LEVEL: "info", BB_APP_URL: "https://target.example" },
-      customAcpAgents: [{ id: "raw-agent", futureField: 1 }],
       serverUrl: "http://127.0.0.1:39886",
     });
   });
 
-  it("takes custom models, ACP agents, and shared skill roots only from the imported server", () => {
+  it("takes custom models and shared skill roots only from the imported server", () => {
     expect(
       mergeImportedManagedConfig({
         importedConfig: {},
         existingConfig: {
           customModels: [{ providerId: "codex", model: "target-model" }],
-          customAcpAgents: [{ id: "target-agent" }],
           sharedSkillRoots: { user: ["~/target-skills"], project: [] },
         },
         localServerUrl: null,
@@ -232,102 +229,99 @@ describe("mergeImportedManagedConfig", () => {
 });
 
 describe("installImportedServerFiles and removeImportedServerFiles", () => {
-  // bb-fork(windows): `chmod` modes are not enforced on Windows.
-  it.skipIf(process.platform === "win32")(
-    "installs server files, merges managed config, and restores the target on removal",
-    async () => {
-      const { stagingDir, manifest } = await stageImport();
-      const dataDir = await createTargetDataDir();
-      const originalConfig = await readDataFile(dataDir, "config.json");
-      const originalEnv = await readDataFile(dataDir, "env.json");
+  it("installs server files, merges managed config, and restores the target on removal", async () => {
+    const { stagingDir, manifest } = await stageImport();
+    const dataDir = await createTargetDataDir();
+    const originalConfig = await readDataFile(dataDir, "config.json");
+    const originalEnv = await readDataFile(dataDir, "env.json");
 
-      const result = await installImportedServerFiles({
-        stagingDir,
-        dataDir,
-        manifest,
-        localServerUrl: "http://127.0.0.1:39886",
-      });
+    const result = await installImportedServerFiles({
+      stagingDir,
+      dataDir,
+      manifest,
+      localServerUrl: "http://127.0.0.1:39886",
+    });
 
-      expect([...result.importedEntries].sort()).toEqual([
-        "attachments/thr_1/image.png",
-        "auth-secret",
-        "bb.db",
-        "config.json",
-        "env.json",
-        "plugins/docs/data.db",
-        "plugins/docs/secrets/token",
-        "skills/review/SKILL.md",
-      ]);
-      expect(result.importedEntries.at(-1)).toBe("bb.db");
-      expect([...result.backups].sort()).toEqual([
-        "config.json",
-        "env.json",
-        "skills/review/SKILL.md",
-      ]);
-      expect(await readDataFile(dataDir, "bb.db")).toBe("server database");
-      expect(await readDataFile(dataDir, "skills/review/SKILL.md")).toBe(
-        "imported skill",
-      );
-      expect(await readDataFile(dataDir, "plugins/docs/secrets/token")).toBe(
-        "token",
-      );
-      expect(await readDataFile(dataDir, "host-id")).toBe("host-target");
-      expect(
-        await readDataFile(dataDir, "plugins/docs/host-data/vault.md"),
-      ).toBe("vault");
-      expect(
-        await readdir(path.join(dataDir, "plugins", "docs")),
-      ).not.toContain("source-only");
-      expect(await readJson(dataDir, "config.json")).toEqual({
-        config: {
-          BB_APP_URL: "https://target.example",
-          BB_LOG_LEVEL: "info",
-        },
-        customModels: SOURCE_CONFIG.customModels,
-        customAcpAgents: SOURCE_CONFIG.customAcpAgents,
-        sharedSkillRoots: SOURCE_CONFIG.sharedSkillRoots,
-        serverUrl: "http://127.0.0.1:39886",
-      });
+    expect([...result.importedEntries].sort()).toEqual([
+      "attachments/thr_1/image.png",
+      "auth-secret",
+      "bb.db",
+      "config.json",
+      "env.json",
+      "plugins/docs/data.db",
+      "plugins/docs/secrets/token",
+      "skills/review/SKILL.md",
+    ]);
+    expect(result.importedEntries.at(-1)).toBe("bb.db");
+    expect([...result.backups].sort()).toEqual([
+      "config.json",
+      "env.json",
+      "skills/review/SKILL.md",
+    ]);
+    expect(await readDataFile(dataDir, "bb.db")).toBe("server database");
+    expect(await readDataFile(dataDir, "skills/review/SKILL.md")).toBe(
+      "imported skill",
+    );
+    expect(await readDataFile(dataDir, "plugins/docs/secrets/token")).toBe(
+      "token",
+    );
+    expect(await readDataFile(dataDir, "host-id")).toBe("host-target");
+    expect(await readDataFile(dataDir, "plugins/docs/host-data/vault.md")).toBe(
+      "vault",
+    );
+    expect(await readdir(path.join(dataDir, "plugins", "docs"))).not.toContain(
+      "source-only",
+    );
+    expect(await readJson(dataDir, "config.json")).toEqual({
+      config: {
+        BB_APP_URL: "https://target.example",
+        BB_LOG_LEVEL: "info",
+      },
+      customModels: SOURCE_CONFIG.customModels,
+      sharedSkillRoots: SOURCE_CONFIG.sharedSkillRoots,
+      serverUrl: "http://127.0.0.1:39886",
+    });
+    if (process.platform !== "win32") {
       expect((await stat(path.join(dataDir, "config.json"))).mode & 0o777).toBe(
         0o600,
       );
-      expect(await readJson(dataDir, "env.json")).toEqual({
-        env: { SHARED: "from-source", SOURCE_ONLY: "1", TARGET_ONLY: "1" },
-      });
-      expect(
-        await readDataFile(
-          dataDir,
-          `${SERVER_IMPORT_BACKUP_DIR_NAME}/config.json`,
-        ),
-      ).toBe(originalConfig);
-
-      await writeDataFile(dataDir, "bb.db-wal", "pending server wal");
-      await removeImportedServerFiles({
+    }
+    expect(await readJson(dataDir, "env.json")).toEqual({
+      env: { SHARED: "from-source", SOURCE_ONLY: "1", TARGET_ONLY: "1" },
+    });
+    expect(
+      await readDataFile(
         dataDir,
-        importedEntries: result.importedEntries,
-      });
+        `${SERVER_IMPORT_BACKUP_DIR_NAME}/config.json`,
+      ),
+    ).toBe(originalConfig);
 
-      expect((await readdir(dataDir)).sort()).toEqual([
-        ".config.json.lock",
-        ".env.json.lock",
-        "auth.json",
-        "config.json",
-        "env.json",
-        "host-id",
-        "plugins",
-        "skills",
-        "thread-storage",
-      ]);
-      expect(await readDataFile(dataDir, "config.json")).toBe(originalConfig);
-      expect(await readDataFile(dataDir, "env.json")).toBe(originalEnv);
-      expect(await readDataFile(dataDir, "skills/review/SKILL.md")).toBe(
-        "target skill",
-      );
-      expect(await readdir(path.join(dataDir, "plugins", "docs"))).toEqual([
-        "host-data",
-      ]);
-    },
-  );
+    await writeDataFile(dataDir, "bb.db-wal", "pending server wal");
+    await removeImportedServerFiles({
+      dataDir,
+      importedEntries: result.importedEntries,
+    });
+
+    expect((await readdir(dataDir)).sort()).toEqual([
+      ".config.json.lock",
+      ".env.json.lock",
+      "auth.json",
+      "config.json",
+      "env.json",
+      "host-id",
+      "plugins",
+      "skills",
+      "thread-storage",
+    ]);
+    expect(await readDataFile(dataDir, "config.json")).toBe(originalConfig);
+    expect(await readDataFile(dataDir, "env.json")).toBe(originalEnv);
+    expect(await readDataFile(dataDir, "skills/review/SKILL.md")).toBe(
+      "target skill",
+    );
+    expect(await readdir(path.join(dataDir, "plugins", "docs"))).toEqual([
+      "host-data",
+    ]);
+  });
 
   it("refuses to import over existing server data without touching the target", async () => {
     const { stagingDir, manifest } = await stageImport();

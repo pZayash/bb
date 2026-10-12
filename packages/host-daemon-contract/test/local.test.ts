@@ -32,7 +32,7 @@ describe("hostPlatformSchema", () => {
       "darwin",
       "linux",
       "wsl",
-      "windows",
+      "win32",
       "unknown",
     ] as const) {
       expect(hostPlatformSchema.parse(value)).toBe(value);
@@ -40,7 +40,6 @@ describe("hostPlatformSchema", () => {
   });
 
   it("rejects other strings", () => {
-    expect(() => hostPlatformSchema.parse("win32")).toThrow();
     expect(() => hostPlatformSchema.parse("freebsd")).toThrow();
     expect(() => hostPlatformSchema.parse("")).toThrow();
   });

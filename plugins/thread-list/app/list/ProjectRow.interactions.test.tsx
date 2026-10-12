@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { ThreadRowNavigationProvider } from "../rows/threadRowNavigation.js";
 import {
   cleanup,
   fireEvent,
@@ -11,6 +12,7 @@ import type { ReactNode } from "react";
 import type { SidebarThread } from "../model/sidebar-thread.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { SidebarRenameProvider } from "../rows/SidebarInlineRename.js";
 import { Provider, createStore } from "jotai";
 import {
   installTestPluginRuntime,
@@ -39,12 +41,16 @@ installTestPluginRuntime();
 const {
   ChronologicalSectionThreadSections,
   ProjectRow,
+  PinnedEnvironmentThreadGroupRow,
   SectionThreadDragOverlay,
   ThreadTreeNodeRow,
 } = await import("./ProjectRow.js");
+const { ThreadCreationPlacementScope } =
+  await import("./ThreadCreationPlacement.js");
 const { useSidebarModeSectionOrder } =
   await import("./useSidebarModeSectionOrder.js");
 const { SidebarHeaderControls } = await import("./SidebarHeaderControls.js");
+const { SidebarDraftPresenceSync } = await import("./sidebarDraftPresence.js");
 const { ThreadListVisibilityMenuItems } =
   await import("./ThreadListVisibility.js");
 
@@ -94,7 +100,12 @@ interface HarnessProps {
 function Harness({ children, store }: HarnessProps) {
   return (
     <TooltipProvider>
-      <Provider store={store}>{children}</Provider>
+      <SidebarDraftPresenceSync />
+      <Provider store={store}>
+        <ThreadRowNavigationProvider>
+          <SidebarRenameProvider>{children}</SidebarRenameProvider>
+        </ThreadRowNavigationProvider>
+      </Provider>
     </TooltipProvider>
   );
 }
@@ -153,7 +164,6 @@ function renderPinnedParentWithChild({
       isEnvGrouped={false}
       collapsedThreadIds={isCollapsed ? new Set(["thr_parent"]) : new Set()}
       collapsedEnvironmentIds={new Set()}
-      variant="section"
       onToggleThreadCollapsed={vi.fn()}
       onToggleEnvironmentCollapsed={vi.fn()}
       sectionDnd={sectionDnd}
@@ -198,9 +208,17 @@ function renderProjectRow(
   return { ...result, onToggleEnvironmentCollapsed, onToggleProjectCollapsed };
 }
 
-function expectCollapsedActivityAtSidebarEdge(label: string) {
-  const edgeSlot = screen
-    .getAllByLabelText(label)
+function renderedIndicators(): Array<string | null> {
+  return Array.from(
+    document.querySelectorAll("[data-thread-status-glyph]"),
+    (glyph) => glyph.getAttribute("data-thread-status-glyph"),
+  );
+}
+
+function expectCollapsedActivityAtSidebarEdge(indicator: string) {
+  const edgeSlot = Array.from(
+    document.querySelectorAll(`[data-thread-status-glyph="${indicator}"]`),
+  )
     .map((indicator) =>
       indicator.closest("[data-sidebar-collapsed-activity-edge]"),
     )
@@ -211,9 +229,11 @@ function expectCollapsedActivityAtSidebarEdge(label: string) {
 
 function CustomSectionsVisibilityProbe({
   threads,
+  buildingName = "Building",
   onProjectSelect,
 }: {
   threads: SidebarThread[];
+  buildingName?: string;
   onProjectSelect: () => void;
 }) {
   const { order, persistedOrder, onOrderChange } = useSidebarModeSectionOrder({
@@ -227,7 +247,7 @@ function CustomSectionsVisibilityProbe({
       threadListState={{ status: "ready", threads }}
       compareThreads={() => 0}
       sections={[
-        { id: "sec_building", name: "Building" },
+        { id: "sec_building", name: buildingName },
         { id: "sec_review", name: "Review" },
       ]}
       collapsedThreadIds={new Set()}
@@ -549,6 +569,54 @@ describe("ProjectRow interactions", () => {
     expect(projectGroup?.hasAttribute("data-sidebar-section-id")).toBe(false);
   });
 
+  it("indents a nested environment group one level below its parent", () => {
+    const environment = makeSidebarEnvironment({
+      id: "env_nested",
+      name: "Nested workspace",
+      providerId: "git-worktree",
+      isWorktree: true,
+    });
+    const { container } = renderProjectRow(vi.fn(), {
+      status: "ready",
+      threads: [
+        makeThread({ id: "thr_parent", title: "Parent" }),
+        makeThread({
+          id: "thr_child_a",
+          parentThreadId: "thr_parent",
+          environment,
+        }),
+        makeThread({
+          id: "thr_child_b",
+          parentThreadId: "thr_parent",
+          environment,
+        }),
+      ],
+    });
+
+    const group = screen
+      .getByRole("button", { name: "Collapse Nested workspace threads" })
+      .closest("[data-sidebar-sticky-group]");
+    const header = group?.querySelector<HTMLElement>(
+      ".bb-sidebar-hover-actions-row",
+    );
+    const child = group?.querySelector<HTMLElement>(
+      '[data-sidebar-thread-id="thr_child_a"]',
+    );
+    const guide = group?.querySelector<HTMLElement>(
+      ":scope > div.relative > span.bg-border-hairline",
+    );
+
+    expect(
+      container.querySelector('[data-sidebar-thread-id="thr_parent"]'),
+    ).not.toBeNull();
+    expect(header?.style.paddingLeft).toBe("32px");
+    expect(guide?.style.left).toBe("40px");
+    expect(
+      child?.closest<HTMLElement>(".bb-sidebar-hover-actions-row")?.style
+        .paddingLeft,
+    ).toBe("56px");
+  });
+
   it("shows generic runtime activity before a named workflow rollup", () => {
     renderProjectRow(
       vi.fn(),
@@ -597,8 +665,7 @@ describe("ProjectRow interactions", () => {
         name: "Expand Feature workspace threads",
       }),
     ).not.toBeNull();
-    expect(screen.getByLabelText("Thread working")).not.toBeNull();
-    expect(screen.queryByLabelText("Workflow running")).toBeNull();
+    expect(renderedIndicators()).toEqual(["runtime"]);
   });
 
   it.each([
@@ -676,10 +743,7 @@ describe("ProjectRow interactions", () => {
       { draftThreadIds: ["thr_worktree_draft"] },
     );
 
-    expect(
-      screen.getByLabelText("Thread working with unsubmitted draft"),
-    ).not.toBeNull();
-    expect(screen.queryByLabelText("Plan mode active")).toBeNull();
+    expect(renderedIndicators()).toEqual(["working-draft"]);
   });
 
   it("keeps a duplicate section name in place until corrected", async () => {
@@ -689,9 +753,10 @@ describe("ProjectRow interactions", () => {
         code: "section_name_conflict",
       }),
     );
-    const { sdkCalls } = renderTree(
+    const store = createStore();
+    const slot = renderTree(
       <CustomSectionsVisibilityProbe threads={[]} onProjectSelect={vi.fn()} />,
-      { sdk: { threadSections: { update } } },
+      { sdk: { threadSections: { update } }, store },
     );
     fireEvent.pointerDown(
       screen.getByRole("button", { name: "Building section actions" }),
@@ -708,7 +773,7 @@ describe("ProjectRow interactions", () => {
     fireEvent.change(input, { target: { value: "New section" } });
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() =>
-      expect(sdkCalls.at(-1)).toEqual({
+      expect(slot.sdkCalls.at(-1)).toEqual({
         method: "threadSections.update",
         args: [{ id: "sec_building", name: "New section" }],
       }),
@@ -717,6 +782,15 @@ describe("ProjectRow interactions", () => {
       expect(
         screen.queryByRole("textbox", { name: "Section name" }),
       ).toBeNull(),
+    );
+    slot.rerender(
+      <Harness store={store}>
+        <CustomSectionsVisibilityProbe
+          threads={[]}
+          onProjectSelect={vi.fn()}
+          buildingName="New section"
+        />
+      </Harness>,
     );
     expect(
       screen.getByRole("button", { name: "New section section actions" }),
@@ -754,10 +828,8 @@ describe("ProjectRow interactions", () => {
     ).toBe(sectionId);
 
     expect(screen.queryByText("Test thread")).toBeNull();
-    expect(screen.getAllByLabelText("Plan mode active")).not.toHaveLength(0);
-    expectCollapsedActivityAtSidebarEdge("Plan mode active");
-    expect(screen.queryByLabelText("Thread working")).toBeNull();
-    expect(screen.queryByLabelText("Goal active")).toBeNull();
+    expect(renderedIndicators()).toEqual(["plan-mode"]);
+    expectCollapsedActivityAtSidebarEdge("plan-mode");
   });
 
   it("shows a working draft before Plan for a collapsed section", () => {
@@ -779,10 +851,7 @@ describe("ProjectRow interactions", () => {
       ["thr_section_draft"],
     );
 
-    expect(
-      screen.getAllByLabelText("Thread working with unsubmitted draft"),
-    ).not.toHaveLength(0);
-    expect(screen.queryByLabelText("Plan mode active")).toBeNull();
+    expect(renderedIndicators()).toEqual(["working-draft"]);
   });
 
   it("hides loose Threads in More and restores them", async () => {
@@ -966,8 +1035,8 @@ describe("ProjectRow interactions", () => {
     );
 
     expect(screen.queryByText("Test thread")).toBeNull();
-    expect(screen.getAllByLabelText("Goal active")).not.toHaveLength(0);
-    expectCollapsedActivityAtSidebarEdge("Goal active");
+    expect(renderedIndicators()).toEqual(["goal"]);
+    expectCollapsedActivityAtSidebarEdge("goal");
   });
 
   it("shows unread success before an idle draft for a collapsed project", () => {
@@ -989,10 +1058,7 @@ describe("ProjectRow interactions", () => {
       { draftThreadIds: ["thr_project_draft"] },
     );
 
-    expect(
-      screen.getAllByLabelText("Unread thread succeeded"),
-    ).not.toHaveLength(0);
-    expect(screen.queryByLabelText("Thread has unsubmitted draft")).toBeNull();
+    expect(renderedIndicators()).toEqual(["unread-success"]);
   });
 
   it("excludes hidden side-chat activity from a collapsed project", () => {
@@ -1020,15 +1086,14 @@ describe("ProjectRow interactions", () => {
       { draftThreadIds: ["thr_side_chat"] },
     );
 
-    expect(screen.queryByLabelText("Plan mode active")).toBeNull();
-    expect(document.querySelector('[data-icon="Edit"]')).toBeNull();
+    expect(renderedIndicators()).toEqual([]);
   });
 
   it.each([false, true])(
     "keeps environment actions touch-accessible when collapsed=%s",
     async (isCollapsed) => {
       const update = vi.fn(sdkResult({ ok: true }));
-      const { sidebarActionCalls, sdkCalls } = renderProjectRow(
+      const { navigateCalls, sdkCalls } = renderProjectRow(
         vi.fn(),
         { status: "ready", threads: ENVIRONMENT_THREADS },
         false,
@@ -1050,12 +1115,13 @@ describe("ProjectRow interactions", () => {
         ),
       ).toBe(true);
       fireEvent.click(createButton);
-      expect(sidebarActionCalls).toEqual([
+      expect(navigateCalls).toEqual([
         {
-          method: "openNewThread",
+          method: "toCompose",
           options: {
             projectId: "proj_test",
             environmentId: "env_test",
+            placement: { sectionId: null, pinned: false },
             focusPrompt: true,
           },
         },
@@ -1127,7 +1193,7 @@ describe("ProjectRow interactions", () => {
       sdkResult({ ok: true, archivedThreadIds: [] }),
     );
     const update = vi.fn(sdkResult({ ok: true }));
-    const { sdkCalls } = renderProjectRow(
+    const { sdkCalls, experimental_environmentArchiveCalls } = renderProjectRow(
       vi.fn(),
       {
         status: "ready",
@@ -1165,10 +1231,7 @@ describe("ProjectRow interactions", () => {
       { button: 0 },
     );
     fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
-    expect(sdkCalls).toContainEqual({
-      method: "environments.archiveThreads",
-      args: [{ environmentId: "env_plain" }],
-    });
+    expect(experimental_environmentArchiveCalls).toEqual(["env_plain"]);
 
     fireEvent.pointerDown(
       screen.getByRole("button", { name: "Environment actions" }),
@@ -1187,4 +1250,62 @@ describe("ProjectRow interactions", () => {
       }),
     );
   });
+});
+
+describe("environment creation placement", () => {
+  afterEach(cleanup);
+  it.each([
+    ["pinned", "sec_managers", true],
+    ["pinned-mixed", null, true],
+    ["section:sec_visible", "sec_visible", false],
+    ["project:proj_test", null, false],
+    ["machine:host_test", null, false],
+    ["threads", null, false],
+  ] as const)(
+    "creates in the containing %s group",
+    (groupId, sectionId, pinned) => {
+      const threads = ENVIRONMENT_THREADS.map((thread) => ({
+        ...thread,
+        sectionId:
+          groupId === "pinned-mixed" && thread.id === ENVIRONMENT_THREADS[0].id
+            ? "sec_other"
+            : "sec_managers",
+        pinnedAt: 1,
+      }));
+      const group = buildPinnedSidebarState({
+        threads,
+        groupEnvironmentThreads: true,
+      }).rootItems[0];
+      if (group.kind !== "environment")
+        throw new Error("Expected environment group");
+      const { navigateCalls } = renderTree(
+        <ThreadCreationPlacementScope
+          group={groupId === "pinned-mixed" ? "pinned" : groupId}
+        >
+          <PinnedEnvironmentThreadGroupRow
+            group={group.group}
+            collapsedThreadIds={new Set()}
+            collapsedEnvironmentIds={new Set()}
+            onToggleThreadCollapsed={vi.fn()}
+            onToggleEnvironmentCollapsed={vi.fn()}
+          />
+        </ThreadCreationPlacementScope>,
+        { threads },
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "New thread in environment" }),
+      );
+      expect(navigateCalls).toEqual([
+        {
+          method: "toCompose",
+          options: {
+            projectId: "proj_test",
+            environmentId: "env_test",
+            focusPrompt: true,
+            placement: { sectionId, pinned },
+          },
+        },
+      ]);
+    },
+  );
 });

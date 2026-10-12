@@ -123,8 +123,7 @@ function collectFrontendModules(entry: string): Map<string, string[]> {
 describe("automations frontend bundle", () => {
   const reached = collectFrontendModules(FRONTEND_ENTRY);
   const reachedPaths = [...reached.keys()].map((file) =>
-    // bb-fork(windows): `relative` returns `\`-separated paths on Windows.
-    relative(PLUGIN_ROOT, file).replaceAll(sep, "/"),
+    relative(PLUGIN_ROOT, file).split(sep).join("/"),
   );
 
   it("walks the real frontend graph", () => {

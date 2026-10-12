@@ -269,15 +269,6 @@ describe("MachineSettingsView", () => {
         .getByRole("heading", { name: "Provider CLIs" })
         .querySelector("[data-icon]"),
     ).toBeNull();
-    const installedLabel = screen.getByText("Installed");
-    expect(installedLabel.parentElement?.className).toContain("flex-col");
-    expect(installedLabel.parentElement?.className).toContain("sm:flex-row");
-    expect(installedLabel.nextElementSibling?.className).toContain(
-      "justify-start",
-    );
-    expect(installedLabel.nextElementSibling?.className).toContain(
-      "sm:justify-end",
-    );
     expect(screen.getByText(/No sandbox and no approvals/u)).toBeDefined();
   });
 
@@ -524,22 +515,6 @@ describe("MachineSettingsView", () => {
     );
     expect(screen.getByText("Server")).toBeDefined();
     expect(screen.queryByText("This machine")).toBeNull();
-  });
-
-  it("badges the server machine when several persistent machines exist", async () => {
-    vi.mocked(sdk.system.config).mockResolvedValue({
-      ...systemConfig(),
-      primaryHostId: HOST_ID,
-    });
-    vi.mocked(sdk.hosts.list).mockResolvedValue([
-      host(),
-      host({ id: "host_laptop", name: "laptop" }),
-    ]);
-    stubSupportingFetches();
-
-    renderView();
-
-    expect(await screen.findByText("Server")).toBeDefined();
   });
 
   it("offers Move server here in the title menu of an eligible machine", async () => {

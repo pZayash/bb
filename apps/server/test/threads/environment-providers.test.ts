@@ -567,17 +567,34 @@ describe("machine and environment provider composition", () => {
         phase: "creating",
         statusMessage: "Booting cloud machine",
       });
-      expect(getPreparingEnvironment(harness.db, thread.id)?.hostId).toBe(
-        machineHost?.id,
-      );
-
-      release.resolve();
-      await expect
-        .poll(() => getPreparingEnvironment(harness.db, thread.id))
-        .toMatchObject({
+      const environment = getPreparingEnvironment(harness.db, thread.id);
+      expect(environment?.hostId).toBe(machineHost?.id);
+      if (environment === null)
+        throw new Error("Missing preparing environment");
+      const destroyed = createDeferredPromise<void>();
+      const socket = {
+        close() {},
+        send() {
+          if (
+            getEnvironment(harness.db, environment.id)?.status === "destroyed"
+          )
+            destroyed.resolve();
+        },
+      };
+      harness.hub.subscribe(socket, {
+        kind: "environment-detail",
+        environmentId: environment.id,
+      });
+      try {
+        release.resolve();
+        await destroyed.promise;
+        expect(getPreparingEnvironment(harness.db, thread.id)).toMatchObject({
           status: "destroyed",
           statusMessage: "Cloud quota exceeded",
         });
+      } finally {
+        harness.hub.unregisterClient(socket);
+      }
     });
   });
 });
@@ -2701,36 +2718,6 @@ describe("a provider-produced environment over its life", () => {
     });
   });
 
-  it("generates the instance key from the core launch path key", async () => {
-    await withTestHarness(async (harness) => {
-      const { host, project } = seedTargetFixture(
-        harness,
-        "host-target-no-key",
-      );
-      installTarget({
-        provision: () => ({
-          action: "ready",
-          environment: {
-            type: "host",
-            hostId: host.id,
-            path: "/tmp/environment-providers-unkeyed",
-          },
-        }),
-      });
-      const created = await createTargetThread(harness, {
-        projectId: project.id,
-      });
-      await vi.waitFor(() =>
-        expect(getThread(harness.db, created.id)?.environmentId).not.toBeNull(),
-      );
-      const environmentId = getThread(harness.db, created.id)?.environmentId;
-      expect(
-        getEnvironment(harness.db, environmentId ?? "")
-          ?.environmentProviderInstanceKey,
-      ).toBe(created.id);
-    });
-  });
-
   it("aborts create and asks the provider to remove by path key when stopped", async () => {
     await withTestHarness(async (harness) => {
       const cancelled: string[] = [];
@@ -2808,6 +2795,7 @@ describe("a provider-produced environment over its life", () => {
         emitThreadEvents: () => {},
         emitTerminalInput: () => {},
         emitHostDeleted: () => {},
+        emitEnvironmentRemoved: () => {},
         emitThreadCreated: () => {},
         emitThreadActive: () => {},
         emitThreadIdle: () => {},
@@ -2816,6 +2804,7 @@ describe("a provider-produced environment over its life", () => {
         emitThreadUnarchived: (thread) => {
           unarchived.push(thread.id);
         },
+        emitThreadParentChanged: () => {},
         emitThreadDeleted: () => {},
         emitMessageQueued: () => {},
         emitMessageDispatched: () => {},

@@ -71,7 +71,8 @@ bb.providers.register({
     { id: "low", label: "Low" },
     { id: "high", label: "High" },
   ],
-  serviceTiers: undefined,       // optional; open list, model/list is precise
+  serviceTiers: undefined,       // optional; open list of { id, label, description? },
+                                 // "default" is the standard tier; model/list is precise
   composerActions: ["plan"],     // "plan" | "goal"
   completedTurnDisplay: "flat",  // "collapse" (default) | "flat"; the user's per-provider setting wins
   extensionKinds: {},            // "<name>": { item?: Schema, state?: Schema }
@@ -86,6 +87,14 @@ bb.providers.register({
 })
 // => { dispose(): void }
 ```
+
+Each `model/list` entry may carry `supportedServiceTiers: [{ id, label?,
+description? }]`, the tiers that model accepts besides `default`. bb offers
+only the ids the declaration also lists, preferring the entry's label and
+description; an empty array hides the tier picker for that model, and an entry
+without the field accepts every declared tier. The server rejects an explicit
+tier the declaration does not list and passes the chosen id to the bridge as
+`serviceTier`.
 
 bb keeps each machine's last successful `model/list` answer per
 `models.scope` across daemon reconnects and server restarts, serves it
@@ -187,9 +196,19 @@ declares `skills.configure`),
 Execution options ride every command and carry no provider-named field:
 
 ```ts
-{ model, serviceTier?, reasoningLevel, promptMode?, instructions,
-  providerOptions: JsonValue } & PermissionPolicy
+{ model, serviceTier?, reasoningLevel, promptMode?, sessionOptions?,
+  instructions, providerOptions: JsonValue } & PermissionPolicy
 ```
+
+`reasoningLevel` is an open id: one of the standard ladder entries (`none`,
+`low`, `medium`, `high`, `xhigh`, `ultracode`, `max`, `ultra`) or any id the
+bridge listed for the model in `model/list`
+(`supportedReasoningEfforts[].reasoningEffort`, with an optional `label` for
+the picker). A bridge that receives an id it does not know omits it rather
+than failing the turn. `sessionOptions` is `{ [optionId]: string | boolean }`,
+the user's pending choices among the options the bridge published as
+`bb/session-options`; it is present only while a choice differs from the
+published value.
 
 **Bridge → runtime**: `thread/delta` (one streaming dialect, one usage
 dialect), `provider/recovery`, `session/replaced`, plus the request channels
@@ -233,6 +252,14 @@ glyph.
 **Thread state** — core: `usage`, `contextWindow`, `rateLimits`,
 `modelFallback`, `contextCleared`. Extension: `"<pluginId>/<name>"`, latest
 snapshot wins per kind, same schema and emitter rules as extension items.
+Two state kinds are bb's own and open to every provider: `bb/provider-commands`
+(the provider's live slash commands for the thread) and `bb/session-options`
+(its per-session settings other than the model and reasoning level). A user
+picks a value in the model picker (the `mode` option sits in the composer
+footer) or with
+`bb thread options --set`; the server holds the choice, sends it as
+`sessionOptions` with the next turn, and drops it once the bridge publishes
+that value.
 
 **Delegation** — one kind replaces three encodings and `thread/openWork`:
 
@@ -413,7 +440,8 @@ plugin-served too. A plugin registers
 `bb.experimental_aiServices.register({ id, displayName, complete, transcribe, status })`
 from its server entry: `complete(prompt) → Promise<string>` and
 `transcribe(audio) → Promise<string>`, each with an abort signal. The user picks
-a service per task in Settings → AI services; Automatic walks the services bb
-ships (Codex, then bb cloud) and never reaches a third-party plugin. The codex
+a service per task in Settings → AI services; Automatic tries bb cloud first,
+then all other compatible registered services by plugin id and service id in
+lexicographic order, including third-party plugins. The codex
 plugin serves `codex` by calling its own `bb.host` entry for the Codex CLI
 login on the primary machine. See `docs/api_to_audit.md` for the audit items.

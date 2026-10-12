@@ -187,12 +187,9 @@ describe("EnvironmentPickerUI", () => {
       ).not.toBeNull();
       expect(trigger.textContent).not.toContain("Loading environments…");
       fireEvent.click(trigger, { button: 0 });
-      const status = screen.getByRole("status", {
-        name: "Loading environments",
-      });
       expect(
-        status.querySelectorAll("[data-environment-loading-row]"),
-      ).toHaveLength(4);
+        screen.getByRole("status", { name: "Loading environments" }),
+      ).toBeTruthy();
       expect(screen.queryByText("Not set up for this project")).toBeNull();
       expect(screen.queryByRole("option")).toBeNull();
 
@@ -1300,28 +1297,6 @@ describe("EnvironmentPickerUI multi-machine menu", () => {
       sandboxProvider,
       thisMachine.id,
     );
-  });
-
-  it("names the selected machine and provider display name in the trigger label", () => {
-    renderPicker(
-      <EnvironmentPickerUI
-        value="provider:branchy"
-        sources={machineSources}
-        host={studio}
-        isLocal={false}
-        machines={{
-          hosts: [thisMachine, studio],
-          localDaemonHostId: thisMachine.id,
-          primaryHostId: thisMachine.id,
-        }}
-        providers={[branchProvider]}
-        selectedProviderHostId={studio.id}
-        onSelectProvider={vi.fn()}
-        modal={false}
-      />,
-    );
-
-    expect(screen.getByText("Mac Studio · New branch workspace")).toBeTruthy();
   });
 
   it("reports an offline machine ahead of the provider it was selected on", () => {

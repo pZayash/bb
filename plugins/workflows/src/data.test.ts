@@ -111,7 +111,7 @@ describe("workflow durable data", () => {
     db.close();
     db = new Database(":memory:");
     db.pragma("foreign_keys = ON");
-    db.exec(migrations.slice(0, -2).join("\n"));
+    db.exec(migrations.slice(0, -3).join("\n"));
     const run = newRun();
     markRunning(run.id);
     const call = startCall(db, {
@@ -131,7 +131,7 @@ describe("workflow durable data", () => {
     db.prepare(
       `UPDATE workflow_calls SET child_thread_id = 'legacy-worker', status = 'failed' WHERE id = ?`,
     ).run(call.id);
-    db.exec(migrations.slice(-2).join("\n"));
+    db.exec(migrations.slice(-3).join("\n"));
     expect(retiredWorkers(db, Date.now())).toEqual([
       { threadId: "legacy-worker", callId: call.id },
     ]);
@@ -144,7 +144,7 @@ describe("workflow durable data", () => {
     db.close();
     db = new Database(":memory:");
     db.pragma("foreign_keys = ON");
-    db.exec(migrations.slice(0, -2).join("\n"));
+    db.exec(migrations.slice(0, -3).join("\n"));
     const run = newRun();
     const insertCall = db.prepare(
       `INSERT INTO workflow_calls(id, run_id, call_index, cache_key, prompt,
@@ -161,7 +161,7 @@ describe("workflow durable data", () => {
         `worker-${String(index).padStart(3, "0")}`,
       );
     const migratedAt = Date.now();
-    db.exec(migrations.slice(-2).join("\n"));
+    db.exec(migrations.slice(-3).join("\n"));
 
     const buckets = db
       .prepare(
@@ -269,11 +269,10 @@ describe("workflow durable data", () => {
     expectRetired("unknown-worker", false);
   });
 
-  it("records replay safety without a concurrency barrier", () => {
+  it("records replay safety", () => {
     const run = newRun();
     expect(getRunRequired(db, run.id)).toMatchObject({
       replaySafetyVersion: 1,
-      replayBarrierIndex: null,
     });
 
     markRunning(run.id);
@@ -281,16 +280,6 @@ describe("workflow durable data", () => {
     expect(getRunRequired(db, run.id)).toMatchObject({
       status: "queued",
       replaySafetyVersion: 1,
-      replayBarrierIndex: null,
-    });
-
-    db.prepare(
-      `UPDATE workflow_runs SET replay_safety_version = 0,
-       replay_barrier_index = NULL WHERE id = ?`,
-    ).run(run.id);
-    expect(getRunRequired(db, run.id)).toMatchObject({
-      replaySafetyVersion: 0,
-      replayBarrierIndex: null,
     });
   });
 
@@ -460,7 +449,7 @@ describe("workflow durable data", () => {
     });
   });
 
-  it("persists JSON null but requires it to rerun instead of replaying", () => {
+  it("persists a successful call's JSON null result", () => {
     const first = newRun();
     markRunning(first.id);
     const original = startCall(db, {
@@ -484,43 +473,6 @@ describe("workflow durable data", () => {
       error: null,
     });
     expect(getCall(db, first.id, 0)?.resultJson).toBe("null");
-    const second = createRun(db, {
-      projectId: "project-1",
-      originThreadId: "thread-1",
-      environmentId: "environment-1",
-      originProvider: "codex",
-      originModel: "gpt-test",
-      originReasoningLevel: "medium",
-      originPermissionMode: "full",
-      name: "test-workflow",
-      source: "return null",
-      sourceHash: "hash-2",
-      argsJson: "null",
-      settingsJson:
-        '{"maxActiveRuns":4,"maxConcurrentAgents":8,"maxAgentCalls":100,"totalRunTimeoutMs":86400000,"retentionDays":30,"maxNotificationBytes":16384}',
-      resumedFromRunId: first.id,
-    });
-    markRunning(second.id);
-    startCall(db, {
-      runId: second.id,
-      callIndex: 0,
-      cacheKey: "null-cache",
-      prompt: "return null",
-      options: {
-        selection: null,
-        outputSchema: null,
-        title: null,
-        phase: null,
-      },
-      selection: resolvedSelection,
-      replay: null,
-    });
-
-    expect(getCall(db, second.id, 0)).toMatchObject({
-      status: "queued",
-      resultJson: null,
-      replayedFromCallId: null,
-    });
   });
 
   it("atomically preserves the first structured value", () => {
@@ -732,6 +684,24 @@ describe("workflow durable data", () => {
     }
   });
 
+  it("expires notified runs at their own retention deadline", () => {
+    const run = newRun();
+    const finishedAt = Date.now() - 3 * 86_400_000;
+    const deadline = finishedAt + 2 * 86_400_000;
+    db.prepare(
+      `UPDATE workflow_runs SET status = 'succeeded', notification_sent = 0,
+       finished_at = ?, settings_json = json_set(settings_json, '$.retentionDays', 2)
+       WHERE id = ?`,
+    ).run(finishedAt, run.id);
+    expect(sweepExpired(deadline, 100)).toBe(0);
+    db.prepare(
+      `UPDATE workflow_runs SET notification_sent = 1 WHERE id = ?`,
+    ).run(run.id);
+    expect(sweepExpired(deadline - 1, 100)).toBe(0);
+    expect(sweepExpired(deadline, 100)).toBe(1);
+    expect(() => getRunRequired(db, run.id)).toThrow("Unknown workflow run");
+  });
+
   it("retains active resume ancestry while deleting unrelated expired runs", () => {
     const parent = newRun();
     db.prepare(
@@ -764,7 +734,6 @@ describe("workflow durable data", () => {
 
     expect(sweepExpired(Date.now(), 100)).toBe(1);
     expect(getRunRequired(db, parent.id).id).toBe(parent.id);
-    expect(getRunRequired(db, parent.id).replayBarrierIndex).toBeNull();
     expect(getRunRequired(db, retainedChild.id).status).toBe("queued");
     expect(() => getRunRequired(db, expired.id)).toThrow(
       "Unknown workflow run",

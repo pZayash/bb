@@ -15,17 +15,16 @@ export const THREAD_CHANGE_KINDS = [
   "thread-deleted",
   "events-appended",
   "history-rewritten",
+  "history-compacted",
   "interactions-changed",
   "status-changed",
   "title-changed",
-  "draft-changed",
   "queue-changed",
   "archived-changed",
   "pin-state-changed",
   "parent-changed",
   "environment-changed",
   "read-state-changed",
-  "order-changed",
   "tabs-changed",
   "terminals-changed",
 ] as const;
@@ -62,6 +61,8 @@ export type HostChangeKind = (typeof HOST_CHANGE_KINDS)[number];
 export const SYSTEM_CHANGE_KINDS = [
   "config-changed",
   "plugins-changed",
+  "plugin-install-jobs-changed",
+  "plugin-update-jobs-changed",
   "provider-registrations-changed",
   "ui-preferences-changed",
   "environment-availability-changed",
@@ -135,18 +136,15 @@ const subscribeMessageSchema = z.object({
   type: z.literal("subscribe"),
   target: realtimeSubscriptionTargetSchema,
 });
-export type SubscribeMessage = z.infer<typeof subscribeMessageSchema>;
 
 const unsubscribeMessageSchema = z.object({
   type: z.literal("unsubscribe"),
   target: realtimeSubscriptionTargetSchema,
 });
-export type UnsubscribeMessage = z.infer<typeof unsubscribeMessageSchema>;
 
 export const pingMessageSchema = z.object({
   type: z.literal("ping"),
 });
-export type PingMessage = z.infer<typeof pingMessageSchema>;
 
 export const clientMessageSchema = z.discriminatedUnion("type", [
   subscribeMessageSchema,
@@ -214,6 +212,7 @@ export const threadChangeMetadataSchema = z
   .object({
     backgroundActivityChanged: z.boolean().optional(),
     eventTypes: z.array(threadEventTypeSchema).readonly().optional(),
+    timelineSequence: z.number().int().nonnegative().optional(),
     hasPendingInteraction: z.boolean().optional(),
     projectId: z.string().optional(),
     statusChange: threadStatusChangeMetadataSchema.optional(),
@@ -262,7 +261,6 @@ export const hostChangedMessageSchema = z
     changes: z.array(hostChangeKindSchema).readonly(),
   })
   .strict();
-export type HostChangedMessage = z.infer<typeof hostChangedMessageSchema>;
 
 export const systemChangedMessageSchema = z
   .object({
@@ -271,7 +269,6 @@ export const systemChangedMessageSchema = z
     changes: z.array(systemChangeKindSchema).readonly(),
   })
   .strict();
-export type SystemChangedMessage = z.infer<typeof systemChangedMessageSchema>;
 
 export const changedMessageSchema = z.discriminatedUnion("entity", [
   threadChangedMessageSchema,
@@ -296,6 +293,7 @@ const knownThreadEventTypes: ReadonlySet<string> = new Set(
 );
 
 const threadChangeMetadataLenientSchema = z.object({
+  timelineSequence: z.number().int().nonnegative().optional(),
   backgroundActivityChanged: z.boolean().optional(),
   eventTypes: z
     .array(z.string())

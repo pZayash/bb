@@ -100,4 +100,6 @@ provider-recordings/raw/
 
 /plugins/.bundled-stage-*/
 /plugins/*/.bundled-runtime/
+
+.ci-health/
 plans/

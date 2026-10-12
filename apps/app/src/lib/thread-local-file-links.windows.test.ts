@@ -5,9 +5,11 @@ describe("resolveThreadLocalFileLink on native Windows paths", () => {
   it("resolves workspace containment for native Windows paths", () => {
     expect(
       resolveThreadLocalFileLink({
+        fileOpenTargetIds: [],
         hostFileLinksAvailable: true,
         link: {
           lineRange: { startLineNumber: 3, endLineNumber: 5 },
+          openTargetId: null,
           path: "C:\\Users\\me\\Работа\\проект\\src\\..\\canvas-demo.html",
         },
         threadStorageRootPath: null,
@@ -27,9 +29,11 @@ describe("resolveThreadLocalFileLink on native Windows paths", () => {
   it("keeps native Windows paths outside the workspace as host files", () => {
     expect(
       resolveThreadLocalFileLink({
+        fileOpenTargetIds: [],
         hostFileLinksAvailable: true,
         link: {
           lineRange: null,
+          openTargetId: null,
           path: "C:\\Users\\me\\outside\\id_rsa",
         },
         threadStorageRootPath: null,

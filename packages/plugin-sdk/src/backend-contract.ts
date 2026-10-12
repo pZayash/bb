@@ -1,3 +1,4 @@
+import type { EnvironmentRemoval } from "@bb/domain";
 import type { MachineBootstrapApi } from "./machine-bootstrap.js";
 import type Database from "better-sqlite3";
 import type { Context } from "hono";
@@ -23,6 +24,8 @@ import type {
 import type { ProviderFork } from "@bb/domain/provider-fork";
 import type {
   BbSdk,
+  PluginThreadMetadataListArgs,
+  PluginThreadMetadataListResult,
   ThreadPluginMetadataArgs,
   ThreadPluginMetadataUpdateArgs,
   ThreadPluginMetadataResult,
@@ -34,8 +37,8 @@ import type {
 } from "@bb/server-contract";
 import type { JsonValue, ReadonlyJsonValue } from "./json-value.js";
 import type {
+  ExperimentalPluginRpcHandlersWithContext,
   PluginRpcContract,
-  PluginRpcHandlers,
   StandardSchemaV1,
 } from "./rpc-contract.js";
 import type {
@@ -83,7 +86,7 @@ export type PluginSettingDescriptor =
       experimental_multiline?: boolean;
       /**
        * Render as a model picker fed by the given route provider's model
-       * catalog (for example `{ providerId: "pi" }`). The stored value stays
+       * catalog (for example `{ providerId: "<provider>" }`). The stored value stays
        * a plain string — the catalog model id such as
        * `deepseek/deepseek-flash`; an empty string means unset.
        */
@@ -112,6 +115,8 @@ export type PluginSettingDescriptor =
       label: string;
       description?: string;
       options: string[];
+      /** Display labels keyed by option value; options without one show the value itself. */
+      experimental_optionLabels?: Record<string, string>;
       /** Synchronously validate without transforming a proposed value. */
       experimental_schema?: StandardSchemaV1<string, string>;
       default?: string;
@@ -272,8 +277,21 @@ export interface PluginTurnFailedEvent {
  * queued row GET /threads/:id/queued-messages serves.
  */
 export interface PluginThreadEventPayloads {
+  "experimental_environment.removed": { removal: EnvironmentRemoval };
+
   /** Debounced per thread (at most once per second), with the latest sequence and current thread DTO. Reading history does not emit this event. */
   "experimental_thread.events": { thread: ThreadResponse; sequence: number };
+  /**
+   * Fired after a thread moves to a new parent or loses its parent: a
+   * `threads.update` that changes `parentThreadId`, or core releasing a
+   * thread's unarchived children when it is archived. `thread` carries the
+   * new `parentThreadId`. Every thread below it moved with it and gets no
+   * event of its own. Experimental: see docs/api_to_audit.md.
+   */
+  "experimental_thread.parentChanged": {
+    thread: ThreadResponse;
+    previousParentThreadId: string | null;
+  };
   /** Real accepted terminal input; excludes output, keepalives and input contents. */
   "experimental_terminal.input": { terminal: TerminalSession };
   /**
@@ -677,7 +695,7 @@ export interface MessageDispatchHookContext {
   queuedMessages: ThreadQueuedMessage[];
   /**
    * Opaque JSON supplied by a plugin through the composer's
-   * `experimental_submit`, paired with that plugin's id. Null for ordinary
+   * `submit`, paired with that plugin's id. Null for ordinary
    * submissions and queued re-attempts. Core does not persist or interpret
    * the data.
    */
@@ -866,11 +884,13 @@ export interface PluginRpc {
    * `/api/v1/plugins/<id>/rpc/<method>` with "local" auth semantics. The
    * host validates input before invocation and output before strict JSON
    * serialization. The response is `{ ok: true, result }` or
-   * `{ ok: false, error: { code, message, issues? } }`.
+   * `{ ok: false, error: { code, message, issues? } }`. Each handler gets
+   * the call's context as its second argument; `experimental_caller` names
+   * the plugin that called through `bb.sdk.plugins.callRpc`, or `client`.
    */
   register<Contract extends PluginRpcContract>(
     contract: Contract,
-    handlers: PluginRpcHandlers<Contract>,
+    handlers: ExperimentalPluginRpcHandlersWithContext<Contract>,
     options?: {
       experimental_discoverable?: boolean;
       experimental_description?: string;
@@ -972,7 +992,7 @@ export interface PluginInteractionRequest {
   rendererId: string;
   title: string;
   payload: JsonValue;
-  /** Defaults to ten minutes; capped at one hour. */
+  /** Defaults to ten minutes; capped at seven days. */
   timeoutMs?: number;
   /**
    * How the form reads as a timeline row while it waits and once it settles,
@@ -1309,7 +1329,7 @@ export interface PluginProviderCapabilities {
  * Provider copy core surfaces render from per-provider tables today (usage
  * banners, sign-in hints, the mobile picker, the agent guide). Declared once
  * here so no core surface keys copy on a provider id. Mirrors
- * `ProviderStrings` in `@bb/domain`, which is the client projection.
+ * `providerStringsSchema` in `@bb/domain`, which is the client projection.
  */
 export interface PluginProviderStrings {
   /** How to sign in on the host ("Run `claude` on the machine to sign in."). */
@@ -1397,13 +1417,17 @@ export interface PluginProviderFallbackModel {
   /** Picker display name ("Opus 5 (1M)"). */
   displayName: string;
   description: string;
-  /** Reasoning levels this model supports, lowest to highest. Non-empty. */
+  /** Reasoning levels this model supports, lowest to highest. Non-empty.
+   * `reasoningEffort` is a standard ladder entry or any provider-specific id
+   * the bridge accepts back as `reasoningLevel`; `label` names a
+   * provider-specific id in the picker. */
   supportedReasoningEfforts: readonly {
-    reasoningEffort: PluginProviderReasoningLevel;
+    reasoningEffort: PluginProviderReasoningLevel | (string & {});
+    label?: string;
     description: string;
   }[];
   /** Must be one of `supportedReasoningEfforts`. */
-  defaultReasoningEffort: PluginProviderReasoningLevel;
+  defaultReasoningEffort: PluginProviderReasoningLevel | (string & {});
   /** Exactly one entry in the list is the default. */
   isDefault: boolean;
 }
@@ -1517,8 +1541,10 @@ export interface PluginProviderDeclaration {
   /** Provider copy for core surfaces ({@link PluginProviderStrings}). */
   strings?: PluginProviderStrings;
   /** Service tiers this provider accepts, as picker options. Non-empty when
-   * present, unique ids. The coarse `capabilities.supportsServiceTier` stays
-   * until WS2a stabilizes. */
+   * present, unique ids. Ids are open: `"default"` is the provider's standard
+   * tier and every other id is passed to the bridge as `serviceTier`. A
+   * `model/list` entry narrows the list with `supportedServiceTiers`. The
+   * coarse `capabilities.supportsServiceTier` stays until WS2a stabilizes. */
   serviceTiers?: readonly PluginProviderOptionDescriptor[];
   /** Reasoning levels as picker options with labels, beside the coarse
    * `capabilities.reasoningLevels` ladder (ids only). Non-empty when present,
@@ -1770,8 +1796,9 @@ export interface PluginMentionItem {
   subtitle?: string;
   /**
    * BB icon name: a built-in name, or a name the plugin's app bundle
-   * registered with `app.experimental_icons.register()`. The row prefers the
-   * plugin's own branding icon when it ships one; unknown names fall back to
+   * registered with `app.experimental_icons.register()`. Resolved names take
+   * precedence over plugin branding in menu rows, composer pills, and sent
+   * messages. Omitted or unknown names fall back to plugin branding, then
    * the generic plugin icon.
    */
   icon?: string;
@@ -2031,8 +2058,9 @@ export interface PluginStatusApi {
 }
 
 /**
- * The BB SDK bound to one plugin (`bb.sdk`). `threads.getPluginMetadata` and
- * `threads.updatePluginMetadata` default `pluginId` to that plugin's id. An
+ * The BB SDK bound to one plugin (`bb.sdk`). `threads.getPluginMetadata`,
+ * `threads.experimental_listPluginMetadata` and `threads.updatePluginMetadata`
+ * default `pluginId` to that plugin's id. An
  * explicit `pluginId` must be a plugin id (lowercase letters, digits, and
  * dashes) or the request fails with HTTP 400. A `pluginMetadata` seed or a
  * `set` that is over 256 KiB on its own rejects before any request is sent. A
@@ -2042,11 +2070,16 @@ export interface PluginStatusApi {
 export type PluginBbSdk = Omit<BbSdk, "threads"> & {
   threads: Omit<
     BbSdk["threads"],
-    "getPluginMetadata" | "updatePluginMetadata"
+    "getPluginMetadata" | "updatePluginMetadata" | "experimental_listPluginMetadata"
   > & {
     getPluginMetadata(
       args: Omit<ThreadPluginMetadataArgs, "pluginId"> & { pluginId?: string },
     ): Promise<ThreadPluginMetadataResult>;
+    experimental_listPluginMetadata(
+      args: Omit<PluginThreadMetadataListArgs, "pluginId"> & {
+        pluginId?: string;
+      },
+    ): Promise<PluginThreadMetadataListResult>;
     updatePluginMetadata(
       args: Omit<ThreadPluginMetadataUpdateArgs, "pluginId"> & {
         pluginId?: string;

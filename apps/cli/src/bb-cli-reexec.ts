@@ -1,9 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, win32 } from "node:path";
+// bb-fork(windows): a bb.cmd shim resolves to its sibling bb entry, and a
+// bb-fork(windows): POSIX-sh dev shim has no Node-spawnable entry at all.
 import {
+  isNodeHostedBbCliEntry,
   resolveBbCliEntryTarget,
-  resolveBbCliSpawn,
 } from "./bb-cli-reexec.windows.js";
 
 export const BB_CLI_REEXEC_ENV = "BB_CLI_REEXEC";
@@ -17,6 +19,22 @@ interface MaybeReexecViaBbCliArgs {
     argv: string[];
     env: NodeJS.ProcessEnv;
   }) => void;
+}
+
+interface ResolveBbCliLaunchArgs {
+  argv: string[];
+  nodePath: string;
+  platform: NodeJS.Platform;
+  target: string;
+}
+
+export function resolveBbCliLaunch(args: ResolveBbCliLaunchArgs): {
+  command: string;
+  args: string[];
+} {
+  return args.platform === "win32" && win32.extname(args.target) === ""
+    ? { command: args.nodePath, args: [args.target, ...args.argv] }
+    : { command: args.target, args: args.argv };
 }
 
 function tryRealpath(path: string): string | null {
@@ -68,12 +86,20 @@ export function maybeReexecViaBbCli(
     return;
   }
 
-  const spawn = resolveBbCliSpawn(entryTarget, argv);
   // bb-fork(windows): a POSIX-sh shim in BB_CLI has no Node-spawnable entry; keep this process.
-  if (spawn === null) {
+  if (
+    process.platform === "win32" &&
+    !isNodeHostedBbCliEntry(entryTarget)
+  ) {
     return;
   }
-  const result = spawnSync(spawn.command, spawn.args, {
+  const launch = resolveBbCliLaunch({
+    argv,
+    nodePath: process.execPath,
+    platform: process.platform,
+    target: entryTarget,
+  });
+  const result = spawnSync(launch.command, launch.args, {
     env: childEnv,
     stdio: "inherit",
     windowsHide: true,
