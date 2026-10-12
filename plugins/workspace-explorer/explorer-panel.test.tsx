@@ -70,11 +70,19 @@ const libListing = {
 function renderPanel(
   rpcValue: Record<string, unknown>,
   threadId = THREAD_A,
+  options: { composerText?: string } = {},
 ) {
   return renderSlot(
     { component: WorkspaceExplorerPanel },
     { threadId, params: null },
-    { rpc: rpcValue, openFilePreview },
+    {
+      rpc: rpcValue,
+      openFilePreview,
+      composer:
+        options.composerText === undefined
+          ? undefined
+          : { text: options.composerText },
+    },
   );
 }
 
@@ -112,6 +120,56 @@ describe("Workspace Explorer panel", () => {
       target: { kind: "workspace", environmentId: ENV_A, path: "README.md" },
       location: null,
     });
+  });
+
+  it("adds a file reference to the chat composer", async () => {
+    const slot = renderPanel(rpc({ "": rootListing }));
+    await screen.findByText("README.md");
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Add README.md to chat" }),
+      );
+    });
+    expect(slot.composer.text).toBe("@README.md ");
+    expect(slot.composer.focusCount).toBe(1);
+  });
+
+  it("appends the reference after existing draft text", async () => {
+    const slot = renderPanel(rpc({ "": rootListing }), THREAD_A, {
+      composerText: "review these",
+    });
+    await screen.findByText("README.md");
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Add README.md to chat" }),
+      );
+    });
+    expect(slot.composer.text).toBe("review these @README.md ");
+  });
+
+  it("adds a directory reference with a trailing slash", async () => {
+    const slot = renderPanel(rpc({ "": rootListing }));
+    await screen.findByText("src");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Add src to chat" }));
+    });
+    expect(slot.composer.text).toBe("@src/ ");
+  });
+
+  it("adds a reference from the row context menu", async () => {
+    const slot = renderPanel(rpc({ "": rootListing }));
+    await screen.findByText("README.md");
+
+    await act(async () => {
+      fireEvent.contextMenu(screen.getByRole("button", { name: "README.md" }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: "Add to chat" }));
+    });
+    expect(slot.composer.text).toBe("@README.md ");
   });
 
   it("explains threads without an environment workspace", async () => {

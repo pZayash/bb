@@ -6,10 +6,17 @@ import {
   type ReactNode,
 } from "react";
 import type { PluginThreadPanelProps } from "@get-bb/plugin-sdk";
-import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
+import { useBbNavigate, useComposer, useRpc } from "@get-bb/plugin-sdk/app";
 import { explorerRpcContract } from "./shared/contract.js";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@bb/shared-ui/button";
+import { COARSE_POINTER_HOVER_REVEAL_VISIBLE_CLASS } from "@bb/shared-ui/coarse-pointer-visibility";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@bb/shared-ui/context-menu";
 import { Icon } from "@bb/shared-ui/icon";
 import { fileIconForPath } from "./lib/file-icons.js";
 import { Skeleton } from "@bb/shared-ui/skeleton";
@@ -47,50 +54,79 @@ function TreeNodeRow({
   depth,
   expanded,
   onClick,
+  onAddToChat,
 }: {
   kind: "directory" | "file";
   name: string;
   depth: number;
   expanded: boolean | undefined;
   onClick: () => void;
+  onAddToChat: () => void;
 }) {
   return (
-    <button
-      type="button"
-      title={name}
-      aria-expanded={kind === "directory" ? (expanded ?? false) : undefined}
-      aria-level={depth + 1}
-      className="flex h-7 w-full items-center gap-1.5 rounded-md text-left text-sm text-muted-foreground hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-md:pointer-coarse:h-9"
-      style={{ paddingLeft: `${0.375 + depth * 0.75}rem` }}
-      onClick={onClick}
-    >
-      {kind === "directory" ? (
-        <Icon
-          name="ChevronDown"
-          className={cn(
-            "size-3 shrink-0 transition-transform",
-            expanded === false && "-rotate-90",
-          )}
-        />
-      ) : (
-        <span className="size-3 shrink-0" />
-      )}
-      {kind === "directory" ? (
-        <Icon name="Folder" className="size-3.5 shrink-0" />
-      ) : (
-        <HugeiconsIcon
-          icon={fileIconForPath(name)}
-          className="size-3.5 shrink-0"
-        />
-      )}
-      <span className="min-w-0 flex-1 truncate">{name}</span>
-    </button>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div className="group flex items-center">
+          <button
+            type="button"
+            title={name}
+            aria-expanded={
+              kind === "directory" ? (expanded ?? false) : undefined
+            }
+            aria-level={depth + 1}
+            className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md text-left text-sm text-muted-foreground hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-md:pointer-coarse:h-9"
+            style={{ paddingLeft: `${0.375 + depth * 0.75}rem` }}
+            onClick={onClick}
+          >
+            {kind === "directory" ? (
+              <Icon
+                name="ChevronDown"
+                className={cn(
+                  "size-3 shrink-0 transition-transform",
+                  expanded === false && "-rotate-90",
+                )}
+              />
+            ) : (
+              <span className="size-3 shrink-0" />
+            )}
+            {kind === "directory" ? (
+              <Icon name="Folder" className="size-3.5 shrink-0" />
+            ) : (
+              <HugeiconsIcon
+                icon={fileIconForPath(name)}
+                className="size-3.5 shrink-0"
+              />
+            )}
+            <span className="min-w-0 flex-1 truncate">{name}</span>
+          </button>
+          <button
+            type="button"
+            aria-label={`Add ${name} to chat`}
+            title="Add to chat"
+            className={cn(
+              "mr-1 flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover:opacity-100 group-focus-within:opacity-100 max-md:pointer-coarse:size-7",
+              COARSE_POINTER_HOVER_REVEAL_VISIBLE_CLASS,
+            )}
+            onClick={onAddToChat}
+          >
+            <Icon name="MessageSquarePlus" className="size-3.5" />
+          </button>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={onAddToChat}>
+          <Icon name="MessageSquarePlus" />
+          Add to chat
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
 function WorkspaceExplorerContent({ threadId }: { threadId: string }) {
   const rpc = useRpc<typeof explorerRpcContract>();
   const navigate = useBbNavigate();
+  const composer = useComposer();
   const [root, setRoot] = useState<Root | "loading" | { error: string } | null>(
     null,
   );
@@ -244,6 +280,18 @@ function WorkspaceExplorerContent({ threadId }: { threadId: string }) {
     handleContextSwitch();
   };
 
+  const addToChat = (entry: {
+    kind: "directory" | "file";
+    relativePath: string;
+  }) => {
+    const reference = `@${entry.relativePath}${entry.kind === "directory" ? "/" : ""}`;
+    composer.updateText((text) => {
+      const trimmed = text.replace(/\s+$/u, "");
+      return trimmed === "" ? `${reference} ` : `${trimmed} ${reference} `;
+    });
+    composer.focus();
+  };
+
   const renderDirectory = (relativePath: string, depth: number): ReactNode => {
     const node = directories[relativePath];
     if (node === undefined || node.status === "loading") {
@@ -294,6 +342,7 @@ function WorkspaceExplorerContent({ threadId }: { threadId: string }) {
                 ? toggleDirectory(childPath)
                 : openFile(childPath)
             }
+            onAddToChat={() => addToChat(entry)}
           />
           {entry.kind === "directory" && expanded.has(childPath)
             ? renderDirectory(childPath, depth + 1)
