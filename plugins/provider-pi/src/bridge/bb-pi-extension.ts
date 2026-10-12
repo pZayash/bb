@@ -2,7 +2,7 @@ export const BB_PI_EXTENSION_SOURCE = String.raw`
 import { readFileSync, renameSync, writeSync } from "node:fs";
 import { Socket } from "node:net";
 import { StringDecoder } from "node:string_decoder";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { SessionManager, compact as runPiCompaction } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 const CHILD_TO_BRIDGE_FD = 3;
@@ -406,6 +406,87 @@ export default function bbExtension(pi) {
     sessionContext = ctx ?? sessionContext;
     writeLine(CHILD_TO_BRIDGE_FD, { kind: "agent-end-leaf", leafId: currentLeafId() });
   });
+
+  // bb-fork(compaction-model): manual /compact may run on a configured model.
+  // Returning undefined lets pi's own compaction run with the session model,
+  // so a missing/failed configured model degrades to the native path instead
+  // of failing the turn.
+  pi.on("session_before_compact", async (event, ctx) => {
+    sessionContext = ctx ?? sessionContext;
+    if (event.reason !== "manual") {
+      return undefined;
+    }
+    const spec = (process.env.BB_PI_COMPACTION_MODEL ?? "").trim();
+    if (spec === "") {
+      return undefined;
+    }
+    try {
+      const compaction = await runConfiguredCompaction(event, ctx, spec);
+      return compaction === null ? undefined : { compaction };
+    } catch (error) {
+      reportCompactionFallback(spec, error);
+      return undefined;
+    }
+  });
+}
+
+// bb-fork(compaction-model): helpers for the configured-model compaction path.
+function reportCompactionFallback(spec, error) {
+  writeLine(CHILD_TO_BRIDGE_FD, {
+    kind: "compaction-model-fallback",
+    model: spec,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
+function resolveCompactionModel(ctx, spec) {
+  const slash = spec.indexOf("/");
+  const provider = slash > 0 ? spec.slice(0, slash) : null;
+  const modelId = slash > 0 ? spec.slice(slash + 1) : spec;
+  return provider !== null
+    ? ctx.modelRegistry.find(provider, modelId)
+    : ctx.modelRegistry
+        .getAvailable()
+        .find((candidate) => candidate.id === modelId);
+}
+
+async function runConfiguredCompaction(event, ctx, spec) {
+  const model = resolveCompactionModel(ctx, spec);
+  if (!model) {
+    reportCompactionFallback(
+      spec,
+      new Error(
+        'Model "' + spec + '" is not available in the pi catalog on this host',
+      ),
+    );
+    return null;
+  }
+  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+  if (!auth.ok) {
+    reportCompactionFallback(spec, new Error(auth.error));
+    return null;
+  }
+  const requestModel = auth.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model;
+  const result = await runPiCompaction(
+    event.preparation,
+    requestModel,
+    auth.apiKey,
+    auth.headers,
+    event.customInstructions,
+    event.signal,
+    ctx.thinkingLevel,
+    undefined,
+    auth.env,
+  );
+  return {
+    ...result,
+    details: {
+      ...(typeof result.details === "object" && result.details !== null
+        ? result.details
+        : {}),
+      compactionModel: spec,
+    },
+  };
 }
 
 function toolErrorText(content) {

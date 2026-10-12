@@ -207,6 +207,12 @@ const settingDescriptorSchema = z.discriminatedUnion("type", [
       ...settingsBaseFields,
       secret: z.literal(true).optional(),
       experimental_multiline: z.boolean().optional(),
+      // bb-fork(compaction-model): swap the one-line input for a model picker
+      // bound to a route provider's catalog; the value stays a plain string.
+      experimental_model: z
+        .object({ providerId: z.string().min(1) })
+        .strict()
+        .optional(),
       experimental_schema: stringSettingSchemaSchema.optional(),
       default: z.string().optional(),
     })

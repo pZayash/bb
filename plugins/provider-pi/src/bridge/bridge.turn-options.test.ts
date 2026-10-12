@@ -286,6 +286,44 @@ it(
   TURN_OPTIONS_TEST_TIMEOUT_MS,
 );
 
+// bb-fork(compaction-model): the configured compaction model is session
+// construction, so a changed value rebuilds the session like env changes do.
+it(
+  "rebuilds the session when the compaction model option changes",
+  async () => {
+    const threadId = "thr_turn_options_compaction_model";
+    const options = (compactionModel?: string) => ({
+      ...MINI,
+      providerOptions: (compactionModel === undefined
+        ? {}
+        : { compactionModel }) as Record<string, string>,
+    });
+    await harness.startThread(threadId, {
+      options: options("deepseek/deepseek-flash"),
+    });
+
+    expect(
+      (await turnStart(1, threadId, "first", options("deepseek/deepseek-flash")))
+        .error,
+    ).toBeUndefined();
+    let seen = await harness.waitForTurnBoundary(threadId, 0);
+    expect(sessionReplacements(threadId)).toEqual([]);
+
+    expect(
+      (await turnStart(2, threadId, "second", options("other/model"))).error,
+    ).toBeUndefined();
+    seen = await harness.waitForTurnBoundary(threadId, seen);
+    expect(sessionReplacements(threadId)).toHaveLength(1);
+
+    expect(
+      (await turnStart(3, threadId, "third", options())).error,
+    ).toBeUndefined();
+    await harness.waitForTurnBoundary(threadId, seen);
+    expect(sessionReplacements(threadId)).toHaveLength(2);
+  },
+  TURN_OPTIONS_TEST_TIMEOUT_MS,
+);
+
 it(
   "steers the running turn without rebuilding on its options",
   async () => {

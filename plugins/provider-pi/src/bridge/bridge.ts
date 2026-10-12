@@ -735,6 +735,11 @@ async function buildSessionOptions(args: {
     systemPrompt: args.params.baseInstructions,
     appendSystemPrompt: args.params.appendSystemPrompt,
     shellEnvOverrides: args.params.shellEnvOverrides,
+    // bb-fork(compaction-model): pass the configured compaction model through
+    // to the pi child's env for the extension to read.
+    ...(args.params.compactionModel
+      ? { compactionModel: args.params.compactionModel }
+      : {}),
     ...(args.params.additionalSkillPaths
       ? { additionalSkillPaths: [...args.params.additionalSkillPaths] }
       : {}),
@@ -751,6 +756,23 @@ async function buildSessionOptions(args: {
       sessionSerial: args.sessionSerial,
       threadId: args.threadId,
     }),
+    // bb-fork(compaction-model): tell the user when the configured compaction
+    // model did not run and the session model handled the compaction instead.
+    onCompactionModelFallback: (info) => {
+      sendThreadDeltas(args.threadId, [
+        {
+          kind: "provider.warning",
+          category: "config",
+          summary: "Configured compaction model was not used",
+          details:
+            '"' +
+            (info.model ?? "?") +
+            '": ' +
+            info.error +
+            ". The compaction ran with the session model instead.",
+        },
+      ]);
+    },
   };
 }
 
@@ -1022,10 +1044,15 @@ async function reconcileTurnOptions(
   const thinkingLevelChanged =
     turnOptions.thinkingLevel !== undefined &&
     turnOptions.thinkingLevel !== construction.thinkingLevel;
+  // bb-fork(compaction-model): the configured compaction model is session
+  // construction, so a changed value rebuilds like env/model changes do.
+  const compactionModelChanged =
+    turnOptions.compactionModel !== construction.compactionModel;
   if (
     !environmentChanged &&
     changedModelRequest === undefined &&
-    !thinkingLevelChanged
+    !thinkingLevelChanged &&
+    !compactionModelChanged
   ) {
     return threadSession;
   }
@@ -1038,7 +1065,12 @@ async function reconcileTurnOptions(
     (threadSession.constructionModel === undefined ||
       threadSession.constructionModel.provider !== nextModel.provider ||
       threadSession.constructionModel.id !== nextModel.id);
-  if (!environmentChanged && !modelChanged && !thinkingLevelChanged) {
+  if (
+    !environmentChanged &&
+    !modelChanged &&
+    !thinkingLevelChanged &&
+    !compactionModelChanged
+  ) {
     return threadSession;
   }
   const replacement = await rebuildThreadSession(threadId, threadSession, {
@@ -1048,6 +1080,9 @@ async function reconcileTurnOptions(
     ...(turnOptions.thinkingLevel === undefined
       ? {}
       : { thinkingLevel: turnOptions.thinkingLevel }),
+    // bb-fork(compaction-model): unlike model/thinking, a cleared setting must
+    // unset the field, so always write the normalized turn value.
+    compactionModel: turnOptions.compactionModel,
   });
   sendThreadIdentity(threadId, replacement.providerThreadId);
   sendSessionResetBoundary(threadId);

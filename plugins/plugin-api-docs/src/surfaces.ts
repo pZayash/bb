@@ -618,6 +618,8 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "Get the form, its validation, and autosaving without writing any UI",
           "Validate each proposed value with a synchronous, non-transforming Standard Schema through `experimental_schema`; Zod schemas qualify",
           "Render multi-line text with `experimental_multiline`",
+          // bb-fork(compaction-model): model-picker rendering for string fields
+          "Pick a model from a provider's catalog with `experimental_model`",
           "Mark a text field secret: bb stores it in a protected file on the server and never sends it to the browser",
           "Read values from server code, update them with `experimental_set`, or read non-secret values from plugin UI with `useSettings()`",
         ],

@@ -1115,6 +1115,35 @@ the server, so no client older than this field is served.
    should tolerate unknown fields so a hint degrades to the one-line input on
    an older client instead of failing the whole settings view.
 
+## `PluginSettingDescriptor.experimental_model`
+
+**Added 2026-10-10 (fork).** A `type: "string"` setting descriptor field
+(`bb.settings.define`). When present — `{ providerId: string }` — the host
+renders the setting as a searchable model picker fed by that route provider's
+model catalog (`GET /system/execution-options?providerId=…`, including its
+`selectedOnlyModels`) instead of a one-line input. The stored value stays a
+plain string: the catalog model id (`provider/model-id`, for example
+`deepseek/deepseek-flash`); an empty string means unset, and the picker
+offers a "Thread's own model" row that writes `""`. Selection saves
+immediately, like a `select` field, not on blur. The first consumer is the
+Pi provider plugin's `compactionModel` setting. The field travels in the
+settings view (`GET /plugins/:id/settings`); an older web client parses the
+descriptor but still renders the one-line input, which stays a valid editor
+for the same string value.
+
+**Audit before stabilizing.**
+
+1. **Scope.** `providerId` pins one route provider's catalog. Decide whether
+   a provider-agnostic variant (pick provider, then model) is needed or
+   whether callers should compose `experimental_ProviderModelPicker` in a
+   custom settings section instead.
+2. **Catalog routing.** The picker queries the catalog without an
+   environment or host selector, so it sees the default routing only;
+   workspace-scoped catalogs may render a different set than a thread on
+   another host.
+3. **Mobile.** The web picker is a popover with search; decide the mobile
+   rendering before stabilization.
+
 ## `bb.server.experimental_dataDir`
 
 **Kept experimental (2026-08-22).** a sunset member: its only consumer is the ACP plugin's reader of the deprecated `customAcpAgents` array, and it is deleted with that window (`LEGACY_CUSTOM_AGENTS_REMOVED_IN`). A bare data-directory path does not stabilize.

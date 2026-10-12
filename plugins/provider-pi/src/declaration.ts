@@ -34,5 +34,15 @@ export function piProviderDeclaration(): PluginProviderDeclaration {
     ],
     ...PI_NATIVE_ROOTS_DECLARATION,
     composerActions: [],
+    // bb-fork(compaction-model): carry the configured compaction model to the
+    // bridge through providerOptions on every turn/session command.
+    deriveProviderOptions(context): Record<string, string> {
+      const compactionModel = context.settings.compactionModel;
+      if (typeof compactionModel !== "string") {
+        return {};
+      }
+      const trimmed = compactionModel.trim();
+      return trimmed === "" ? {} : { compactionModel: trimmed };
+    },
   };
 }

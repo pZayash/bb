@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildPiSessionParams } from "./session-params.js";
+import {
+  buildPiSessionParams,
+  buildPiTurnOptions,
+} from "./session-params.js";
 
 describe("buildPiSessionParams", () => {
   it("injects the bb thread id into the shell env and drops invalid keys", () => {
@@ -69,5 +72,44 @@ describe("buildPiSessionParams", () => {
       baseInstructions: "Focus on the failing tests first.",
     });
     expect(withMode("replace")).not.toHaveProperty("appendSystemPrompt");
+  });
+
+  // bb-fork(compaction-model)
+  it("carries the configured compaction model from providerOptions", () => {
+    const options = {
+      providerOptions: { compactionModel: "  deepseek/deepseek-flash  " },
+    };
+    expect(
+      buildPiSessionParams({
+        threadId: "bb-thread-1",
+        cwd: "/tmp/worktree",
+        instructionMode: "append",
+        options,
+      }).compactionModel,
+    ).toBe("deepseek/deepseek-flash");
+    expect(buildPiTurnOptions(options).compactionModel).toBe(
+      "deepseek/deepseek-flash",
+    );
+  });
+
+  // bb-fork(compaction-model)
+  it("normalizes an empty or non-string compaction model to unset", () => {
+    for (const providerOptions of [
+      { compactionModel: "   " },
+      { compactionModel: 42 },
+      {},
+      undefined,
+    ]) {
+      const options = { providerOptions };
+      expect(
+        buildPiSessionParams({
+          threadId: "bb-thread-1",
+          cwd: "/tmp/worktree",
+          instructionMode: "append",
+          options,
+        }),
+      ).not.toHaveProperty("compactionModel");
+      expect(buildPiTurnOptions(options).compactionModel).toBeUndefined();
+    }
   });
 });

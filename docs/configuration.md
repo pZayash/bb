@@ -367,6 +367,18 @@ Each provider's own options live on its plugin: Codex memory and native
 subagents under the Codex provider plugin, and Claude Code memory, native
 subagents, and the Workflow tool under the Claude Code provider plugin.
 
+<!-- bb-fork(compaction-model): the fork's pi compaction-model setting. -->
+Pi runs manual context compaction (`/compact`, `bb thread compact`, or the
+Compact context button on the context-window indicator) with the thread's own
+model. To use a different model — for example a cheaper one — pick it from
+the Pi model catalog on the plugin's settings page
+(`Settings → Plugins → Pi → Compaction model`), or set
+`bb plugin config provider-pi set compactionModel deepseek/deepseek-flash`,
+where the value is `provider/model-id` from the Pi catalog (or a bare model id
+when it is unambiguous). An empty value restores the default. When the
+configured model is missing or fails, bb falls back to the session model and
+shows a warning in the timeline.
+
 Claude Code starts without its Claude in Chrome browser tools when bb runs it,
 even when the interactive `claude` CLI has Chrome enabled by default. Turn the
 tools on for bb threads with

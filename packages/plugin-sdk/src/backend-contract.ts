@@ -81,6 +81,13 @@ export type PluginSettingDescriptor =
        * be multi-line.
        */
       experimental_multiline?: boolean;
+      /**
+       * Render as a model picker fed by the given route provider's model
+       * catalog (for example `{ providerId: "pi" }`). The stored value stays
+       * a plain string — the catalog model id such as
+       * `deepseek/deepseek-flash`; an empty string means unset.
+       */
+      experimental_model?: { providerId: string };
       /** Synchronously validate without transforming a proposed value. */
       experimental_schema?: StandardSchemaV1<string, string>;
       default?: string;

@@ -23,6 +23,7 @@ import {
   ResourceDetailStack,
 } from "@bb/shared-ui/resource-list";
 import { PluginIcon } from "@/components/plugin/PluginIcon";
+import { PluginModelSettingPicker } from "@/components/plugin/PluginModelSettingPicker.fork";
 import { applyPluginSettingsView } from "@/hooks/cache-owners/plugin-cache-owner";
 import {
   updatePluginSettings,
@@ -57,6 +58,16 @@ function isMultilineSetting(descriptor: PluginSettingFieldDescriptor): boolean {
     descriptor.experimental_multiline === true &&
     descriptor.secret !== true
   );
+}
+
+// bb-fork(compaction-model): a string descriptor may opt into the provider
+// model picker; it saves on selection like a select, not on input blur.
+function modelSettingProviderId(
+  descriptor: PluginSettingFieldDescriptor,
+): string | undefined {
+  return descriptor.type === "string" && descriptor.secret !== true
+    ? descriptor.experimental_model?.providerId
+    : undefined;
 }
 
 interface SettingOptionPickerProps {
@@ -206,6 +217,26 @@ function PluginSettingField({
     );
   }
 
+  const modelProviderId = modelSettingProviderId(descriptor);
+  if (modelProviderId !== undefined) {
+    const value =
+      typeof draft === "string"
+        ? draft
+        : typeof storedValue === "string"
+          ? storedValue
+          : "";
+    return (
+      <PluginModelSettingPicker
+        providerId={modelProviderId}
+        value={value}
+        onSelect={onChange}
+        ariaLabel={descriptor.label}
+        ariaDescribedBy={ariaDescribedBy}
+        ariaInvalid={ariaInvalid}
+      />
+    );
+  }
+
   if (descriptor.type === "number") {
     const value =
       typeof draft === "string"
@@ -339,14 +370,17 @@ function AutosavingPluginSetting({
     }
   }, [draftState.hasNewerDraft, initialDraft, save.isError, save.isPending]);
 
+  const deferredDraftType =
+    (descriptor.type === "string" || descriptor.type === "number") &&
+    modelSettingProviderId(descriptor) === undefined;
+
   function changeDraft(value: string | boolean): void {
     setDraftState({
       value,
-      hasNewerDraft:
-        descriptor.type === "string" || descriptor.type === "number",
+      hasNewerDraft: deferredDraftType,
     });
     if (!save.isPending) save.reset();
-    if (descriptor.type !== "string" && descriptor.type !== "number") {
+    if (!deferredDraftType) {
       save.mutate(value);
     }
   }
@@ -354,7 +388,7 @@ function AutosavingPluginSetting({
   function saveDraft(
     event: FocusEvent<HTMLInputElement | HTMLTextAreaElement>,
   ): void {
-    if (descriptor.type !== "string" && descriptor.type !== "number") return;
+    if (!deferredDraftType) return;
     if (descriptor.type === "number" && event.currentTarget.validity.badInput) {
       setDraftState({ value: initialDraft, hasNewerDraft: false });
       save.mutate(INVALID_NUMBER_DRAFT);

@@ -13,6 +13,9 @@ import {
 export interface PiRpcSessionOptions {
   cwd: string;
   model?: { provider: string; id: string };
+  // bb-fork(compaction-model): provider/model the extension uses for manual
+  // compaction summaries; passed to the child as BB_PI_COMPACTION_MODEL.
+  compactionModel?: string;
   thinkingLevel?: string;
   additionalSkillPaths?: readonly string[];
   shellEnvOverrides?: Record<string, string>;
@@ -26,6 +29,12 @@ export interface PiRpcSessionOptions {
   recordThreadId: string;
   noSession?: boolean;
   onExtensionUiRequest?: (request: Record<string, unknown>) => void;
+  // bb-fork(compaction-model): the extension reports when the configured
+  // model could not run and pi falls back to its own compaction.
+  onCompactionModelFallback?: (info: {
+    model?: string;
+    error: string;
+  }) => void;
 }
 
 export interface DynamicToolDefinition {
@@ -240,6 +249,11 @@ export class PiRpcSession {
       env: buildPiChildEnv({
         ...(this.options.shellEnvOverrides ?? {}),
         PI_BB_TOOLS_FILE: toolsFilePath,
+        // bb-fork(compaction-model): the extension reads the configured model
+        // from the child env.
+        ...(this.options.compactionModel === undefined
+          ? {}
+          : { BB_PI_COMPACTION_MODEL: this.options.compactionModel }),
       }),
       args,
       onEvent: (event) => {
@@ -718,6 +732,15 @@ export class PiRpcSession {
           });
         },
       );
+      return;
+    }
+    // bb-fork(compaction-model)
+    if (message.kind === "compaction-model-fallback") {
+      this.options.onCompactionModelFallback?.({
+        ...(typeof message.model === "string" ? { model: message.model } : {}),
+        error:
+          typeof message.error === "string" ? message.error : "Unknown error",
+      });
       return;
     }
     if (message.kind === "reply") {
