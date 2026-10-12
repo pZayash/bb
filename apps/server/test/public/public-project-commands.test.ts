@@ -199,7 +199,7 @@ describe("public project command typeahead route", () => {
           description: "Review code from one shared source.",
           argumentHint: null,
         });
-        expect(stub.skillRequests[0]?.command).toEqual({
+        expect(stub.skillRequests.map((request) => request.command)).toContainEqual({
           type: "host.list_skills",
           providerId: "bb-shared",
           cwd: "/tmp/shared-skills",

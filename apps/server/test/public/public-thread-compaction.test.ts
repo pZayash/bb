@@ -59,6 +59,9 @@ function registerSuccessfulTurnResponder(
       if (command.type === "host.list_files") {
         return { ok: true, result: { files: [], truncated: false } };
       }
+      if (command.type === "host.list_skills") {
+        return { ok: true, result: { skills: [] } };
+      }
       if (command.type === "host.read_file") {
         return {
           ok: false,

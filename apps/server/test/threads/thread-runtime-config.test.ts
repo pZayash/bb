@@ -144,9 +144,36 @@ function registerRemoteRuntimeFileResponder(
         };
       }
       if (command.type === "host.list_skills") {
+        // bb-fork(windows): project skills are discovered through list_skills;
+        // synthesize bb-project entries from the skill files the stub serves.
+        const skillsRootPath = path.join(
+          command.cwd ?? "",
+          ".bb",
+          "skills",
+        );
+        const projectSkills = [...args.files.keys()]
+          .filter(
+            (filePath) =>
+              path.dirname(path.dirname(filePath)) === skillsRootPath &&
+              path.basename(filePath) === "SKILL.md",
+          )
+          .map((filePath) => ({
+            id: `skill_${createHash("sha256").update(filePath).digest("hex")}`,
+            name: path.basename(path.dirname(filePath)),
+            description:
+              args.files
+                .get(filePath)
+                ?.match(/^description:\s*(.+)$/mu)?.[1]
+                ?.trim() ?? null,
+            filePath,
+            rootKind: "bb-project" as const,
+            linked: false,
+          }));
         return {
           ok: true,
-          result: { skills: args.sharedSkills ?? [] },
+          result: {
+            skills: [...projectSkills, ...(args.sharedSkills ?? [])],
+          },
         };
       }
       throw new Error(`Unexpected remote runtime RPC ${command.type}`);
@@ -1460,15 +1487,9 @@ describe("thread runtime config", () => {
         expect.arrayContaining([
           expect.objectContaining({
             command: expect.objectContaining({
-              type: "host.list_files",
-              path: path.join(workspacePath, ".bb", "skills"),
-            }),
-          }),
-          expect.objectContaining({
-            command: expect.objectContaining({
-              type: "host.read_file",
-              path: skillFilePath,
-              rootPath: workspacePath,
+              type: "host.list_skills",
+              providerId: "bb-shared",
+              cwd: workspacePath,
             }),
           }),
         ]),

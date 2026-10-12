@@ -326,6 +326,8 @@ describe("provider session ownership on dispatch", () => {
               return { ok: true, result: { appliedAs: "new-turn" } };
             case "host.list_files":
               return { ok: true, result: { files: [], truncated: false } };
+            case "host.list_skills":
+              return { ok: true, result: { skills: [] } };
             case "host.read_file":
               return {
                 ok: false,

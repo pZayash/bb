@@ -3924,6 +3924,9 @@ describe("public thread data routes", () => {
               result: { files: [], truncated: false },
             };
           }
+          if (request.command.type === "host.list_skills") {
+            return { ok: true, result: { skills: [] } };
+          }
           if (request.command.type === "host.read_file") {
             return {
               ok: false,

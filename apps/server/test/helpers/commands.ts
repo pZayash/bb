@@ -1,7 +1,8 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { createHash } from "node:crypto";
 import { isUtf8 } from "node:buffer";
-import { lstatSync, readFileSync, readdirSync } from "node:fs";
+import { lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
+import matter from "gray-matter";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { hostDaemonSessions } from "@bb/db";
@@ -116,6 +117,10 @@ export interface TestHostRpcSocket {
 }
 
 function isRuntimeWorkspaceFileCommand(command: HostDaemonRpcCommand): boolean {
+  // bb-fork(windows): project skills are enumerated via host.list_skills.
+  if (command.type === "host.list_skills") {
+    return command.cwd !== null;
+  }
   if (command.type === "host.list_files") {
     return command.path.endsWith(path.join(".bb", "skills"));
   }
@@ -160,6 +165,60 @@ function respondToRuntimeWorkspaceFileCommand(
         commandType: command.type,
         ok: true,
         result: { files, truncated: false },
+      }),
+      sessionId: args.sessionId,
+    });
+    return true;
+  }
+
+  if (command.type === "host.list_skills") {
+    // bb-fork(windows): mirror the daemon's .bb/skills scan, including
+    // transparently following a symlinked skills root (linked: true).
+    const skillsRootPath = path.join(command.cwd ?? "", ".bb", "skills");
+    let skills: Array<Record<string, unknown>> = [];
+    try {
+      const rootLinked = lstatSync(skillsRootPath).isSymbolicLink();
+      skills = readdirSync(skillsRootPath, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
+        .flatMap((entry) => {
+          const skillFilePath = path.join(
+            skillsRootPath,
+            entry.name,
+            "SKILL.md",
+          );
+          let description: string | null = null;
+          try {
+            if (!statSync(skillFilePath).isFile()) return [];
+            const parsed = matter(readFileSync(skillFilePath, "utf8")).data;
+            description =
+              typeof parsed.description === "string" &&
+              parsed.description.trim().length > 0
+                ? parsed.description.trim()
+                : null;
+          } catch {
+            return [];
+          }
+          return [
+            {
+              id: `skill_${createHash("sha256").update(skillFilePath).digest("hex")}`,
+              name: entry.name,
+              description,
+              filePath: skillFilePath,
+              rootKind: "bb-project",
+              linked: rootLinked || entry.isSymbolicLink(),
+            },
+          ];
+        });
+    } catch {
+      skills = [];
+    }
+    deps.hub.recordHostOnlineRpcResponse({
+      message: hostDaemonOnlineRpcResponseMessageSchema.parse({
+        type: "host-rpc.response",
+        requestId: message.requestId,
+        commandType: command.type,
+        ok: true,
+        result: { skills },
       }),
       sessionId: args.sessionId,
     });

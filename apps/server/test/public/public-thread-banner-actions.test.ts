@@ -533,6 +533,9 @@ describe("public thread banner actions", () => {
           if (command.type === "host.list_files") {
             return { ok: true, result: { files: [], truncated: false } };
           }
+          if (command.type === "host.list_skills") {
+            return { ok: true, result: { skills: [] } };
+          }
           if (command.type === "host.read_file") {
             return {
               ok: false,
@@ -595,6 +598,9 @@ describe("public thread banner actions", () => {
           if (command.type === "host.list_files") {
             return { ok: true, result: { files: [], truncated: false } };
           }
+          if (command.type === "host.list_skills") {
+            return { ok: true, result: { skills: [] } };
+          }
           if (command.type === "host.read_file") {
             return {
               ok: false,
@@ -646,6 +652,9 @@ describe("public thread banner actions", () => {
         handle: ({ command }) => {
           if (command.type === "host.list_files") {
             return { ok: true, result: { files: [], truncated: false } };
+          }
+          if (command.type === "host.list_skills") {
+            return { ok: true, result: { skills: [] } };
           }
           if (command.type === "host.read_file") {
             return {

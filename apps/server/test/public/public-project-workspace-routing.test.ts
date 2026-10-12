@@ -213,6 +213,9 @@ describe("public project workspace routing", () => {
           if (request.command.type === "host.list_commands") {
             return { ok: true, result: { commands: [primaryCommand] } };
           }
+          if (request.command.type === "host.list_skills") {
+            return { ok: true, result: { skills: [] } };
+          }
           if (request.command.type === "plugin.host.call") {
             return {
               ok: true,
@@ -261,6 +264,9 @@ describe("public project workspace routing", () => {
           }
           if (request.command.type === "host.list_commands") {
             return { ok: true, result: { commands: [remoteCommand] } };
+          }
+          if (request.command.type === "host.list_skills") {
+            return { ok: true, result: { skills: [] } };
           }
           if (request.command.type === "plugin.host.call") {
             return {
