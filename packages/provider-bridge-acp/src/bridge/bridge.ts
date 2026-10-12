@@ -119,6 +119,11 @@ import {
   type AcpAgentRequestResponder,
 } from "./agent-connection.js";
 import { resolveAcpAgentLaunch } from "./agent-launch.fork.js";
+// bb-fork(windows): context-usage prompt tail
+import {
+	forkContextUsageBlock,
+	forkTrackContextUsage,
+} from "./context-usage.fork.js";
 import {
   approveCursorSessionMcpServer,
   revokeCursorSessionMcpServer,
@@ -1346,6 +1351,12 @@ function buildPromptContentBlocks(
     }
   }
 
+  // bb-fork(windows): tail the prompt with the latest known context usage.
+  const contextUsage = forkContextUsageBlock(session);
+  if (contextUsage) {
+    blocks.push(contextUsage);
+  }
+
   return blocks;
 }
 
@@ -2281,6 +2292,8 @@ function handleAgentNotification(
   if (!parsed.success) {
     return;
   }
+  // bb-fork(windows): remember the latest context usage for prompt injection.
+  forkTrackContextUsage(session, parsed.data.update);
   if (session.loading) {
     if (
       parsed.data.sessionId === session.loadingSessionId &&
