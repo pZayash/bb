@@ -16,6 +16,8 @@ import {
   withoutBridgeRuntimeEnv,
 } from "@get-bb/plugin-sdk/provider-bridge";
 
+import { resolveWindowsPiProcessLaunch } from "./windows-pi-launch.js";
+
 export const PI_BRIDGE_COMMAND_ENV = "BB_PI_BRIDGE_COMMAND";
 export const PI_BRIDGE_ARGS_ENV = "BB_PI_BRIDGE_ARGS";
 
@@ -92,6 +94,15 @@ export function resolvePiLaunch(env: NodeJS.ProcessEnv): {
   return { command, args: parsed };
 }
 
+export function resolvePiProcessLaunch(
+  configEnv: NodeJS.ProcessEnv,
+  childEnv: NodeJS.ProcessEnv = configEnv,
+  cwd = process.cwd(),
+): { command: string; args: string[] } {
+  const launch = resolvePiLaunch(configEnv);
+  return resolveWindowsPiProcessLaunch(launch, childEnv, cwd);
+}
+
 export function buildPiChildEnv(
   overrides: Record<string, string>,
 ): NodeJS.ProcessEnv {
@@ -123,7 +134,7 @@ export class PiRpcChild {
     this.settledExit = new Promise((resolve) => {
       resolveSettledExit = resolve;
     });
-    const launch = resolvePiLaunch(process.env);
+    const launch = resolvePiProcessLaunch(process.env, args.env, args.cwd);
     // bb-fork(windows): a pi launched through a cmd.exe shim cannot inherit
     // bb-fork(windows): the fd 3/4 channel, so it talks to the bridge over a
     // bb-fork(windows): named pipe.

@@ -8,6 +8,7 @@ import {
   dropIdleLifecycleIndexes,
   dropParentNotificationsMutedAtColumn,
   dropPluginEnabledFollowsDefaultColumn,
+  dropMarketplaceSourceGitSubdirectoryColumn,
   dropQueuedMessageEditHeldUntilColumn,
   rewindThreadPruningWork,
 } from "./helpers/rewind.js";
@@ -722,6 +723,7 @@ function rewindEnvironmentProvisioningMigration(db: DbConnection): void {
   rewindThreadPruningWork(db);
   dropPluginEnabledFollowsDefaultColumn(db);
   dropQueuedMessageEditHeldUntilColumn(db);
+  dropMarketplaceSourceGitSubdirectoryColumn(db);
   db.$client.exec("DROP TRIGGER IF EXISTS threads_lifecycle_owner_insert");
   db.$client.exec("DROP TRIGGER IF EXISTS threads_lifecycle_owner_immutable");
   db.$client.exec("DROP INDEX IF EXISTS threads_lifecycle_owner_idx");
@@ -846,6 +848,7 @@ function rewindEnvironmentRowFactsMigration(db: DbConnection): void {
 function rewindMachineProvidersMigration(db: DbConnection): void {
   rewindThreadPruningWork(db);
   dropQueuedMessageEditHeldUntilColumn(db);
+  dropMarketplaceSourceGitSubdirectoryColumn(db);
   db.$client.exec("DROP TABLE IF EXISTS ui_preference_defaults");
   const queuedDispatchOrigin = db.$client
     .prepare<[], TableInfoRow>("PRAGMA table_info(queued_thread_messages)")
@@ -3311,6 +3314,7 @@ describe("migrate", () => {
       dropIdleLifecycleIndexes(db);
       rewindThreadPruningWork(db);
       dropQueuedMessageEditHeldUntilColumn(db);
+      dropMarketplaceSourceGitSubdirectoryColumn(db);
       db.$client.prepare("DROP INDEX projects_deleted_idx").run();
       db.$client.prepare("ALTER TABLE projects DROP COLUMN deleted_at").run();
       db.$client.prepare("ALTER TABLE events ADD producer_event_id text").run();

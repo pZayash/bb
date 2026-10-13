@@ -941,6 +941,7 @@ describe("plugin service", () => {
       sourceKind: "https",
       manifestUrl: "https://plugins.acme.test/marketplace.json",
       sourceGitRef: null,
+      sourceGitSubdirectory: null,
       sourceGitCommit: null,
       manifestJson: JSON.stringify({
         schemaVersion: 2,
@@ -1033,6 +1034,7 @@ describe("plugin service", () => {
       sourceKind: "https",
       manifestUrl: "https://plugins.acme.test/marketplace.json",
       sourceGitRef: null,
+      sourceGitSubdirectory: null,
       sourceGitCommit: null,
       manifestJson: JSON.stringify({
         schemaVersion: 2,

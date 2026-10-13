@@ -1,35 +1,37 @@
 import {
   useEffect,
+  useLayoutEffect,
+  useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Icon } from "@/components/ui/icon";
-import {
-  CONTEXT_CARD_CLASS,
-  CONTEXT_CARD_INSET_CLASS,
-  CONTEXT_CARD_SEGMENT_CLASS,
-  CONTEXT_CARD_CHEVRON_CLASS,
-} from "@/components/ui/chrome-style-tokens";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "sonner";
 import {
   definePluginApp,
   Markdown,
   useBbNavigate,
   useRpc,
+  type ExperimentalCodeFenceRendererProps,
   type PluginMessageDirectiveProps,
   type MarkdownProps,
 } from "@get-bb/plugin-sdk/app";
+import {
+  FRAME_HEIGHT_BEFORE_FIRST_REPORT,
+  FRAME_MAX_HEIGHT,
+  FRAME_MIN_HEIGHT,
+  frameDocument,
+  frameHeight,
+  frameResult,
+  frameThemeMessage,
+  readFrameContentHeight,
+  readFrameLinkRequest,
+} from "./frame";
 import type { inlineVisRpcContract } from "./server.js";
+import { appFontCss, useFrameTheme } from "./theme";
+import { InlineVisExportMenu } from "./app-export.fork.js"; // bb-fork(inline-vis-export): document export menu.
 
 type PreviewSource = "workspace" | "thread-storage";
 
@@ -46,9 +48,10 @@ type LoadState =
       kind: "html";
       file: string;
       source: PreviewSource;
-      content: string;
       target: PreviewTarget;
       url: string;
+      content: string;
+      sha256: string;
     }
   | {
       status: "ready";
@@ -64,388 +67,224 @@ type LoadState =
 type ReadyPreview = Extract<LoadState, { status: "ready" }>;
 type PreviewCache = Map<string, ReadyPreview>;
 const MAX_CACHED_PREVIEWS = 8;
+const MAX_REMEMBERED_FRAME_HEIGHTS = 200;
+const MAX_REMEMBERED_EXPANDED_DOCUMENTS = 200;
 
-function rememberPreview(
-  cache: PreviewCache,
+function rememberBounded<Value>(
+  cache: Map<string, Value>,
   key: string,
-  preview: ReadyPreview,
+  value: Value,
+  limit: number,
 ): void {
   cache.delete(key);
-  cache.set(key, preview);
-  while (cache.size > MAX_CACHED_PREVIEWS) {
+  cache.set(key, value);
+  while (cache.size > limit) {
     const oldest = cache.keys().next().value;
     if (oldest === undefined) break;
     cache.delete(oldest);
   }
 }
 
-const DEFAULT_HEIGHT_PX = 224;
-const MIN_HEIGHT_PX = 120;
-const MAX_HEIGHT_PX = 1_200;
-const EXPORT_ENDPOINT = "/api/v1/files/export";
-const PRINT_IFRAME_SANDBOX = "allow-scripts allow-modals";
-const CAPTURE_IFRAME_SANDBOX = "allow-scripts";
-const PRINT_IFRAME_REMOVE_DELAY_MS = 60_000;
-const CAPTURE_TIMEOUT_MS = 15_000;
-const POST_MESSAGE_CHANNEL = "bb-document-export";
-const RENDERED_CONTENT_PATTERN = /<(?:canvas|svg|script)\b/i;
-const COLLAPSED_STORAGE_KEY = "bb.inline-vis.collapsed";
+const DOCUMENT_PREVIEW_HEIGHT_PX = 256;
+const DOCUMENT_PREVIEW_SLACK_PX = 64;
+const DOCUMENT_COPIED_MS = 1_500;
 
-function readCollapsedPreference(): boolean {
-  try {
-    return (
-      typeof window !== "undefined" &&
-      window.localStorage.getItem(COLLAPSED_STORAGE_KEY) === "true"
-    );
-  } catch {
-    return false;
-  }
-}
-
-function writeCollapsedPreference(collapsed: boolean): void {
-  try {
-    window.localStorage.setItem(COLLAPSED_STORAGE_KEY, String(collapsed));
-  } catch {
-    return;
-  }
-}
-
-function encodePathSegments(file: string): string {
-  return file.split("/").map(encodeURIComponent).join("/");
-}
-
-const PREVIEW_ROUTE = {
-  workspace: "worktree/files",
-  "thread-storage": "thread-storage/files",
-} as const satisfies Record<PreviewSource, string>;
-
-function buildPreviewUrl(
-  threadId: string,
-  file: string,
-  source: PreviewSource,
-): string {
-  return `/api/v1/threads/${encodeURIComponent(threadId)}/${PREVIEW_ROUTE[source]}/${encodePathSegments(file)}`;
-}
-
-function artifactBaseName(file: string): string {
-  const name = file.split("/").pop() ?? file;
-  const extensionIndex = name.lastIndexOf(".");
-  return extensionIndex > 0 ? name.slice(0, extensionIndex) : name;
-}
-
-function downloadBlob(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.rel = "noopener";
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-function printHtmlDocument(html: string): void {
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute("sandbox", PRINT_IFRAME_SANDBOX);
-  iframe.setAttribute("aria-hidden", "true");
-  iframe.setAttribute("tabindex", "-1");
-  iframe.style.position = "fixed";
-  iframe.style.top = "0";
-  iframe.style.left = "0";
-  iframe.style.width = "1024px";
-  iframe.style.height = "768px";
-  iframe.style.opacity = "0";
-  iframe.style.pointerEvents = "none";
-  iframe.style.border = "0";
-  iframe.srcdoc = html;
-  document.body.append(iframe);
-  window.setTimeout(() => iframe.remove(), PRINT_IFRAME_REMOVE_DELAY_MS);
-}
-
-async function requestExport(input: {
-  baseHref: string;
-  content: string;
-  fileName: string;
-  format: "docx" | "print" | "capture";
-  sourceKind: "html" | "markdown";
-}): Promise<Blob> {
-  const response = await fetch(EXPORT_ENDPOINT, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      baseHref: input.baseHref,
-      content: input.content,
-      filename: input.fileName,
-      format: input.format,
-      sourceKind: input.sourceKind,
-    }),
-  });
-  if (!response.ok) {
-    const raw = await response.text().catch(() => "");
-    throw new Error(
-      raw.replace(/\s+/g, " ").trim() || `Export failed (${response.status})`,
-    );
-  }
-  return response.blob();
-}
-
-function hasRenderedContent(content: string): boolean {
-  return RENDERED_CONTENT_PATTERN.test(content);
-}
-
-function runCaptureFrame(html: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const iframe = document.createElement("iframe");
-    iframe.setAttribute("sandbox", CAPTURE_IFRAME_SANDBOX);
-    iframe.setAttribute("aria-hidden", "true");
-    iframe.setAttribute("tabindex", "-1");
-    iframe.style.position = "fixed";
-    iframe.style.top = "0";
-    iframe.style.left = "0";
-    iframe.style.width = "1024px";
-    iframe.style.height = "768px";
-    iframe.style.opacity = "0";
-    iframe.style.pointerEvents = "none";
-    iframe.style.border = "0";
-
-    let settled = false;
-    const cleanup = (): void => {
-      window.clearTimeout(timeout);
-      window.removeEventListener("message", onMessage);
-      iframe.remove();
-    };
-    const finish = (result: { html: string } | { error: string }): void => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      if ("html" in result) {
-        resolve(result.html);
-        return;
-      }
-      reject(new Error(result.error));
-    };
-    const onMessage = (event: MessageEvent): void => {
-      if (event.source !== iframe.contentWindow) return;
-      const data: unknown = event.data;
-      if (typeof data !== "object" || data === null) return;
-      const message = data as {
-        channel?: unknown;
-        ok?: unknown;
-        html?: unknown;
-        error?: unknown;
-      };
-      if (message.channel !== POST_MESSAGE_CHANNEL) return;
-      if (message.ok === true && typeof message.html === "string") {
-        finish({ html: message.html });
-        return;
-      }
-      finish({
-        error:
-          typeof message.error === "string"
-            ? message.error
-            : "Rendered capture failed",
-      });
-    };
-    const timeout = window.setTimeout(() => {
-      finish({ error: "Rendered capture timed out" });
-    }, CAPTURE_TIMEOUT_MS);
-
-    window.addEventListener("message", onMessage);
-    iframe.srcdoc = html;
-    document.body.append(iframe);
-  });
-}
-
-function reportExportError(error: unknown): void {
-  toast.error(error instanceof Error ? error.message : String(error));
-}
-
-function InlineVisExportMenu({
-  content,
-  file,
-  kind,
-  threadId,
-  source,
-}: {
-  content: string;
-  file: string;
-  kind: "html" | "markdown";
-  threadId: string;
-  source: PreviewSource;
-}) {
-  const [busy, setBusy] = useState(false);
-  const baseName = artifactBaseName(file);
-  const sourceExtension = kind === "markdown" ? "md" : "html";
-  const sourceMimeType = kind === "markdown" ? "text/markdown" : "text/html";
-  const baseHref = new URL(
-    buildPreviewUrl(threadId, file, source),
-    window.location.href,
-  ).toString();
-
-  const exportDocument = (format: "print") => {
-    setBusy(true);
-    void requestExport({
-      baseHref,
-      content,
-      fileName: file,
-      format,
-      sourceKind: kind,
-    })
-      .then(async (blob) => {
-        printHtmlDocument(await blob.text());
-      })
-      .catch(reportExportError)
-      .finally(() => {
-        setBusy(false);
-      });
-  };
-
-  const exportWord = () => {
-    setBusy(true);
-    void (async () => {
-      try {
-        let wordContent = content;
-        let wordSourceKind: "html" | "markdown" = kind;
-        if (kind === "html" && hasRenderedContent(content)) {
-          try {
-            const captureBlob = await requestExport({
-              baseHref,
-              content,
-              fileName: file,
-              format: "capture",
-              sourceKind: kind,
-            });
-            wordContent = await runCaptureFrame(await captureBlob.text());
-            wordSourceKind = "html";
-          } catch {
-            wordContent = content;
-            wordSourceKind = kind;
-          }
-        }
-        const blob = await requestExport({
-          baseHref,
-          content: wordContent,
-          fileName: file,
-          format: "docx",
-          sourceKind: wordSourceKind,
-        });
-        downloadBlob(blob, `${baseName}.docx`);
-      } catch (error) {
-        reportExportError(error);
-      } finally {
-        setBusy(false);
-      }
-    })();
-  };
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          disabled={busy}
-          aria-label={`Export ${file}`}
-          className="inline-flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        >
-          <Icon name="Download" aria-hidden className="size-3" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          onSelect={() => {
-            downloadBlob(
-              new Blob([content], { type: sourceMimeType }),
-              `${baseName}.${sourceExtension}`,
-            );
-          }}
-        >
-          Save {kind === "markdown" ? "Markdown" : "HTML"}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={exportWord}>Word (.docx)</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => exportDocument("print")}>
-          Печать
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function parsePreviewHeight(value: string | undefined): number | null {
+function parseRequestedHeight(
+  value: string | undefined,
+): number | null | "invalid" {
   const normalized = value?.trim() ?? "";
-  if (normalized.length === 0) return DEFAULT_HEIGHT_PX;
-  if (!/^\d+$/.test(normalized)) return null;
+  if (normalized.length === 0) return null;
+  if (!/^\d+$/.test(normalized)) return "invalid";
   const height = Number(normalized);
-  return Number.isSafeInteger(height) &&
-    height >= MIN_HEIGHT_PX &&
-    height <= MAX_HEIGHT_PX
+  return height >= FRAME_MIN_HEIGHT && height <= FRAME_MAX_HEIGHT
     ? height
-    : null;
+    : "invalid";
 }
 
-function PreviewCard({
+function isHtmlFile(file: string): boolean {
+  return /\.html?$/i.test(file);
+}
+
+const DOCUMENT_ACTION_CLASS =
+  "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+
+function splitDocumentPath(file: string): { name: string; folder: string } {
+  const separator = file.lastIndexOf("/");
+  return separator === -1
+    ? { name: file, folder: "" }
+    : { name: file.slice(separator + 1), folder: file.slice(0, separator) };
+}
+
+function DocumentCard({
   file,
-  action,
-  collapsed,
-  onCollapsedChange,
+  actions,
+  footer,
   children,
 }: {
   file: string;
-  action: ReactNode;
-  collapsed: boolean;
-  onCollapsedChange: (collapsed: boolean) => void;
+  actions: ReactNode;
+  footer?: ReactNode;
   children: ReactNode;
 }) {
+  const { name, folder } = splitDocumentPath(file);
   return (
-    <div className={cn("my-2 overflow-hidden", CONTEXT_CARD_CLASS)}>
-      <div
-        className={cn(
-          "flex items-stretch text-xs text-muted-foreground",
-          !collapsed && "border-b border-border",
-        )}
-      >
-        <button
-          type="button"
-          aria-expanded={!collapsed}
-          aria-label={`${collapsed ? "Expand" : "Collapse"} visualization ${file}`}
-          title={collapsed ? "Expand preview here" : "Collapse preview"}
-          className={cn(
-            "flex cursor-pointer items-center text-xs",
-            CONTEXT_CARD_SEGMENT_CLASS,
-            "min-w-0 flex-1 gap-1.5 px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-            collapsed ? "text-muted-foreground" : "text-foreground",
+    <section
+      aria-label={file}
+      className="my-2 min-w-0 overflow-hidden rounded-lg border border-border bg-background"
+    >
+      <header className="flex items-center gap-2 border-b border-border py-1.5 pl-3 pr-1.5">
+        <Icon
+          name="FileText"
+          aria-hidden
+          className="size-3.5 shrink-0 text-subtle-foreground"
+        />
+        <div className="flex min-w-0 flex-1 items-baseline gap-2 text-xs">
+          <span className="truncate font-medium text-foreground">{name}</span>
+          {folder.length === 0 ? null : (
+            <span className="truncate text-subtle-foreground">{folder}</span>
           )}
-          onClick={() => onCollapsedChange(!collapsed)}
-        >
-          <span className="shrink-0">inline-vis</span>
-          <span className="truncate">{file}</span>
-          <Icon
-            name="ChevronDown"
-            aria-hidden
-            className={cn(
-              CONTEXT_CARD_CHEVRON_CLASS,
-              !collapsed && "rotate-180",
-            )}
-          />
-        </button>
-        <div
-          className={cn("flex shrink-0 items-center", CONTEXT_CARD_INSET_CLASS)}
-        >
-          {action}
         </div>
-      </div>
-      {collapsed ? null : children}
-    </div>
+        <div className="flex shrink-0 items-center gap-0.5">{actions}</div>
+      </header>
+      {children}
+      {footer}
+    </section>
   );
 }
 
-const OPEN_ACTION_CLASS = cn(
-  "flex cursor-pointer items-center text-xs",
-  CONTEXT_CARD_SEGMENT_CLASS,
-  "shrink-0 justify-center text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-);
+function CopyDocumentAction({
+  file,
+  content,
+}: {
+  file: string;
+  content: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), DOCUMENT_COPIED_MS);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+  return (
+    <button
+      type="button"
+      aria-label={`Copy ${file}`}
+      title={copied ? "Copied" : "Copy Markdown"}
+      className={DOCUMENT_ACTION_CLASS}
+      onClick={() => {
+        void navigator.clipboard.writeText(content).then(
+          () => setCopied(true),
+          () => undefined,
+        );
+      }}
+    >
+      <Icon name={copied ? "Check" : "Copy"} aria-hidden className="size-3.5" />
+    </button>
+  );
+}
+
+const expandedDocuments = new Map<string, true>();
+
+function MarkdownDocument({
+  file,
+  content,
+  previewHeight,
+  rememberKey,
+  actions,
+  children,
+}: {
+  file: string;
+  content: string;
+  previewHeight: number;
+  rememberKey: string;
+  actions: ReactNode;
+  children: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(() =>
+    expandedDocuments.has(rememberKey),
+  );
+  const [contentHeight, setContentHeight] = useState<number | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const element = contentRef.current;
+    if (element === null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      setContentHeight(element.getBoundingClientRect().height);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  const collapsible =
+    contentHeight !== null &&
+    contentHeight > previewHeight + DOCUMENT_PREVIEW_SLACK_PX;
+  const clamped = contentHeight === null || (collapsible && !expanded);
+  const toggle = () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next) {
+      rememberBounded(
+        expandedDocuments,
+        rememberKey,
+        true,
+        MAX_REMEMBERED_EXPANDED_DOCUMENTS,
+      );
+    } else {
+      expandedDocuments.delete(rememberKey);
+    }
+  };
+
+  return (
+    <DocumentCard
+      file={file}
+      actions={
+        <>
+          <CopyDocumentAction file={file} content={content} />
+          {actions}
+        </>
+      }
+      footer={
+        collapsible ? (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            className="flex w-full cursor-pointer items-center justify-center gap-1 border-t border-border py-1.5 text-xs text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+            onClick={toggle}
+          >
+            {expanded ? "Show less" : "Show more"}
+            <Icon
+              name="ChevronDown"
+              aria-hidden
+              className={cn(
+                "size-3.5 transition-transform duration-200",
+                expanded && "rotate-180",
+              )}
+            />
+          </button>
+        ) : undefined
+      }
+    >
+      <div
+        data-inline-vis-document=""
+        className="relative overflow-hidden"
+        style={clamped ? { maxHeight: previewHeight } : undefined}
+      >
+        <div ref={contentRef} className="px-4 py-3">
+          {children}
+        </div>
+        {collapsible && !expanded ? (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent"
+          />
+        ) : null}
+      </div>
+    </DocumentCard>
+  );
+}
+
+const FRAME_OPEN_ACTION_CLASS =
+  "flex size-6 cursor-pointer items-center justify-center rounded-md border border-border bg-background/90 text-muted-foreground shadow-xs transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 function isModifiedClick(event: ReactMouseEvent<HTMLAnchorElement>): boolean {
   return (
@@ -466,22 +305,32 @@ function OpenPreviewAction({
   file,
   pageUrl,
   onOpenPreview,
+  icon,
+  className,
 }: {
   file: string;
   pageUrl: string | null;
   onOpenPreview: () => void;
+  icon: "PanelRight" | "Maximize2";
+  className: string;
 }) {
-  const icon = <Icon name="ExternalLink" aria-hidden className="size-3" />;
+  const glyph = (
+    <Icon
+      name={icon}
+      aria-hidden
+      className={pageUrl === null ? "size-3.5" : "size-3"}
+    />
+  );
   if (pageUrl === null) {
     return (
       <button
         type="button"
         aria-label={`Open ${file} in sidebar`}
         title="Open in sidebar"
-        className={OPEN_ACTION_CLASS}
+        className={className}
         onClick={onOpenPreview}
       >
-        {icon}
+        {glyph}
       </button>
     );
   }
@@ -492,15 +341,121 @@ function OpenPreviewAction({
       rel="noopener noreferrer"
       aria-label={`Open ${file} in sidebar`}
       title={`Open in sidebar\n${newPageClickHint()} to open in the browser`}
-      className={OPEN_ACTION_CLASS}
+      className={className}
       onClick={(event) => {
         if (event.defaultPrevented || isModifiedClick(event)) return;
         event.preventDefault();
         onOpenPreview();
       }}
     >
-      {icon}
+      {glyph}
     </a>
+  );
+}
+
+const rememberedFrameHeights = new Map<string, number>();
+
+function HtmlFrame({
+  title,
+  content,
+  baseHref,
+  heightKey,
+  requested,
+  action,
+}: {
+  title: string;
+  content: string;
+  baseHref: string;
+  heightKey: string;
+  requested: number | null;
+  action: ReactNode;
+}) {
+  const theme = useFrameTheme();
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const latestTheme = useRef(theme);
+  useLayoutEffect(() => {
+    latestTheme.current = theme;
+  }, [theme]);
+  const [srcDoc, setSrcDoc] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void appFontCss().then((fontCss) => {
+      if (!live) return;
+      const options = { theme: latestTheme.current, baseHref, fontCss };
+      setSrcDoc(frameDocument(content, options));
+    });
+    return () => {
+      live = false;
+    };
+  }, [content, baseHref]);
+  const [loaded, setLoaded] = useState(false);
+  const [contentHeight, setContentHeight] = useState<number>();
+  const height = frameHeight({
+    requested,
+    contentHeight,
+    remembered: rememberedFrameHeights.get(heightKey),
+  });
+
+  const postTheme = () => {
+    const message = frameThemeMessage(theme);
+    frameRef.current?.contentWindow?.postMessage(message, "*");
+  };
+  useEffect(postTheme, [theme]);
+
+  useLayoutEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const frame = frameRef.current;
+      if (frame === null || event.source !== frame.contentWindow) return;
+      const reported = readFrameContentHeight(event.data);
+      if (reported !== undefined) {
+        rememberBounded(
+          rememberedFrameHeights,
+          heightKey,
+          reported,
+          MAX_REMEMBERED_FRAME_HEIGHTS,
+        );
+        setContentHeight(reported);
+        return;
+      }
+      const link = readFrameLinkRequest(event.data);
+      if (
+        link === undefined ||
+        document.activeElement !== frame ||
+        navigator.userActivation?.isActive === false
+      ) {
+        return;
+      }
+      window.open(link.url, "_blank", "noopener,noreferrer");
+      frame.contentWindow?.postMessage(frameResult(link.id), "*");
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [heightKey]);
+
+  return (
+    <div
+      data-inline-vis-frame=""
+      className="group/inline-vis relative my-2"
+      style={{ height }}
+    >
+      {srcDoc === null ? null : (
+        <iframe
+          ref={frameRef}
+          title={title}
+          srcDoc={srcDoc}
+          sandbox="allow-scripts allow-forms"
+          onLoad={() => {
+            setLoaded(true);
+            postTheme();
+          }}
+          className="block size-full border-0"
+          style={{ colorScheme: loaded ? theme.appearance : "light" }}
+        />
+      )}
+      <div className="absolute right-2 top-2 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover/inline-vis:opacity-100 pointer-coarse:opacity-100">
+        {action}
+      </div>
+    </div>
   );
 }
 
@@ -515,10 +470,11 @@ function InlineVisDirective({
   const fileAttr = attributes.file?.trim() ?? "";
   const sourceAttr = attributes.source;
   const heightAttr = attributes.height;
-  const previewHeight = parsePreviewHeight(heightAttr);
+  const parsedHeight = parseRequestedHeight(heightAttr);
+  const requestedHeight = parsedHeight === "invalid" ? null : parsedHeight;
   const heightError =
-    previewHeight === null
-      ? `inline-vis height must be a whole number from ${MIN_HEIGHT_PX} to ${MAX_HEIGHT_PX} pixels.`
+    parsedHeight === "invalid"
+      ? `inline-vis height must be a whole number from ${FRAME_MIN_HEIGHT} to ${FRAME_MAX_HEIGHT} pixels.`
       : null;
   const cacheKey = JSON.stringify([
     message.threadId,
@@ -533,13 +489,6 @@ function InlineVisDirective({
         ? (previewCache.get(cacheKey) ?? { status: "loading", file: fileAttr })
         : { status: "missing-file" },
   );
-  const [collapsed, setCollapsed] = useState(readCollapsedPreference);
-
-  const handleCollapsedChange = (nextCollapsed: boolean) => {
-    setCollapsed(nextCollapsed);
-    writeCollapsedPreference(nextCollapsed);
-  };
-
   useEffect(() => {
     if (heightError) {
       setState({ status: "invalid-height", message: heightError });
@@ -571,7 +520,7 @@ function InlineVisDirective({
           return;
         }
         const preview: ReadyPreview = { status: "ready", ...result };
-        rememberPreview(previewCache, cacheKey, preview);
+        rememberBounded(previewCache, cacheKey, preview, MAX_CACHED_PREVIEWS);
         setState(preview);
       } catch (error) {
         if (cancelled || cachedPreview) return;
@@ -622,23 +571,36 @@ function InlineVisDirective({
   }
 
   if (state.status === "loading") {
-    return (
-      <PreviewCard
-        file={state.file}
-        action={<span aria-hidden className="h-6 w-7 shrink-0" />}
-        collapsed={collapsed}
-        onCollapsedChange={handleCollapsedChange}
-      >
+    if (isHtmlFile(state.file)) {
+      return (
         <div
           role="status"
           aria-busy="true"
           aria-label={`Loading visualization ${state.file}`}
-          style={{ height: previewHeight ?? DEFAULT_HEIGHT_PX }}
-          className="w-full p-3"
+          style={{
+            height: requestedHeight ?? FRAME_HEIGHT_BEFORE_FIRST_REPORT,
+          }}
+          className="my-2"
+        />
+      );
+    }
+    return (
+      <DocumentCard
+        file={state.file}
+        actions={<span aria-hidden className="size-6 shrink-0" />}
+      >
+        <div
+          role="status"
+          aria-busy="true"
+          aria-label={`Loading document ${state.file}`}
+          className="flex flex-col gap-2.5 px-4 py-4"
         >
-          <Skeleton className="size-full" />
+          <Skeleton className="h-4 w-2/5" />
+          <Skeleton className="h-3 w-full" />
+          <Skeleton className="h-3 w-11/12" />
+          <Skeleton className="h-3 w-3/5" />
         </div>
-      </PreviewCard>
+      </DocumentCard>
     );
   }
 
@@ -654,23 +616,61 @@ function InlineVisDirective({
     );
   }
 
+  const openPreview = () => {
+    navigate.experimental_openFilePreview({
+      target: state.target,
+      location: null,
+    });
+  };
+
+  if (state.kind === "html") {
+    return (
+      <HtmlFrame
+        key={state.sha256}
+        title={`inline-vis: ${state.file}`}
+        content={state.content}
+        baseHref={new URL(state.url, window.location.href).href}
+        heightKey={state.sha256}
+        requested={requestedHeight}
+        action={
+          <>
+            <OpenPreviewAction
+              file={state.file}
+              pageUrl={state.url}
+              onOpenPreview={openPreview}
+              icon="Maximize2"
+              className={FRAME_OPEN_ACTION_CLASS}
+            />
+            {/* bb-fork(inline-vis-export): export menu on document cards */}
+            <InlineVisExportMenu
+              content={state.content}
+              file={state.file}
+              kind={state.kind}
+              source={state.source}
+              threadId={message.threadId}
+            />
+          </>
+        }
+      />
+    );
+  }
+
   return (
-    <PreviewCard
+    <MarkdownDocument
       file={state.file}
-      collapsed={collapsed}
-      onCollapsedChange={handleCollapsedChange}
-      action={
+      content={state.content}
+      previewHeight={requestedHeight ?? DOCUMENT_PREVIEW_HEIGHT_PX}
+      rememberKey={cacheKey}
+      actions={
         <>
           <OpenPreviewAction
             file={state.file}
-            pageUrl={state.kind === "html" ? state.url : null}
-            onOpenPreview={() => {
-              navigate.experimental_openFilePreview({
-                target: state.target,
-                location: null,
-              });
-            }}
+            pageUrl={null}
+            onOpenPreview={openPreview}
+            icon="PanelRight"
+            className={DOCUMENT_ACTION_CLASS}
           />
+          {/* bb-fork(inline-vis-export): export menu on document cards */}
           <InlineVisExportMenu
             content={state.content}
             file={state.file}
@@ -681,30 +681,62 @@ function InlineVisDirective({
         </>
       }
     >
-      {state.kind === "markdown" ? (
-        <div
-          style={{ height: previewHeight ?? DEFAULT_HEIGHT_PX }}
-          className="overflow-auto p-3"
-        >
-          <Markdown
-            content={state.content}
-            experimental_document={{
-              threadId: message.threadId,
-              rootPath: state.rootPath,
-              target: state.target,
-            }}
-          />
-        </div>
-      ) : (
-        <iframe
-          title={`inline-vis: ${state.file}`}
-          src={state.url}
-          sandbox="allow-scripts"
-          style={{ height: previewHeight ?? DEFAULT_HEIGHT_PX }}
-          className="block w-full border-0 bg-background"
-        />
-      )}
-    </PreviewCard>
+      <Markdown
+        content={state.content}
+        experimental_document={{
+          threadId: message.threadId,
+          rootPath: state.rootPath,
+          target: state.target,
+        }}
+      />
+    </MarkdownDocument>
+  );
+}
+
+function InlineVisFence({
+  code,
+  status,
+  index,
+  message,
+  Original,
+}: ExperimentalCodeFenceRendererProps) {
+  const [sourceShown, setSourceShown] = useState(false);
+
+  if (status === "streaming") {
+    return (
+      <div role="status" className="my-2 text-xs text-muted-foreground">
+        Writing visualization…
+      </div>
+    );
+  }
+  if (status === "unclosed" || code.trim().length === 0) {
+    return <Original />;
+  }
+
+  const sourceLabel = sourceShown ? "Hide source" : "Show source";
+  return (
+    <>
+      <HtmlFrame
+        title="inline-vis"
+        content={code}
+        baseHref={new URL("/", window.location.href).href}
+        heightKey={`fence:${message.id}:${index}`}
+        requested={null}
+        action={
+          <button
+            type="button"
+            aria-pressed={sourceShown}
+            aria-label={sourceLabel}
+            title={sourceLabel}
+            className={FRAME_OPEN_ACTION_CLASS}
+            onClick={() => setSourceShown(!sourceShown)}
+          >
+            <Icon name="Code" aria-hidden className="size-3" />
+          </button>
+        }
+      />
+      {sourceShown ? <Original /> : null}
+    </>
   );
 }
 
@@ -724,5 +756,10 @@ export default definePluginApp((app) => {
         previewCache={previewCache}
       />
     ),
+  });
+  app.slots.experimental_codeFenceRenderer({
+    id: "inline-vis",
+    languages: ["inline-vis"],
+    component: InlineVisFence,
   });
 });

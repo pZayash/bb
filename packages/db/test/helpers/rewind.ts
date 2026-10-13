@@ -43,8 +43,8 @@ export function dropQueuedMessageEditHeldUntilColumn(db: DbConnection): void {
   }
 }
 
-// bb-fork(merge-0142): the consolidated migration adds columns the pane-focus
-// rewind must undo so re-running 0142 is idempotent in tests.
+// bb-fork(merge-0143): the consolidated migration adds columns the pane-focus
+// rewind must undo so re-running 0143 is idempotent in tests.
 export function dropEnvironmentStartRefColumn(db: DbConnection): void {
   const columns = db.$client
     .prepare<[], { name: string }>("PRAGMA table_info(environments)")
@@ -63,6 +63,19 @@ export function dropParentNotificationsMutedAtColumn(
   if (columns.some((column) => column.name === "parent_notifications_muted_at")) {
     db.$client.exec(
       "ALTER TABLE threads DROP COLUMN parent_notifications_muted_at",
+    );
+  }
+}
+
+export function dropMarketplaceSourceGitSubdirectoryColumn(
+  db: DbConnection,
+): void {
+  const columns = db.$client
+    .prepare<[], { name: string }>("PRAGMA table_info(plugin_marketplaces)")
+    .all();
+  if (columns.some((column) => column.name === "source_git_subdirectory")) {
+    db.$client.exec(
+      "ALTER TABLE plugin_marketplaces DROP COLUMN source_git_subdirectory",
     );
   }
 }

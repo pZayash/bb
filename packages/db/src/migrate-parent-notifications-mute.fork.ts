@@ -1,16 +1,31 @@
-// bb-fork(parent-mute): keep the fork's muted-at migration replay-safe for legacy databases
+// bb-fork(parent-mute): keep the consolidated 0143 fork columns replay-safe for legacy databases
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { DbConnection } from "./connection.js";
 
-const MIGRATION_TAG = "0142_opposite_juggernaut";
+const MIGRATION_TAG = "0143_opposite_juggernaut";
 const LEGACY_MUTED_AT_MIGRATION_WHEN = 1790254777753;
+const LEGACY_START_REF_MIGRATION_WHEN = 1790682398124;
 const ENVIRONMENT_RETENTION_MIGRATION_TAG =
   "0131_environment_retention_indexes";
-const MUTED_AT_COLUMN = "parent_notifications_muted_at";
-const STAGED_MUTED_AT_COLUMN = "_bb_parent_notifications_muted_at_pending";
+const REMOVE_THREAD_DRAFTS_MIGRATION_TAG = "0133_remove_thread_drafts";
 const JOURNAL_PATH = "meta/_journal.json";
+
+// bb-fork(parent-mute): legacy databases already carry these columns from
+// pre-merge fork migrations that the consolidated 0143 re-adds.
+const STAGED_LEGACY_COLUMNS = [
+  {
+    table: "threads",
+    column: "parent_notifications_muted_at",
+    stagedColumn: "_bb_parent_notifications_muted_at_pending",
+  },
+  {
+    table: "environments",
+    column: "start_ref",
+    stagedColumn: "_bb_start_ref_pending",
+  },
+] as const;
 
 function tableExists(db: DbConnection, tableName: string): boolean {
   return (
@@ -70,28 +85,49 @@ function readAppliedMigrationCreatedAts(db: DbConnection): Set<number> {
   );
 }
 
-export function stageExistingParentNotificationsMutedAtColumn(
+export function stageExistingConsolidatedMigrationColumns(
   db: DbConnection,
   migrationsFolder: string,
 ): boolean {
-  if (
-    !tableExists(db, "__drizzle_migrations") ||
-    !tableExists(db, "threads") ||
-    !columnExists(db, "threads", MUTED_AT_COLUMN)
-  ) {
+  if (!tableExists(db, "__drizzle_migrations")) {
     return false;
   }
   const createdAt = migrationCreatedAt(migrationsFolder, MIGRATION_TAG);
   if (createdAt === null || readAppliedMigrationCreatedAts(db).has(createdAt)) {
     return false;
   }
-  db.$client.exec(
-    `ALTER TABLE threads RENAME COLUMN ${MUTED_AT_COLUMN} TO ${STAGED_MUTED_AT_COLUMN}`,
-  );
-  return true;
+  let staged = false;
+  for (const legacyColumn of STAGED_LEGACY_COLUMNS) {
+    if (
+      !tableExists(db, legacyColumn.table) ||
+      !columnExists(db, legacyColumn.table, legacyColumn.column) ||
+      columnExists(db, legacyColumn.table, legacyColumn.stagedColumn)
+    ) {
+      continue;
+    }
+    db.$client.exec(
+      `ALTER TABLE ${legacyColumn.table} RENAME COLUMN ${legacyColumn.column} TO ${legacyColumn.stagedColumn}`,
+    );
+    staged = true;
+  }
+  return staged;
 }
 
-export function repairLegacyParentNotificationsMuteMigration(
+// bb-fork(parent-mute): legacy fork migrations journal later timestamps, so
+// drizzle skips these expected migrations even though the legacy database
+// never applied them. Apply and journal them when the marker row exists.
+const LEGACY_SKIP_REPAIRS = [
+  {
+    markerWhen: LEGACY_MUTED_AT_MIGRATION_WHEN,
+    tag: ENVIRONMENT_RETENTION_MIGRATION_TAG,
+  },
+  {
+    markerWhen: LEGACY_START_REF_MIGRATION_WHEN,
+    tag: REMOVE_THREAD_DRAFTS_MIGRATION_TAG,
+  },
+] as const;
+
+export function repairLegacySkippedMigrations(
   db: DbConnection,
   migrationsFolder: string,
 ): void {
@@ -99,52 +135,55 @@ export function repairLegacyParentNotificationsMuteMigration(
     return;
   }
   const appliedCreatedAts = readAppliedMigrationCreatedAts(db);
-  if (!appliedCreatedAts.has(LEGACY_MUTED_AT_MIGRATION_WHEN)) {
-    return;
-  }
-  const environmentRetentionCreatedAt = migrationCreatedAt(
-    migrationsFolder,
-    ENVIRONMENT_RETENTION_MIGRATION_TAG,
-  );
-  if (
-    environmentRetentionCreatedAt === null ||
-    appliedCreatedAts.has(environmentRetentionCreatedAt)
-  ) {
-    return;
-  }
-  const migration = readMigrationFiles({ migrationsFolder }).find(
-    (candidate) => candidate.folderMillis === environmentRetentionCreatedAt,
-  );
-  if (migration === undefined) {
-    return;
-  }
-  const apply = db.$client.transaction(() => {
-    for (const statement of migration.sql) {
-      db.$client.exec(statement);
+  const migrations = readMigrationFiles({ migrationsFolder });
+  for (const repair of LEGACY_SKIP_REPAIRS) {
+    if (!appliedCreatedAts.has(repair.markerWhen)) {
+      continue;
     }
-    db.$client
-      .prepare(
-        "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
-      )
-      .run(migration.hash, migration.folderMillis);
-  });
-  apply();
+    const expectedCreatedAt = migrationCreatedAt(migrationsFolder, repair.tag);
+    if (
+      expectedCreatedAt === null ||
+      appliedCreatedAts.has(expectedCreatedAt)
+    ) {
+      continue;
+    }
+    const migration = migrations.find(
+      (candidate) => candidate.folderMillis === expectedCreatedAt,
+    );
+    if (migration === undefined) {
+      continue;
+    }
+    const apply = db.$client.transaction(() => {
+      for (const statement of migration.sql) {
+        db.$client.exec(statement);
+      }
+      db.$client
+        .prepare(
+          "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
+        )
+        .run(migration.hash, migration.folderMillis);
+    });
+    apply();
+    appliedCreatedAts.add(expectedCreatedAt);
+  }
 }
 
-export function restoreStagedParentNotificationsMutedAtColumn(
+export function restoreStagedConsolidatedMigrationColumns(
   db: DbConnection,
 ): void {
-  if (!columnExists(db, "threads", STAGED_MUTED_AT_COLUMN)) {
-    return;
-  }
-  if (!columnExists(db, "threads", MUTED_AT_COLUMN)) {
+  for (const legacyColumn of STAGED_LEGACY_COLUMNS) {
+    if (!columnExists(db, legacyColumn.table, legacyColumn.stagedColumn)) {
+      continue;
+    }
+    if (!columnExists(db, legacyColumn.table, legacyColumn.column)) {
+      db.$client.exec(
+        `ALTER TABLE ${legacyColumn.table} RENAME COLUMN ${legacyColumn.stagedColumn} TO ${legacyColumn.column}`,
+      );
+      continue;
+    }
     db.$client.exec(
-      `ALTER TABLE threads RENAME COLUMN ${STAGED_MUTED_AT_COLUMN} TO ${MUTED_AT_COLUMN}`,
+      `UPDATE ${legacyColumn.table} SET ${legacyColumn.column} = ${legacyColumn.stagedColumn};
+       ALTER TABLE ${legacyColumn.table} DROP COLUMN ${legacyColumn.stagedColumn};`,
     );
-    return;
   }
-  db.$client.exec(
-    `UPDATE threads SET ${MUTED_AT_COLUMN} = ${STAGED_MUTED_AT_COLUMN};
-     ALTER TABLE threads DROP COLUMN ${STAGED_MUTED_AT_COLUMN};`,
-  );
 }

@@ -12,6 +12,7 @@ import {
   dropPluginEnabledFollowsDefaultColumn,
   dropIdleLifecycleIndexes,
   rewindThreadPruningWork,
+  dropMarketplaceSourceGitSubdirectoryColumn,
   dropQueuedMessageEditHeldUntilColumn,
 } from "./helpers/rewind.js";
 
@@ -90,6 +91,7 @@ describe.each(["project", "thread", "preference"] as const)(
           dropQueuedMessageEditHeldUntilColumn(db);
           // bb-fork(thread-start-ref): replaying 0143 re-adds this column.
           db.$client.exec("ALTER TABLE environments DROP COLUMN start_ref");
+          dropMarketplaceSourceGitSubdirectoryColumn(db);
           db.$client
             .prepare("DELETE FROM __drizzle_migrations WHERE created_at >= ?")
             .run(SIDEBAR_INSTALLATION_DEFAULTS_MIGRATION_TIMESTAMP);

@@ -43,6 +43,7 @@ import {
   type PluginHomepageSectionRegistration,
   type PluginMessageActionRegistration,
   type PluginMessageDirectiveRegistration,
+  type ExperimentalCodeFenceRendererRegistration,
   type PluginDiffRendererRegistration,
   type PluginNavPanelRegistration,
   type PluginNewThreadPanelActionRegistration,
@@ -1538,6 +1539,7 @@ export interface CapturedPluginApp {
   sourceCodeRenderers: PluginSourceCodeRendererRegistration[];
   diffRenderers: PluginDiffRendererRegistration[];
   messageDirectives: PluginMessageDirectiveRegistration[];
+  codeFenceRenderers: ExperimentalCodeFenceRendererRegistration[];
   messageActions: PluginMessageActionRegistration[];
   providerIcons: CollectedPluginProviderIconRegistration[];
   icons: ExperimentalIconRegistration[];

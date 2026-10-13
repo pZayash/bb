@@ -8,11 +8,11 @@ import {
   compatibleMigrationHashes,
   publishedMigrationWhensByTag,
 } from "./migration-history.js";
-// bb-fork(parent-mute): keep the parent notification mute migration replay-safe
+// bb-fork(parent-mute): keep the consolidated 0143 fork columns replay-safe
 import {
-  repairLegacyParentNotificationsMuteMigration,
-  restoreStagedParentNotificationsMutedAtColumn,
-  stageExistingParentNotificationsMutedAtColumn,
+  repairLegacySkippedMigrations,
+  restoreStagedConsolidatedMigrationColumns,
+  stageExistingConsolidatedMigrationColumns,
 } from "./migrate-parent-notifications-mute.fork.js";
 
 export interface ResolveMigrationsFolderForModuleDirArgs {
@@ -1445,19 +1445,21 @@ export function migrate(db: DbConnection, options: MigrateOptions = {}): void {
     );
     const stagedThreadStorageDeletedAt =
       stageExistingThreadStorageDeletedAtColumn(db, migrationsFolder);
-    // bb-fork(parent-mute): keep the parent notification mute migration replay-safe
-    const stagedParentNotificationsMutedAt =
-      stageExistingParentNotificationsMutedAtColumn(db, migrationsFolder);
-    // bb-fork(parent-mute): reconcile the fork's legacy 0131 with upstream's renumbered 0131
-    repairLegacyParentNotificationsMuteMigration(db, migrationsFolder);
+    // bb-fork(parent-mute): keep the consolidated 0143 fork columns replay-safe
+    const stagedConsolidatedColumns = stageExistingConsolidatedMigrationColumns(
+      db,
+      migrationsFolder,
+    );
+    // bb-fork(parent-mute): apply migrations the legacy fork timestamps crowd out of drizzle's pending set
+    repairLegacySkippedMigrations(db, migrationsFolder);
     try {
       drizzleMigrate(db, { migrationsFolder });
     } finally {
       if (stagedConnectMachineId) restoreStagedConnectMachineIdColumn(db);
       if (stagedThreadStorageDeletedAt)
         restoreStagedThreadStorageDeletedAtColumn(db);
-      if (stagedParentNotificationsMutedAt)
-        restoreStagedParentNotificationsMutedAtColumn(db);
+      if (stagedConsolidatedColumns)
+        restoreStagedConsolidatedMigrationColumns(db);
     }
     applyReorderedCleanupMigrations(db, migrationsFolder);
     applyQueuedMessageGroupingSchema(db);

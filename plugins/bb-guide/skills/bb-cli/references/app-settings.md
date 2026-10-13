@@ -44,8 +44,8 @@ hide the navigation rail's destinations (see Navigation rail below).
   `sidebar.threadListProvider`).
 - The same registry stores `infoPanel.collapsedSections`, the thread Info panel
   sections collapsed from their headings (`commits`, `uncommittedChanges`,
-  `forks`, `threadStorage`). Read or change it with `bb settings ui get` and
-  `bb settings ui set`.
+  `childThreads`, `forks`, `threadStorage`). Read or change it with
+  `bb settings ui get` and `bb settings ui set`.
 - <!-- bb-fork(windows): the fork adds the terminal shell preference; see docs/windows.md. -->
   `terminal.shellId` holds the shell the Start terminal action launches on a
   machine that reports a choice (`bb terminal shells`); `__automatic__` (the

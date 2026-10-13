@@ -19,7 +19,7 @@ import {
   experimental_resolveExecutablePath as resolveExecutablePath,
   experimental_versionFrom as versionFrom,
 } from "@get-bb/plugin-sdk/provider-bridge";
-import { resolvePiLaunch } from "./rpc-child.js";
+import { resolvePiLaunch, resolvePiProcessLaunch } from "./rpc-child.js";
 // bb-fork(windows): pi shims are .cmd and need shell resolution.
 import { piLaunchRequiresWindowsShell } from "./rpc-child.windows.js";
 
@@ -132,7 +132,7 @@ async function piGlobalInstallCommand(
 }
 
 export async function probePiVersion(): Promise<PiVersionProbe> {
-  const launch = resolvePiLaunch(process.env);
+  const launch = resolvePiProcessLaunch(process.env);
   const display = formatCommand(launch.command, [...launch.args, "--version"]);
   let stdout: string;
   try {
