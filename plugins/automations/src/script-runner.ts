@@ -64,13 +64,42 @@ async function isDirectory(candidate: string): Promise<boolean> {
   }
 }
 
+// bb-fork(windows): the env-named launchers this fork has always honoured.
+export function bbBinaryCandidates(env: NodeJS.ProcessEnv): string[] {
+  const candidates: string[] = [];
+  const pushIfAbsolute = (candidate: string): void => {
+    if (isAbsolute(candidate)) {
+      candidates.push(candidate);
+    }
+  };
+  const fromCli = env.BB_CLI?.trim();
+  if (fromCli !== undefined && fromCli.length > 0) {
+    pushIfAbsolute(fromCli);
+  }
+  const fromCliDir = env.BB_CLI_DIR?.trim();
+  if (fromCliDir !== undefined && fromCliDir.length > 0) {
+    pushIfAbsolute(join(fromCliDir, "bb"));
+  }
+  for (const entry of (env.PATH ?? "").split(delimiter)) {
+    const trimmed = entry.trim();
+    if (trimmed.length > 0) {
+      pushIfAbsolute(join(trimmed, "bb"));
+    }
+  }
+  candidates.push("/opt/homebrew/bin/bb", "/usr/local/bin/bb");
+  return candidates;
+}
+
 async function resolveBbBinary(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<string | null> {
   const resolved = hostToolchain.resolve("bb", { env });
-  if (resolved === null) return null;
-  // bb-fork(windows): a resolved shim may only run through its bb.cmd launcher.
-  for (const candidate of bbProbeCandidates([resolved])) {
+  // bb-fork(windows): probe the host toolchain's bb first, then every launcher this
+  // bb-fork(windows): fork honours (BB_CLI, BB_CLI_DIR, PATH), each through its bb.cmd.
+  for (const candidate of bbProbeCandidates([
+    ...(resolved === null ? [] : [resolved]),
+    ...bbBinaryCandidates(env),
+  ])) {
     if (candidate === verifiedBbPath) return candidate;
     if (!(await commandWorks(candidate, ["--version"]))) continue;
     verifiedBbPath = candidate;

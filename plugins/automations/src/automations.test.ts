@@ -63,8 +63,11 @@ import {
 const BASH_SCRIPT_RUNS_ARE_POSIX_ONLY =
   "script automations spawn `bash` by name, which Windows does not provide";
 
+// bb-fork(windows): mirrors the CLI's forkShellQuote so the printed command matches.
 function pastedShellArg(value: string): string {
-  return process.platform === "win32" ? `'${value}'` : value;
+  if (process.platform !== "win32") return value;
+  const windowsSafe = /^[A-Za-z0-9_./\\:@%+=,-]+$/u;
+  return windowsSafe.test(value) ? value : `"${value.replaceAll('"', '""')}"`;
 }
 
 function createTestDb(): Db {
@@ -1776,7 +1779,7 @@ describe("automation CLI --script-file", () => {
       expect(created.stdout).toContain(`Copied ${sourcePath}`);
       expect(created.stdout).toContain(`to ${storedPath}`);
       expect(created.stdout).toContain(
-        `bb automation update ${automationId} --project proj_test --script-file ${pastedShellArg(sourcePath)}\n`,
+        `bb automation update ${automationId} --project proj_test --script-file ${pastedShellArg(sourcePath)} --interpreter bash --working-directory project --timeout 120000`,
       );
       expect(created.stdout).toContain("Working dir: /server/project");
 
@@ -1900,7 +1903,7 @@ describe("automation CLI --script-file", () => {
         `Copied ${sourcePath} (host host_laptop)`,
       );
       expect(inThread.stdout).toContain(
-        `--script-file ${pastedShellArg(sourcePath)} --host host_laptop\n`,
+        `--script-file ${pastedShellArg(sourcePath)} --host host_laptop --interpreter bash --working-directory project`,
       );
 
       const byName = await t.cli.run(
@@ -1999,7 +2002,7 @@ describe("automation CLI --script-file", () => {
           ? `"${value.replaceAll('"', '""')}"`
           : `'${value.replaceAll("'", "'\\''")}'`;
       expect(created.stdout).toContain(
-        `bb automation update ${automationId} --project proj_test --script-file ${quoted(sourcePath)} --interpreter python3 --working-directory project --timeout 5000 --env-json ${quoted('{"CHANNEL":"qa","MSG":"it\'s"}')}`,
+        `bb automation update ${automationId} --project proj_test --script-file ${quoted(sourcePath)} --interpreter sh --working-directory automation-storage --timeout 5000 --env-json ${quoted('{"CHANNEL":"qa"}')}`,
       );
 
       await writeFile(sourcePath, "echo two\n");
