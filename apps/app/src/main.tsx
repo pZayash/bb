@@ -10,6 +10,8 @@ import { registerProviderCliInstallQueryClient } from "./components/provider-cli
 import { initializePreferredTheme } from "./hooks/useTheme";
 import { initializeFavicon } from "./lib/favicon-color-preference";
 import { installForeignDomMutationGuard } from "./lib/foreign-dom-mutation-guard";
+// bb-fork(stale-bundle): recover a tab whose route chunk was replaced by a newer build
+import { installStaleBundleRecovery } from "./lib/stale-bundle-recovery";
 import { installAppQueryClientBrowserEvents } from "./lib/query-client";
 import { appQueryClient } from "./lib/app-query-client";
 import { applyAppFrameGeometry, getBbDesktopInfo } from "./lib/bb-desktop";
@@ -20,6 +22,7 @@ import "./app.css";
 
 installStaleChunkRecovery();
 installForeignDomMutationGuard();
+installStaleBundleRecovery();
 
 Error.stackTraceLimit = 50;
 
