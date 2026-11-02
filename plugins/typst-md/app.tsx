@@ -4,9 +4,9 @@ import { Skeleton } from "@bb/shared-ui/skeleton";
 import {
   definePluginApp,
   experimental_SourceCode as SourceCode,
-  useBbNavigate,
+  experimental_useAppPanel,
   type PluginMessageDirectiveProps,
-  type PluginThreadPanelProps,
+  type ExperimentalThreadActionTabProps,
 } from "@get-bb/plugin-sdk/app";
 import type { TypstMdSource } from "./server.js";
 import { TypstArtifactActions } from "./components/typst-artifact-actions.js";
@@ -270,7 +270,7 @@ function TypstMdDirective({
   message,
   openWorkspaceFile,
 }: PluginMessageDirectiveProps) {
-  const navigate = useBbNavigate();
+  const appPanel = experimental_useAppPanel();
   const fileAttr = attributes.file?.trim() ?? "";
   const sourceAttr = attributes.source;
   const previewHeight = parsePreviewHeight(attributes.height);
@@ -303,8 +303,12 @@ function TypstMdDirective({
   const sourceParam =
     sourceResult.source.kind === "thread-storage" ? "thread-storage" : "workspace";
   const openInSidebar = (): void => {
-    const opened = navigate.openThreadPanel({
-      actionId: PANEL_ACTION_ID,
+    const opened = appPanel.openTab({
+      tab: {
+        id: PANEL_ACTION_ID,
+        context: { kind: "thread" },
+        availability: "action",
+      },
       title: fileAttr,
       params: { file: fileAttr, source: sourceParam },
     });
@@ -322,7 +326,7 @@ function TypstMdDirective({
   );
 }
 
-function TypstMdPanel({ threadId, params }: PluginThreadPanelProps) {
+function TypstMdPanel({ threadId, params }: ExperimentalThreadActionTabProps) {
   const target = useMemo(
     () => parseTypstMdPanelTarget({ threadId, params }),
     [threadId, params],
@@ -353,7 +357,9 @@ export default definePluginApp((app) => {
     id: "typst-md",
     component: TypstMdDirective,
   });
-  app.slots.threadPanelAction({
+  app.slots.experimental_tab({
+    context: { kind: "thread" },
+    availability: "action",
     id: PANEL_ACTION_ID,
     title: "Markdown document",
     icon: "FileText",

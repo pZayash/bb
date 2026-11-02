@@ -122,6 +122,7 @@ describe("bb CLI warning placement", () => {
         output: "",
         stderr: "",
         timedOut: false,
+        interrupted: false,
         warning: "[bb] warning: could not locate the bb CLI",
       }),
     ).toMatchObject({ status: "skipped", skipReason: "empty output" });
@@ -134,6 +135,7 @@ describe("bb CLI warning placement", () => {
         output: '{"wakeAgent": false}\n',
         stderr: "",
         timedOut: false,
+        interrupted: false,
         warning: "[bb] warning: could not locate the bb CLI",
       }),
     ).toMatchObject({ status: "skipped", skipReason: "wakeAgent false" });
@@ -172,6 +174,7 @@ describe("bb CLI injection into a script run", () => {
         pluginDataDir,
         automationId: "auto_cli",
         runId: "run_cli",
+        signal: new AbortController().signal,
         projectId: "proj_test",
         scriptFile: "script.mjs",
         interpreter: "node",
@@ -213,6 +216,7 @@ describe.runIf(process.platform === "win32")(
           pluginDataDir,
           automationId: "auto_fork_timeout",
           runId: "run_fork_timeout",
+          signal: new AbortController().signal,
           projectId: "proj_test",
           scriptFile: "script.sh",
           interpreter: "bash",

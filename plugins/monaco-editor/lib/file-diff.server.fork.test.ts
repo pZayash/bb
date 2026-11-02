@@ -63,10 +63,11 @@ async function setup(overrides: SetupOverrides = {}) {
     };
   });
   const diffPatch = vi.fn(
-    () =>
+    (_args?: unknown) =>
       overrides.patchResponse ?? {
         outcome: "available",
-        patches: [{ path: "src/file.ts", patch: PATCH, truncated: false }],
+        truncated: false,
+        initialPatches: [{ path: "src/file.ts", patch: PATCH, truncated: false }],
       },
   );
   const diffFile = vi.fn((args: unknown) => {
@@ -75,19 +76,44 @@ async function setup(overrides: SetupOverrides = {}) {
         ? (args as { side?: unknown }).side
         : undefined;
     return {
-      content: side === "old" ? OLD_FILE_CONTENTS : NEW_FILE_CONTENTS,
-      contentEncoding: "utf8",
-      mimeType: "text/plain",
-      path: "src/file.ts",
-      sizeBytes: 10,
+      outcome: "available",
+      file: {
+        content: side === "old" ? OLD_FILE_CONTENTS : NEW_FILE_CONTENTS,
+        contentEncoding: "utf8",
+        mimeType: "text/plain",
+        path: "src/file.ts",
+        sizeBytes: 10,
+      },
     };
   });
+  const callRpc = vi.fn(
+    async (...callArgs: unknown[]): Promise<unknown> => {
+      const [args] = callArgs as [
+        { method: string; input: Record<string, unknown> },
+      ];
+      switch (args.method) {
+        case "workspaceStatus":
+          return await status(args.input);
+        case "fileSide": {
+          const query = args.input.query as Record<string, unknown>;
+          return await diffFile({
+            ...query,
+            environmentId: args.input.environmentId,
+          });
+        }
+        case "files":
+          return await diffPatch(args.input);
+        default:
+          throw new Error(`unexpected git rpc ${args.method}`);
+      }
+    },
+  );
   const { bb, harness } = createFakePluginHost({
     pluginId: "monaco-editor",
-    sdk: { environments: { diffFile, get, status, diffPatch } },
+    sdk: { environments: { get }, plugins: { callRpc } },
   });
   await plugin(bb);
-  return { diffFile, diffPatch, get, harness, status };
+  return { callRpc, diffFile, diffPatch, get, harness, status };
 }
 
 describe("file diff rpc", () => {
@@ -117,7 +143,7 @@ describe("file diff rpc", () => {
     });
     expect(diffPatch).toHaveBeenCalledWith({
       environmentId: "env-1",
-      paths: ["src/file.ts"],
+      ignoreWhitespace: false,
       target: { mergeBaseBranch: "main", type: "all" },
     });
     expect(diffFile).toHaveBeenCalledWith({
@@ -139,7 +165,7 @@ describe("file diff rpc", () => {
     });
     expect(diffPatch).toHaveBeenLastCalledWith({
       environmentId: "env-1",
-      paths: ["src/file.ts"],
+      ignoreWhitespace: false,
       target: { type: "uncommitted" },
     });
 
@@ -150,7 +176,7 @@ describe("file diff rpc", () => {
     });
     expect(diffPatch).toHaveBeenLastCalledWith({
       environmentId: "env-1",
-      paths: ["src/file.ts"],
+      ignoreWhitespace: false,
       target: { sha: "2222222", type: "commit" },
     });
   });
@@ -192,7 +218,7 @@ describe("file diff rpc", () => {
     });
     expect(diffPatch).toHaveBeenCalledWith({
       environmentId: "env-1",
-      paths: ["src/file.ts"],
+      ignoreWhitespace: false,
       target: { type: "uncommitted" },
     });
   });
@@ -212,7 +238,7 @@ describe("file diff rpc", () => {
     });
     expect(diffPatch).toHaveBeenLastCalledWith({
       environmentId: "env-1",
-      paths: ["src/file.ts"],
+      ignoreWhitespace: false,
       target: { mergeBaseBranch: "abc1234567890", type: "all" },
     });
     expect(diffFile).toHaveBeenCalledWith({
@@ -257,7 +283,7 @@ describe("file diff rpc", () => {
     });
     expect(diffPatch).toHaveBeenLastCalledWith({
       environmentId: "env-1",
-      paths: ["src/file.ts"],
+      ignoreWhitespace: false,
       target: { mergeBaseBranch: "main", type: "all" },
     });
     expect(result).toMatchObject({ outcome: "available", selection: "all" });
@@ -324,11 +350,8 @@ describe("file diff rpc", () => {
     const { harness } = await setup({
       statusResponse: {
         outcome: "unavailable",
-        failure: {
-          code: "path_not_found",
-          message: "The workspace is gone.",
-          workspacePath: "/repo",
-        },
+        code: "path_not_found",
+        message: "The workspace is gone.",
       },
     });
 
@@ -343,7 +366,7 @@ describe("file diff rpc", () => {
 
   it("explains a file with no changes in the chosen base", async () => {
     const { harness } = await setup({
-      patchResponse: { outcome: "available", patches: [] },
+      patchResponse: { outcome: "available", truncated: false, initialPatches: [] },
     });
 
     expect(

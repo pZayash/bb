@@ -5,7 +5,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { PluginThreadPanelProps } from "@get-bb/plugin-sdk";
+import type { ExperimentalThreadActionTabProps } from "@get-bb/plugin-sdk";
 import { useBbNavigate, useComposer, useRpc } from "@get-bb/plugin-sdk/app";
 import { explorerRpcContract } from "./shared/contract.js";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -421,6 +421,6 @@ function WorkspaceExplorerContent({ threadId }: { threadId: string }) {
   );
 }
 
-export function WorkspaceExplorerPanel({ threadId }: PluginThreadPanelProps) {
+export function WorkspaceExplorerPanel({ threadId }: ExperimentalThreadActionTabProps) {
   return <WorkspaceExplorerContent key={threadId} threadId={threadId} />;
 }

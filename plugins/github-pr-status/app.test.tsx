@@ -22,6 +22,9 @@ function thread(
     displayTitle: "Row",
     parentThreadId: null,
     parentNotifications: "auto",
+    // bb-fork(compaction-model): the sidebar row shows these two.
+    model: null,
+    reasoningLevel: null,
     lifecycleOwnerThreadId: null,
     sourceThreadId: null,
     sectionId: null,

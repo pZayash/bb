@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
+import { experimental_useAppPanel, useRpc } from "@get-bb/plugin-sdk/app";
 import { cn } from "@bb/shared-ui/lib/utils";
 import type { SystemSnapshot, pcControlRpcContract } from "../contract.js";
 import {
@@ -76,7 +76,7 @@ function PillMetric({
 
 export function PcControlPill() {
   const rpc = useRpc<typeof pcControlRpcContract>();
-  const navigate = useBbNavigate();
+  const appPanel = experimental_useAppPanel();
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null);
   const [failed, setFailed] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -135,7 +135,13 @@ export function PcControlPill() {
         type="button"
         data-testid="pc-pill"
         onClick={() => {
-          navigate.openThreadPanel({ actionId: "pc-control" });
+          appPanel.openTab({
+            tab: {
+              id: "pc-control",
+              context: { kind: "thread" },
+              availability: "action",
+            },
+          });
         }}
         title={`PC Control — открыть панель · ${summary}${
           snapshot !== null
@@ -173,7 +179,13 @@ export function PcControlPill() {
         type="button"
         data-testid="pc-pill-edge"
         onClick={() => {
-          navigate.openThreadPanel({ actionId: "pc-control" });
+          appPanel.openTab({
+            tab: {
+              id: "pc-control",
+              context: { kind: "thread" },
+              availability: "action",
+            },
+          });
         }}
         title={`PC Control — открыть панель · ${summary}`}
         aria-label={`PC Control — открыть панель · ${summary}`}

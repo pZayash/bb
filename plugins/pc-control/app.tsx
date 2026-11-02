@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   definePluginApp,
   useRpc,
+  type ExperimentalThreadActionTabProps,
   type PluginNewThreadPanelProps,
-  type PluginThreadPanelProps,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { cn } from "@bb/shared-ui/lib/utils";
@@ -402,7 +402,7 @@ function PcControlPanelBody() {
 function PcControlThreadPanel({
   threadId: _threadId,
   params: _params,
-}: PluginThreadPanelProps) {
+}: ExperimentalThreadActionTabProps) {
   return <PcControlPanelBody />;
 }
 
@@ -414,7 +414,9 @@ function PcControlNewThreadPanel({
 }
 
 export default definePluginApp((app) => {
-  app.slots.threadPanelAction({
+  app.slots.experimental_tab({
+    context: { kind: "thread" },
+    availability: "action",
     id: "pc-control",
     title: "PC Control",
     icon: "Laptop",

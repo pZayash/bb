@@ -41,21 +41,108 @@ export type FileDiffResult = z.infer<typeof fileDiffResultSchema>;
 
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{4,40}$/iu;
 
-type EnvironmentsSdk = BbPluginApi["sdk"]["environments"];
-type WorkspaceStatus = Extract<
-  Awaited<ReturnType<EnvironmentsSdk["status"]>>,
-  { outcome: "available" }
->["workspace"];
-type WorkspaceCommit = NonNullable<
-  WorkspaceStatus["mergeBase"]
->["commits"][number];
+const GIT_PLUGIN_ID = "bb--git";
+
+// bb-fork(file-diff): the git plugin owns these reads now, so the editor parses
+// bb-fork(file-diff): the fields it consumes from its RPC results.
+const workspaceCommitSchema = z.object({
+  sha: z.string(),
+  shortSha: z.string(),
+  subject: z.string(),
+  authorName: z.string(),
+  authoredAt: z.number(),
+});
+type WorkspaceCommit = z.infer<typeof workspaceCommitSchema>;
+
+const workspaceStatusSchema = z.object({
+  workingTree: z.object({ hasUncommittedChanges: z.boolean() }),
+  mergeBase: z
+    .object({
+      baseRef: z.string().nullable(),
+      commits: z.array(workspaceCommitSchema),
+    })
+    .nullable(),
+});
+type WorkspaceStatus = z.infer<typeof workspaceStatusSchema>;
+
+const workspaceStatusResultSchema = z.discriminatedUnion("outcome", [
+  z.object({
+    outcome: z.literal("available"),
+    workspace: workspaceStatusSchema,
+  }),
+  z.object({
+    outcome: z.literal("not_applicable"),
+    reason: z.string(),
+    message: z.string(),
+  }),
+  z.object({
+    outcome: z.literal("unavailable"),
+    code: z.string(),
+    message: z.string(),
+  }),
+]);
+
+const diffFileSideQuerySchema = z.discriminatedUnion("target", [
+  z.object({ target: z.literal("uncommitted"), path: z.string(), side: z.enum(["old", "new"]) }),
+  z.object({
+    target: z.enum(["branch_committed", "all"]),
+    mergeBaseRef: z.string(),
+    path: z.string(),
+    side: z.enum(["old", "new"]),
+  }),
+  z.object({
+    target: z.literal("commit"),
+    sha: z.string(),
+    path: z.string(),
+    side: z.enum(["old", "new"]),
+  }),
+]);
 type DiffFileTargetArgs = DistributiveOmit<
-  Parameters<EnvironmentsSdk["diffFile"]>[0],
-  "environmentId" | "path" | "side" | "signal"
+  z.infer<typeof diffFileSideQuerySchema>,
+  "path" | "side"
 >;
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
   ? Omit<T, K>
   : never;
+
+const fileSideResultSchema = z.discriminatedUnion("outcome", [
+  z.object({
+    outcome: z.literal("available"),
+    file: z.object({
+      content: z.string(),
+      contentEncoding: z.enum(["base64", "utf8"]),
+    }),
+  }),
+  z.object({
+    outcome: z.literal("unavailable"),
+    code: z.string(),
+    message: z.string(),
+  }),
+]);
+
+const filesResultSchema = z.discriminatedUnion("outcome", [
+  z.object({
+    outcome: z.literal("available"),
+    truncated: z.boolean(),
+    initialPatches: z.array(
+      z.object({
+        path: z.string(),
+        patch: z.string(),
+        truncated: z.boolean(),
+      }),
+    ),
+  }),
+  z.object({
+    outcome: z.literal("not_applicable"),
+    reason: z.string(),
+    message: z.string(),
+  }),
+  z.object({
+    outcome: z.literal("unavailable"),
+    code: z.string(),
+    message: z.string(),
+  }),
+]);
 
 interface BuildFileDiffOptionsArgs {
   commits: readonly WorkspaceCommit[];
@@ -129,10 +216,15 @@ function buildFileDiffOptions({
   ];
 }
 
+type GitDiffTarget =
+  | { type: "uncommitted" }
+  | { type: "branch_committed" | "all"; mergeBaseBranch: string }
+  | { type: "commit"; sha: string };
+
 function buildFileDiffTarget(
   selection: string,
   mergeBaseBranch: string | undefined,
-): Parameters<EnvironmentsSdk["diffPatch"]>[0]["target"] | null {
+): GitDiffTarget | null {
   if (selection === UNCOMMITTED_SELECTION || mergeBaseBranch === undefined) {
     return { type: "uncommitted" };
   }
@@ -176,13 +268,16 @@ async function readTextSide(
   side: "new" | "old",
 ): Promise<string | null> {
   try {
-    const response = await plugin.sdk.environments.diffFile({
-      ...target,
-      environmentId,
-      path,
-      side,
+    const response = await plugin.sdk.plugins.callRpc({
+      pluginId: GIT_PLUGIN_ID,
+      method: "fileSide",
+      input: { environmentId, query: { ...target, path, side } },
+      outputSchema: fileSideResultSchema,
     });
-    return response.contentEncoding === "utf8" ? response.content : null;
+    if (response.outcome !== "available") return null;
+    return response.file.contentEncoding === "utf8"
+      ? response.file.content
+      : null;
   } catch {
     return null;
   }
@@ -242,15 +337,20 @@ export async function resolveFileDiff({
   const isSinceThreadStart =
     selection === THREAD_START_SELECTION && threadStartRef !== null;
   const compareRef = isSinceThreadStart ? threadStartRef : mergeBaseBranch;
-  const statusResponse = await plugin.sdk.environments.status({
-    environmentId,
-    ...(compareRef === undefined ? {} : { mergeBaseBranch: compareRef }),
+  const statusResponse = await plugin.sdk.plugins.callRpc({
+    pluginId: GIT_PLUGIN_ID,
+    method: "workspaceStatus",
+    input: {
+      environmentId,
+      ...(compareRef === undefined ? {} : { mergeBaseBranch: compareRef }),
+    },
+    outputSchema: workspaceStatusResultSchema,
   });
   if (statusResponse.outcome === "not_applicable") {
     return { outcome: "unavailable", message: statusResponse.message };
   }
   if (statusResponse.outcome === "unavailable") {
-    return { outcome: "unavailable", message: statusResponse.failure.message };
+    return { outcome: "unavailable", message: statusResponse.message };
   }
 
   const status = statusResponse.workspace;
@@ -276,21 +376,22 @@ export async function resolveFileDiff({
     return { outcome: "unavailable", message: "No changes to compare." };
   }
 
-  const patchResponse = await plugin.sdk.environments.diffPatch({
-    environmentId,
-    paths: [path],
-    target,
+  const filesResponse = await plugin.sdk.plugins.callRpc({
+    pluginId: GIT_PLUGIN_ID,
+    method: "files",
+    input: { environmentId, target, ignoreWhitespace: false },
+    outputSchema: filesResultSchema,
   });
-  if (patchResponse.outcome === "not_applicable") {
-    return { outcome: "unavailable", message: patchResponse.message };
+  if (filesResponse.outcome === "not_applicable") {
+    return { outcome: "unavailable", message: filesResponse.message };
   }
-  if (patchResponse.outcome === "unavailable") {
-    return { outcome: "unavailable", message: patchResponse.failure.message };
+  if (filesResponse.outcome === "unavailable") {
+    return { outcome: "unavailable", message: filesResponse.message };
   }
 
   const entry =
-    patchResponse.patches.find((candidate) => candidate.path === path) ??
-    patchResponse.patches[0];
+    filesResponse.initialPatches.find((candidate) => candidate.path === path) ??
+    filesResponse.initialPatches[0];
   if (entry === undefined) {
     return {
       outcome: "unavailable",

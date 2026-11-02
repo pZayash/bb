@@ -2,9 +2,9 @@
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
-  BbNavigate,
+  ExperimentalOpenTabOptions,
+  JsonValue,
   PluginFileOpenerSource,
-  PluginThreadPanelProps,
 } from "@get-bb/plugin-sdk";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 
@@ -116,8 +116,8 @@ function mockDownloadEnvironment(): {
 
 function renderDirective(options: {
   attributes: Record<string, string>;
-  openThreadPanel?: (
-    input: Parameters<BbNavigate["openThreadPanel"]>[0],
+  experimental_openTab?: (
+    call: { surface: { kind: "current" } } & ExperimentalOpenTabOptions,
   ) => boolean;
   openWorkspaceFile?: ((path: string) => boolean) | null;
   rpc: Record<string, (input: unknown) => unknown>;
@@ -132,9 +132,9 @@ function renderDirective(options: {
     },
     {
       rpc: options.rpc,
-      ...(options.openThreadPanel === undefined
+      ...(options.experimental_openTab === undefined
         ? {}
-        : { openThreadPanel: options.openThreadPanel }),
+        : { experimental_openTab: options.experimental_openTab }),
     },
   );
 }
@@ -156,7 +156,7 @@ function renderOpener(options: {
 }
 
 function renderPanel(options: {
-  params?: PluginThreadPanelProps["params"];
+  params?: JsonValue | null;
   rpc: Record<string, (input: unknown) => unknown>;
   threadId?: string;
 }) {
@@ -164,6 +164,7 @@ function renderPanel(options: {
     app.threadPanelActions[0]!,
     {
       threadId: options.threadId ?? "thr_1",
+      environment: null,
       params: options.params ?? null,
     },
     { rpc: options.rpc },
@@ -266,10 +267,14 @@ describe("TypstDirective", () => {
       }),
     );
     expect(openWorkspaceFile).toHaveBeenCalledWith("reports/report.typ");
-    expect(slot.navigateCalls).toContainEqual({
-      method: "openThreadPanel",
+    expect(slot.experimental_panelCalls).toContainEqual({
+      method: "openTab",
       options: {
-        actionId: "document",
+        tab: {
+          id: "document",
+          context: { kind: "thread" },
+          availability: "action",
+        },
         title: "reports/report.typ",
         params: { file: "reports/report.typ", source: "workspace" },
       },
@@ -338,7 +343,7 @@ describe("TypstDirective", () => {
     const slot = renderDirective({
       attributes: { file: "reports/result.typ", source: "thread-storage" },
       openWorkspaceFile,
-      openThreadPanel: () => true,
+      experimental_openTab: () => true,
       rpc: {
         prepareArtifact: (input) => {
           expect(input).toEqual({
@@ -360,10 +365,14 @@ describe("TypstDirective", () => {
     );
 
     expect(openWorkspaceFile).not.toHaveBeenCalled();
-    expect(slot.navigateCalls).toContainEqual({
-      method: "openThreadPanel",
+    expect(slot.experimental_panelCalls).toContainEqual({
+      method: "openTab",
       options: {
-        actionId: "document",
+        tab: {
+          id: "document",
+          context: { kind: "thread" },
+          availability: "action",
+        },
         title: "reports/result.typ",
         params: { file: "reports/result.typ", source: "thread-storage" },
       },
@@ -375,7 +384,7 @@ describe("TypstDirective", () => {
     const slot = renderDirective({
       attributes: { file: "reports/report.typ" },
       openWorkspaceFile,
-      openThreadPanel: () => true,
+      experimental_openTab: () => true,
       rpc: { prepareArtifact: () => artifact },
     });
 

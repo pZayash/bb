@@ -2,7 +2,9 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ChangeLogPanel } from "./components/change-log-panel.js";
 
 export default definePluginApp((app) => {
-  app.slots.threadPanelAction({
+  app.slots.experimental_tab({
+    context: { kind: "thread" },
+    availability: "action",
     id: "change-log",
     title: "Changes",
     icon: "Clock",

@@ -64,7 +64,7 @@ function defaultRpc(): RpcStubMap {
 function renderPanel(rpc: RpcStubMap = defaultRpc()) {
   return renderSlot(
     app.threadPanelActions[0]!,
-    { threadId: "thread_1", params: null },
+    { environment: null, threadId: "thread_1", params: null },
     {
       rpc,
       context: { projectId: "proj_1", threadId: "thread_1" },
@@ -232,10 +232,9 @@ describe("PC Control pill overlay", () => {
     await slot.findByTestId("pc-pill-edge");
     fireEvent.click(slot.getByTestId("pc-pill-edge"));
     expect(
-      slot.navigateCalls.some(
+      slot.experimental_panelCalls.some(
         (call) =>
-          call.method === "openThreadPanel" &&
-          call.options.actionId === "pc-control",
+          call.method === "openTab" && call.options.tab.id === "pc-control",
       ),
     ).toBe(true);
     slot.unmount();
@@ -266,10 +265,9 @@ describe("PC Control pill overlay", () => {
     await slot.findByTestId("pc-pill");
     fireEvent.click(slot.getByTestId("pc-pill"));
     expect(
-      slot.navigateCalls.some(
+      slot.experimental_panelCalls.some(
         (call) =>
-          call.method === "openThreadPanel" &&
-          call.options.actionId === "pc-control",
+          call.method === "openTab" && call.options.tab.id === "pc-control",
       ),
     ).toBe(true);
     slot.unmount();

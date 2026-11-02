@@ -103,7 +103,7 @@ function renderPanel(
 ) {
   return renderSlot(
     { component: ChangeLogPanel },
-    { threadId: options.threadId ?? THREAD_ID, params: null },
+    { environment: null, threadId: options.threadId ?? THREAD_ID, params: null },
     { rpc: { listChanges: handler }, openFilePreview },
   );
 }

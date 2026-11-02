@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { PluginThreadPanelProps } from "@get-bb/plugin-sdk";
+import type { ExperimentalThreadActionTabProps } from "@get-bb/plugin-sdk";
 import {
   experimental_Diff as Diff,
   useBbNavigate,
@@ -308,7 +308,7 @@ function PanelSkeleton() {
   );
 }
 
-export function ChangeLogPanel({ threadId }: PluginThreadPanelProps) {
+export function ChangeLogPanel({ threadId }: ExperimentalThreadActionTabProps) {
   const rpc = useRpc<typeof changeLogRpcContract>();
   const navigate = useBbNavigate();
   const [state, setState] = useState<PanelState>({ status: "loading" });

@@ -237,7 +237,8 @@ export function buildChangeLog(
     files,
     totals,
     page: {
-      hasOlder: page.hasOlderRows,
+      // bb-fork(change-log): an older page exists exactly when a cursor came back.
+      hasOlder: page.olderCursor !== null,
       olderCursor: page.olderCursor,
     },
     truncated:

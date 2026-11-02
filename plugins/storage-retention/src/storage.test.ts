@@ -1139,6 +1139,7 @@ it("counts distinct live managed worktrees for machine projects, including empty
     hostLifecycle: "active",
     managed: true,
     workspaceProvisionType: "managed-worktree",
+    // bb-fork(thread-start-ref): environments carry the pinned start commit.
     startRef: null,
     createdAt: 0,
     updatedAt: 0,
@@ -1321,6 +1322,8 @@ it("finds worktrees created outside BB, removes only safe ones in bulk, and forc
     hostLifecycle: "active",
     managed: true,
     workspaceProvisionType: "managed-worktree",
+    // bb-fork(thread-start-ref): environments carry the pinned start commit.
+    startRef: null,
     createdAt: 0,
     updatedAt: 0,
   };
@@ -2385,6 +2388,8 @@ it("never clears thread storage that holds a workspace an environment still uses
     hostLifecycle: "active",
     managed: false,
     workspaceProvisionType: null,
+    // bb-fork(thread-start-ref): environments carry the pinned start commit.
+    startRef: null,
     createdAt: 0,
     updatedAt: 0,
   };

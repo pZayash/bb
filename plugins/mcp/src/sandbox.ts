@@ -105,8 +105,13 @@ async function acquireInstance(
     return idle;
   }
   const memory = new SandboxMemory(pages);
+  // bb-fork(windows): SandboxMemory is a WebAssembly.Memory; the variant option is
+  // bb-fork(windows): typed against emscripten's loader alias in this dependency tree.
+  const wasmMemory = memory as unknown as Parameters<
+    typeof newVariant
+  >[1]["wasmMemory"];
   const module = await newQuickJSWASMModuleFromVariant(
-    newVariant(SINGLEFILE_RELEASE_SYNC, { wasmMemory: memory }),
+    newVariant(SINGLEFILE_RELEASE_SYNC, { wasmMemory }),
   );
   return { memory, module };
 }

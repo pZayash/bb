@@ -979,19 +979,23 @@ function refreshScriptFileCommand(
     source.path,
   ];
   if (source.hostId !== undefined) argv.push("--host", source.hostId);
-  if (automation.execution.interpreter !== undefined) {
-    argv.push("--interpreter", automation.execution.interpreter);
+  const execution = automation.execution;
+  if (execution.mode !== "script") {
+    return argv.map((value) => forkShellQuote(value, shellQuote)).join(" ");
   }
-  const workingDirectory = automation.execution.workingDirectory;
+  if (execution.interpreter !== undefined) {
+    argv.push("--interpreter", execution.interpreter);
+  }
+  const workingDirectory = execution.workingDirectory;
   argv.push(
     "--working-directory",
     workingDirectory.type === "path"
       ? workingDirectory.path
       : workingDirectory.type,
   );
-  argv.push("--timeout", String(automation.execution.timeoutMs));
-  if (automation.execution.env !== undefined) {
-    argv.push("--env-json", JSON.stringify(automation.execution.env));
+  argv.push("--timeout", String(execution.timeoutMs));
+  if (execution.env !== undefined) {
+    argv.push("--env-json", JSON.stringify(execution.env));
   }
   return argv.map((value) => forkShellQuote(value, shellQuote)).join(" ");
 }

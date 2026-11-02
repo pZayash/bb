@@ -83,6 +83,7 @@ function renderContent(
 ) {
   return renderToStaticMarkup(
     <UsageSettingsContent
+      hasUsageSources={false}
       machines={[]}
       selectedId={null}
       loading={false}
@@ -160,7 +161,11 @@ describe("loadUsage", () => {
     await loadUsage(getUsage, null, false, target);
     failed = true;
     await loadUsage(getUsage, null, true, target);
-    expect(state).toEqual({ machines: measured, error: true });
+    expect(state).toEqual({
+      machines: measured,
+      error: true,
+      hasUsageSources: true,
+    });
     const html = renderContent({ machines: state.machines, error: true });
     expect(html).toContain("Showing last update");
     expect(html).toContain("first@example.com");
@@ -177,7 +182,11 @@ describe("loadUsage", () => {
       false,
       target,
     );
-    expect(state).toEqual({ machines: [], error: true });
+    expect(state).toEqual({
+      machines: [],
+      error: true,
+      hasUsageSources: true,
+    });
     const html = renderContent({ error: true });
     expect(html).toContain("Couldn’t load usage.");
     expect(html).not.toContain("Retry usage refresh");

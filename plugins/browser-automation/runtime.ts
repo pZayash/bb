@@ -9,7 +9,7 @@ import {
   realpath,
   rm,
 } from "node:fs/promises";
-import { isAbsolute, join, relative } from "node:path";
+import { isAbsolute, join, posix, relative, win32 } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { outputSchema, type RunOutput } from "./contracts.js";
