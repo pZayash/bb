@@ -979,24 +979,6 @@ function refreshScriptFileCommand(
     source.path,
   ];
   if (source.hostId !== undefined) argv.push("--host", source.hostId);
-  const execution = automation.execution;
-  if (execution.mode !== "script") {
-    return argv.map((value) => forkShellQuote(value, shellQuote)).join(" ");
-  }
-  if (execution.interpreter !== undefined) {
-    argv.push("--interpreter", execution.interpreter);
-  }
-  const workingDirectory = execution.workingDirectory;
-  argv.push(
-    "--working-directory",
-    workingDirectory.type === "path"
-      ? workingDirectory.path
-      : workingDirectory.type,
-  );
-  argv.push("--timeout", String(execution.timeoutMs));
-  if (execution.env !== undefined) {
-    argv.push("--env-json", JSON.stringify(execution.env));
-  }
   return argv.map((value) => forkShellQuote(value, shellQuote)).join(" ");
 }
 

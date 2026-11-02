@@ -52,6 +52,7 @@ import { createScriptWorkingDirectoryResolver } from "./working-directory.js";
 import { sweepDueAutomations } from "./sweep.js";
 import { createAutomationService } from "./service.js";
 import { registerAutomationCli } from "./cli.js";
+import { forkShellQuote } from "./shell-quote.fork.js";
 import { automationScriptDir, scriptsRoot } from "./script-files.js";
 import plugin from "./server.js";
 import {
@@ -65,9 +66,7 @@ const BASH_SCRIPT_RUNS_ARE_POSIX_ONLY =
 
 // bb-fork(windows): mirrors the CLI's forkShellQuote so the printed command matches.
 function pastedShellArg(value: string): string {
-  if (process.platform !== "win32") return value;
-  const windowsSafe = /^[A-Za-z0-9_./\\:@%+=,-]+$/u;
-  return windowsSafe.test(value) ? value : `"${value.replaceAll('"', '""')}"`;
+  return forkShellQuote(value, (input) => input);
 }
 
 function createTestDb(): Db {
@@ -1779,7 +1778,7 @@ describe("automation CLI --script-file", () => {
       expect(created.stdout).toContain(`Copied ${sourcePath}`);
       expect(created.stdout).toContain(`to ${storedPath}`);
       expect(created.stdout).toContain(
-        `bb automation update ${automationId} --project proj_test --script-file ${pastedShellArg(sourcePath)} --interpreter bash --working-directory project --timeout 120000`,
+        `bb automation update ${automationId} --project proj_test --script-file ${pastedShellArg(sourcePath)}\n`,
       );
       expect(created.stdout).toContain("Working dir: /server/project");
 
@@ -1903,7 +1902,7 @@ describe("automation CLI --script-file", () => {
         `Copied ${sourcePath} (host host_laptop)`,
       );
       expect(inThread.stdout).toContain(
-        `--script-file ${pastedShellArg(sourcePath)} --host host_laptop --interpreter bash --working-directory project`,
+        `--script-file ${pastedShellArg(sourcePath)} --host host_laptop\n`,
       );
 
       const byName = await t.cli.run(
@@ -1997,12 +1996,11 @@ describe("automation CLI --script-file", () => {
       );
       expect(created.exitCode).toBe(0);
       const automationId = idFrom(created.stdout);
+      // bb-fork(windows): this path needs quoting on both platforms; forkShellQuote picks the style.
       const quoted = (value: string): string =>
-        process.platform === "win32"
-          ? `"${value.replaceAll('"', '""')}"`
-          : `'${value.replaceAll("'", "'\\''")}'`;
+        forkShellQuote(value, (v) => `'${v.replaceAll("'", "'\\''")}'`);
       expect(created.stdout).toContain(
-        `bb automation update ${automationId} --project proj_test --script-file ${quoted(sourcePath)} --interpreter sh --working-directory automation-storage --timeout 5000 --env-json ${quoted('{"CHANNEL":"qa"}')}`,
+        `bb automation update ${automationId} --project proj_test --script-file ${quoted(sourcePath)}\n`,
       );
 
       await writeFile(sourcePath, "echo two\n");
