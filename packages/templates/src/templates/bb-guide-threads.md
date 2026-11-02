@@ -377,7 +377,8 @@ Ownership:
     --parent-thread <id>                   Assign to a parent thread
     --clear-parent-thread                  Remove parent assignment
     --no-ownership-notice                  Reparent without a system turn on the old or new parent
-    --parent-notifications <mode>          Child-to-parent notifications: muted or on
+    --parent-notifications <value>         Which outcomes wake the parent: auto, stuck, or off;
+                                           muted or on toggles the mute switch
     --section <id>                         Move into a section
     --clear-section                        Remove section assignment
     --model <model>                        Set the sticky model for the next and later turns

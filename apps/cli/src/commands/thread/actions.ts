@@ -195,12 +195,11 @@ export function registerActionsCommands(
       "Set the sticky reasoning level applied on the thread's next turn: low, medium, high, xhigh, max (provider-dependent)",
     )
     .option("--visibility <visibility>", "Thread visibility: visible or hidden")
+    // bb-fork(parent-mute): upstream values plus muted|on for the fork mute switch
     .option(
-      "--parent-notifications <mode>",
-      "Child-to-parent notifications: muted or on",
+      "--parent-notifications <value>",
+      `${PARENT_NOTIFICATIONS_HELP}; muted or on toggles the mute switch`,
     )
-    .option("--parent-notifications <value>", PARENT_NOTIFICATIONS_HELP)
-
     .action(
       action(
         async (id: string | undefined, opts: ThreadUpdateCommandOptions) => {
@@ -227,23 +226,28 @@ export function registerActionsCommands(
             opts.visibility === undefined
               ? undefined
               : threadVisibilitySchema.parse(opts.visibility);
-          // bb-fork(parent-mute): muted or on, nothing else
+          // bb-fork(parent-mute): muted or on drive parentNotificationsMuted;
+          // auto, stuck, and off drive upstream's parentNotifications
           if (
             opts.parentNotifications !== undefined &&
-            opts.parentNotifications !== "muted" &&
-            opts.parentNotifications !== "on"
+            !["auto", "stuck", "off", "muted", "on"].includes(
+              opts.parentNotifications,
+            )
           ) {
             throw new Error(
-              `--parent-notifications expects muted or on, got "${opts.parentNotifications}".`,
+              `--parent-notifications expects auto, stuck, off, muted, or on, got "${opts.parentNotifications}".`,
             );
           }
           const parentNotificationsMuted =
-            opts.parentNotifications === undefined
-              ? undefined
-              : opts.parentNotifications === "muted";
-          const parentNotifications = parseParentNotifications(
-            opts.parentNotifications,
-          );
+            opts.parentNotifications === "muted"
+              ? true
+              : opts.parentNotifications === "on"
+                ? false
+                : undefined;
+          const parentNotifications =
+            parentNotificationsMuted === undefined
+              ? parseParentNotifications(opts.parentNotifications)
+              : undefined;
 
           if (
             !opts.parentThread &&
@@ -305,7 +309,6 @@ export function registerActionsCommands(
             body.parentNotifications = parentNotifications;
           }
 
-
           const sdk = createCliBbSdk(getUrl());
           const thread = await sdk.threads.update({ threadId, ...body });
           if (outputJson(opts, thread)) return;
@@ -342,7 +345,6 @@ export function registerActionsCommands(
           if (parentNotifications) {
             console.log(`Parent notifications: ${parentNotifications}`);
           }
-
         },
       ),
     );

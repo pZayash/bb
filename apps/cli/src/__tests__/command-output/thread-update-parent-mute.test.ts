@@ -107,7 +107,7 @@ describe("bb thread update --parent-notifications", () => {
     ).rejects.toThrow("process.exit:1");
 
     expect(console.error).toHaveBeenCalledWith(
-      'Error: --parent-notifications expects muted or on, got "silent".',
+      'Error: --parent-notifications expects auto, stuck, off, muted, or on, got "silent".',
     );
     expect(patch).not.toHaveBeenCalled();
   });
