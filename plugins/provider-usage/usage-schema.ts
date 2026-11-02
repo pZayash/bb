@@ -58,7 +58,7 @@ export const usageMachineSchema = z.strictObject({
 export const usageSnapshotSchema = z.strictObject({
   machines: z.array(usageMachineSchema),
   // bb-fork(usage-sources): defaults to false when an older host omits it.
-  hasUsageSources: z.boolean().optional(),
+  hasUsageSources: z.optional(z.boolean()),
 });
 
 export const usageRpcSuccessSchema = z.strictObject({

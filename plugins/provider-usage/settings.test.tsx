@@ -259,20 +259,11 @@ it.each([
   [false, "No usage source is enabled."],
 ] as const)(
   "explains an empty host with hasUsageSources=%s",
-  async (hasUsageSources, expected) => {
-    const app = await loadPluginApp(() => import("./app"));
-    const slot = renderSlot(
-      app.settingsSections[0]!,
-      {},
-      {
-        rpc: {
-          getUsage: () => ({
-            hasUsageSources,
-            machines: [machine("host", [])],
-          }),
-        },
-      },
-    );
-    await slot.findByText(expected, { exact: false });
+  (hasUsageSources, expected) => {
+    const html = renderContent({
+      hasUsageSources,
+      machines: [machine("host", [])],
+    });
+    expect(html).toContain(expected);
   },
 );
