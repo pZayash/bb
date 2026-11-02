@@ -1130,7 +1130,10 @@ describe("host-daemon command schemas", () => {
     expect(contract.isCompatibleHostDaemonProtocolVersion(255)).toBe(false);
     expect(contract.isCompatibleHostDaemonProtocolVersion(256)).toBe(false);
     expect(contract.isCompatibleHostDaemonProtocolVersion(257)).toBe(false);
-    expect(contract.isCompatibleHostDaemonProtocolVersion(258)).toBe(true);
+    // bb-fork: the fork carries wire deltas, so it ships upstream + 2.
+    expect(contract.isCompatibleHostDaemonProtocolVersion(258)).toBe(false);
+    expect(contract.isCompatibleHostDaemonProtocolVersion(259)).toBe(false);
+    expect(contract.isCompatibleHostDaemonProtocolVersion(260)).toBe(true);
     expect(contract.hostDaemonSupportsConnectNext(246)).toBe(false);
     expect(contract.hostDaemonSupportsConnectNext(247)).toBe(true);
     expect(contract.hostDaemonSupportsDesktopBrokerProof(247)).toBe(false);
