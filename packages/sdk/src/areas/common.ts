@@ -26,7 +26,9 @@ export async function readExecutionOptions(
         query: {
           environmentId: input.environmentId,
           hostId: input.hostId,
+          projectId: input.projectId,
           providerId: input.providerId,
+          selectedModel: input.selectedModel,
         },
       },
       ...signalRequestArgs(input.signal),

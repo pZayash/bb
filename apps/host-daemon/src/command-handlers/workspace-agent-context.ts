@@ -14,9 +14,7 @@ import { SKILL_FILE_NAME } from "../command-discovery.js";
 import { isFsErrorWithCode } from "../fs-errors.js";
 import { readFileForTransport } from "./file-read.js";
 import { listSharedSkills } from "./list-skills.js";
-import { resolveNonSymlinkDirectoryPath } from "./root-path.js";
-// bb-fork(windows): symlinked .bb/skills roots resolve through a fork module.
-import { resolveLinkedDirectoryPath } from "./linked-root.fork.js";
+import { findSkillFiles, resolveSkillPath } from "@bb/skill-index";
 
 const PROJECT_SKILLS_RELATIVE_SEGMENTS = [".bb", "skills"] as const;
 const AGENT_INSTRUCTIONS_RELATIVE_SEGMENTS = [".bb", "AGENTS.md"] as const;
@@ -41,6 +39,7 @@ async function readContainedUtf8File(args: {
 }): Promise<string | null> {
   try {
     const file = await readFileForTransport({
+      followRootSymlink: false,
       resolvedPath: args.filePath,
       resultPath: args.filePath,
       rootPath: args.rootPath,
@@ -59,73 +58,21 @@ async function readContainedUtf8File(args: {
   }
 }
 
-async function listProjectSkillDirectoryNames(
-  skillsRootPath: string,
-  rootPath: string,
-  excludeNames: string[],
-): Promise<string[]> {
-  try {
-    // bb-fork(windows): a symlinked .bb/skills root resolves and skips the
-    // bb-fork(windows): containment check; its skills are trusted as linked.
-    const rootLinked = (await fs.lstat(skillsRootPath)).isSymbolicLink();
-    const realSkillsRoot = rootLinked
-      ? await resolveLinkedDirectoryPath({
-          description: "Path",
-          path: skillsRootPath,
-        })
-      : await resolveNonSymlinkDirectoryPath({
-          description: "Path",
-          path: skillsRootPath,
-        });
-    if (!rootLinked) {
-      const realRoot = await fs.realpath(rootPath);
-      if (!isPathWithinDirectory(realRoot, realSkillsRoot)) {
-        throw new CommandDispatchError(
-          "invalid_path",
-          "Skills path escapes read root",
-        );
-      }
-    }
-    const entries = await fs.readdir(realSkillsRoot, { withFileTypes: true });
-    return entries
-      .filter(
-        (entry) =>
-          entry.isDirectory() &&
-          !entry.name.startsWith(".") &&
-          !excludeNames.includes(entry.name),
-      )
-      .map((entry) => entry.name)
-      .sort((left, right) => left.localeCompare(right));
-  } catch (error) {
-    if (isFsErrorWithCode(error, "ENOENT")) {
-      return [];
-    }
-    throw error;
-  }
-}
-
 async function readProjectSkillFile(args: {
   directoryName: string;
   rootPath: string;
   skillsRootPath: string;
-  skillsRootLinked: boolean;
   maxFileBytes: number;
   remainingBytes: number;
 }): Promise<WorkspaceProjectSkillFile | null> {
   const directoryPath = path.join(args.skillsRootPath, args.directoryName);
   try {
-    const entries = await fs.readdir(directoryPath);
-    if (!entries.includes(SKILL_FILE_NAME)) return null;
     const filePath = path.join(directoryPath, SKILL_FILE_NAME);
-    const stat = await fs.lstat(filePath);
+    const realPath = await resolveSkillPath(filePath, args.rootPath);
+    if (realPath === null) return null;
+    const stat = await fs.stat(realPath);
     if (!stat.isFile()) return null;
-    const realPath = await fs.realpath(filePath);
-    // bb-fork(windows): files under a linked skills root anchor at the link
-    // bb-fork(windows): target instead of the workspace root.
-    const allowedRoot = await fs.realpath(
-      args.skillsRootLinked ? args.skillsRootPath : args.rootPath,
-    );
-    if (!isPathWithinDirectory(allowedRoot, realPath)) {
+    if (!isPathWithinDirectory(await fs.realpath(args.rootPath), realPath)) {
       throw new CommandDispatchError(
         "invalid_path",
         "Skill file escapes read root",
@@ -192,16 +139,26 @@ async function readProjectSkillFiles(
     rootPath,
     ...PROJECT_SKILLS_RELATIVE_SEGMENTS,
   );
-  // bb-fork(windows): a linked skills root anchors file reads at the target.
-  const skillsRootLinked = await fs
-    .lstat(skillsRootPath)
-    .then((stat) => stat.isSymbolicLink())
-    .catch(() => false);
-  const directoryNames = await listProjectSkillDirectoryNames(
-    skillsRootPath,
-    rootPath,
-    policy.excludeNames,
-  );
+  if (
+    (await fs.realpath(skillsRootPath).catch(() => null)) !== null &&
+    (await resolveSkillPath(skillsRootPath, rootPath)) === null
+  ) {
+    throw new CommandDispatchError(
+      "invalid_path",
+      "Skills path escapes read root",
+    );
+  }
+  const directoryNames = (
+    await findSkillFiles({
+      path: skillsRootPath,
+      shape: "skill",
+      boundaryPath: rootPath,
+    })
+  )
+    .map((file) => file.name)
+    .filter(
+      (name) => !name.startsWith(".") && !policy.excludeNames.includes(name),
+    );
   const skills: WorkspaceProjectSkillFile[] = [];
   let remainingBytes = policy.maxContentBytes;
   for (const directoryName of directoryNames.slice(0, policy.limit)) {
@@ -209,7 +166,6 @@ async function readProjectSkillFiles(
       directoryName,
       rootPath,
       skillsRootPath,
-      skillsRootLinked,
       maxFileBytes: policy.maxFileBytes,
       remainingBytes,
     });

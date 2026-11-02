@@ -83,22 +83,6 @@ export interface ModelReasoningMenuProps {
   onStartHandoff: (() => void) | null;
 }
 
-const SINGLE_ROW_REASONING_LEVELS = 6;
-const WIDE_REASONING_LABEL_LENGTH = 12;
-
-function reasoningLadderClassName(
-  options: readonly PickerOption<ReasoningLevel>[],
-): string {
-  if (options.length <= SINGLE_ROW_REASONING_LEVELS) {
-    return "flex flex-wrap gap-1";
-  }
-  return options.some(
-    (option) => option.label.length > WIDE_REASONING_LABEL_LENGTH,
-  )
-    ? "grid grid-cols-3 gap-1"
-    : "grid grid-cols-4 gap-1";
-}
-
 export function ModelReasoningMenu({
   listRef,
   providerId,
@@ -279,7 +263,7 @@ export function ModelReasoningMenu({
                   if (option) onReasoningSelect(option.value);
                 }}
                 disabled={selectionBlocked}
-                className={reasoningLadderClassName(reasoningOptions)}
+                className="flex gap-1"
               >
                 {reasoningOptions.map((option) => (
                   <ToggleGroupItem
@@ -292,9 +276,19 @@ export function ModelReasoningMenu({
                       LIST_HOVER_TRANSITION,
                     )}
                   >
-                    <span className="min-w-0 truncate" title={option.label}>
-                      {option.label}
-                    </span>
+                    {option.label === "Medium" ||
+                    option.label === "Extra High" ? (
+                      <>
+                        <span className="max-[360px]:hidden">
+                          {option.label}
+                        </span>
+                        <span className="hidden max-[360px]:inline">
+                          {option.label === "Medium" ? "Med" : "XHigh"}
+                        </span>
+                      </>
+                    ) : (
+                      option.label
+                    )}
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
@@ -312,7 +306,7 @@ export function ModelReasoningMenu({
               >
                 <span className="flex min-w-0 items-center gap-2">
                   <Icon
-                    name="Zap"
+                    name={singleServiceTier.icon ?? "Zap"}
                     className="size-4 fill-current text-muted-foreground"
                   />
                   <span>{singleServiceTierText}</span>

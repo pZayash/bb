@@ -6,8 +6,9 @@ import {
 export default defineWorkspaceTestConfig({
   test: {
     silent: "passed-only",
-    // bb-fork(windows): git fixture setup is slower than the 5s default.
-    testTimeout: 30_000,
+    testTimeout: 15_000,
+    globalSetup: ["test/setup/migrated-db-template.ts"],
+
     setupFiles: [
       "test/setup/stored-event-decode-freeze.ts",
       "test/setup/warm-test-harness.ts",

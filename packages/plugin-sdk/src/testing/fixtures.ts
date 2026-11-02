@@ -1,5 +1,6 @@
 import type {
   BbPluginApi,
+  ExperimentalPanelController,
   MessageDispatchHookContext,
   PluginAgentConfigurationContext,
   PluginThreadEventPayloads,
@@ -111,6 +112,7 @@ export function makeThreadResponse(
     originKind: null,
     originPluginId: null,
     visibility: "visible",
+    parentNotifications: "auto",
     archivedAt: null,
     pinnedAt: null,
     deletedAt: null,
@@ -121,6 +123,7 @@ export function makeThreadResponse(
     runtime: { displayStatus: "idle" },
     activeBackgroundAgentCount: 0,
     canRestoreEnvironment: false,
+    canEditMessages: true,
     canSpawnChild: true,
     queuedMessageCount: 0,
     ...overrides,
@@ -326,6 +329,7 @@ export function makeQueueEntry(
     serviceTier: "default",
     groupWithNext: false,
     sendAt: null,
+    state: "waiting",
     waitingOn: {
       kind: "plugin",
       pluginId: "test-plugin",
@@ -358,6 +362,26 @@ export function makeTurnFailedEvent(
     inputAccepted: true,
     rateLimits: null,
     attemptNumber: 1,
+    originPluginId: null,
+    ...overrides,
+  };
+}
+
+/**
+ * A side panel controller for tests that call a command, thread action or
+ * message action directly: every call declines and `getTabs()` reports a
+ * closed, empty panel, except the methods in `overrides`.
+ */
+export function makePanelController(
+  overrides: Partial<ExperimentalPanelController> = {},
+): ExperimentalPanelController {
+  return {
+    openTab: () => false,
+    toggleTab: () => false,
+    close: () => false,
+    getTabs: () => ({ open: false, selectedKey: null, tabs: [] }),
+    selectTab: () => false,
+    closeTab: () => false,
     ...overrides,
   };
 }

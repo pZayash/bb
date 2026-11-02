@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 // bb-fork: fork-bundled plugins live in a separate module so this registry
 // stays identical to upstream.
 import { FORK_BUILTIN_PLUGINS } from "./builtin-registry.fork.js";
+import { RETIRED_PLUGIN_SUCCESSORS } from "@bb/domain";
+
 
 export interface BundledPluginDefinition {
   name: string;
@@ -78,6 +80,11 @@ export const BUILTIN_PLUGINS = [
     defaultEnabled: true,
   },
   {
+    name: "connect-next",
+    pluginId: "bb--connect-next",
+    defaultEnabled: false,
+  },
+  {
     name: "environment-project-checkout",
     pluginId: "environment-project-checkout",
     defaultEnabled: true,
@@ -143,11 +150,6 @@ export const BUILTIN_PLUGINS = [
     defaultEnabled: true,
   },
   {
-    name: "provider-acp-next",
-    pluginId: "bb--provider-acp-next",
-    defaultEnabled: false,
-  },
-  {
     name: "keep-awake",
     pluginId: "keep-awake",
     defaultEnabled: true,
@@ -168,6 +170,16 @@ export const BUILTIN_PLUGINS = [
     defaultEnabled: true,
   },
   {
+    name: "git",
+    pluginId: "bb--git",
+    defaultEnabled: true,
+  },
+  {
+    name: "github-pr-status",
+    pluginId: "bb--github-pr-status",
+    defaultEnabled: true,
+  },
+  {
     name: "secrets",
     pluginId: "secrets",
     defaultEnabled: true,
@@ -183,8 +195,18 @@ export const BUILTIN_PLUGINS = [
     defaultEnabled: true,
   },
   {
+    name: "navigation",
+    pluginId: "navigation",
+    defaultEnabled: true,
+  },
+  {
     name: "prompt-library",
     pluginId: "bb--prompt-library",
+    defaultEnabled: false,
+  },
+  {
+    name: "mcp",
+    pluginId: "bb--mcp",
     defaultEnabled: false,
   },
   {
@@ -214,6 +236,12 @@ export const BUILTIN_PLUGINS = [
   },
   // bb-fork: fork plugins are appended from builtin-registry.fork.ts.
   ...FORK_BUILTIN_PLUGINS,
+  {
+    name: "composer",
+    pluginId: "bb--composer",
+    defaultEnabled: true,
+  },
+
 ].map((plugin): BundledPluginDefinition => ({
   ...plugin,
   autoInstall: true,
@@ -265,20 +293,26 @@ export const BUNDLED_PLUGINS: readonly BundledPluginDefinition[] = [
   ...OFFICIAL_PLUGINS,
 ];
 
-export interface BundledPluginReplacement {
+export interface RetiredBundledPlugin {
   pluginId: string;
-  replaces: string;
+  successorPluginId: string;
   carriedSettings: readonly string[];
 }
 
-export const BUNDLED_PLUGIN_REPLACEMENTS: readonly BundledPluginReplacement[] =
-  [
-    {
-      pluginId: "bb--provider-acp-next",
-      replaces: "provider-acp",
-      carriedSettings: ["customAgents"],
-    },
-  ];
+const RETIRED_PLUGIN_CARRIED_SETTINGS: Readonly<
+  Record<string, readonly string[]>
+> = {
+  "bb--provider-acp-next": ["customAgents"],
+};
+
+export const RETIRED_BUNDLED_PLUGINS: readonly RetiredBundledPlugin[] =
+  Object.entries(RETIRED_PLUGIN_SUCCESSORS).map(
+    ([pluginId, successorPluginId]) => ({
+      pluginId,
+      successorPluginId,
+      carriedSettings: RETIRED_PLUGIN_CARRIED_SETTINGS[pluginId] ?? [],
+    }),
+  );
 
 const builtinPluginsModuleDir = path.dirname(fileURLToPath(import.meta.url));
 

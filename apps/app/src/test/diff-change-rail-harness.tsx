@@ -4,7 +4,7 @@ import { render, type RenderResult } from "@testing-library/react";
 import { createStore, Provider as JotaiProvider } from "jotai";
 import { vi } from "vitest";
 import type { DiffChangeRailViewport } from "@/components/code/diff-change-rail-model.fork";
-import { GIT_DIFF_CHANGE_RAIL_STORAGE_KEY } from "@/lib/git-diff-view-preferences";
+import { GIT_DIFF_CHANGE_RAIL_STORAGE_KEY } from "@/lib/git-diff-view-preferences.fork";
 
 const clientHeightDescriptor = Object.getOwnPropertyDescriptor(
   Element.prototype,

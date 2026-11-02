@@ -66,11 +66,6 @@ describe("index.html pre-paint script", () => {
     document.body.innerHTML = "";
   });
 
-  it("extracts the inline scripts from index.html", () => {
-    // bb-fork(log-noise): two upstream scripts plus the ResizeObserver guard.
-    expect(extractInlineScripts(indexHtml)).toHaveLength(3);
-  });
-
   it("adds the dark class before paint when the stored preference is dark", () => {
     localStorage.setItem(THEME_STORAGE_KEY, "dark");
 

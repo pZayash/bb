@@ -1,7 +1,11 @@
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
+import { withVcsProcessPriority } from "@bb/process-utils";
 import { operationEnvironment } from "./operation-environment.js";
 import {
   runEnvironmentHook,
   cancelEnvironmentHook,
+  inspectEnvironmentCleanup,
 } from "./command-handlers/environment-hook.js";
 import {
   providerCliInstallEventSchema,
@@ -14,7 +18,6 @@ import {
   type HostDaemonOnlineRpcResult,
   type HostDaemonSettledCommandType,
   type ProviderCliInstallEvent,
-  type WorkspaceResolutionFailure,
 } from "@bb/host-daemon-contract";
 import type { AgentRuntimeBridgeLaunch } from "@bb/agent-runtime";
 import semver from "semver";
@@ -49,7 +52,6 @@ import {
   listHostPaths,
   readHostFile,
   readHostFileChunk,
-  readHostRelativeFile,
 } from "./command-handlers/host-files.js";
 // bb-fork(windows): shell enumeration for the Start terminal picker.
 import { listHostTerminalShells } from "./command-handlers/terminal-shells.js";
@@ -78,20 +80,22 @@ import {
   startThread,
   submitTurn,
 } from "./command-handlers/thread.js";
-import { WorkspaceError, type HostWorkspace } from "@bb/host-workspace";
 import {
   cloneProject,
   inspectProjectPath,
   resolveProjectCloneDefaultPath,
 } from "./command-handlers/project.js";
-import {
-  requireResolvedWorkspaceForCommand,
-  resolveWorkspaceForCommand,
-  workspaceResolutionFailureFromError,
-} from "./workspace-resolution.js";
+import { requireResolvedWorkspaceForCommand } from "./workspace-resolution.js";
 import { userExecutableProcessOptions } from "./user-executable-env.js";
 import type { ServerMoveService } from "./server-move/service.js";
 import { readWorkspaceAgentContext } from "./command-handlers/workspace-agent-context.js";
+import {
+  workspaceResolutionFailureFromError,
+  WorkspaceError,
+} from "bb-environment-provider-host/workspace-git";
+// bb-fork(thread-start-ref): the commits read takes the resolved workspace.
+import type { HostWorkspace } from "@bb/host-workspace";
+import type { WorkspaceResolutionFailure } from "@bb/host-daemon-contract/workspace";
 
 const THREAD_STOP_ACTIVE_TURN_WAIT_MS = 5_000;
 
@@ -154,6 +158,7 @@ type OnlineRpcHandlerMap = {
   [TType in HostDaemonOnlineRpcCommandType]: (
     command: Extract<HostDaemonOnlineRpcCommand, { type: TType }>,
     options: CommandDispatchOptions,
+    signal: AbortSignal,
   ) => Promise<HostDaemonOnlineRpcResult<TType>>;
 };
 
@@ -407,41 +412,29 @@ async function withResolvedBridgeLaunch<TResult>(
 }
 
 async function readAvailableWorkspace<TAvailable extends object>(
-  command: CommandOf<
-    | "workspace.status"
-    | "workspace.diff"
-    | "workspace.diffFiles"
-    | "workspace.diffPatch"
-    // bb-fork(thread-start-ref): commit listing for the start-commit picker.
-    | "workspace.commits"
-  >,
+  // bb-fork(thread-start-ref): commit listing for the start-commit picker.
+  command: CommandOf<"workspace.commits">,
   options: CommandDispatchOptions,
   read: (workspace: HostWorkspace) => Promise<TAvailable>,
 ): Promise<
   | ({ outcome: "available" } & TAvailable)
   | { outcome: "unavailable"; failure: WorkspaceResolutionFailure }
 > {
-  const resolution = await resolveWorkspaceForCommand({
-    environmentId: command.environmentId,
-    requireGit: true,
-    runtimeManager: options.runtimeManager,
-    workspaceContext: command.workspaceContext,
-  });
-  if (!resolution.ok) {
-    return { outcome: "unavailable", failure: resolution.failure };
-  }
   try {
-    return {
-      outcome: "available",
-      ...(await read(resolution.entry.workspace)),
-    };
+    const entry = await requireResolvedWorkspaceForCommand({
+      environmentId: command.environmentId,
+      requireGit: true,
+      runtimeManager: options.runtimeManager,
+      workspaceContext: command.workspaceContext,
+    });
+    return { outcome: "available", ...(await read(entry.workspace)) };
   } catch (error) {
     return {
       outcome: "unavailable",
-      failure: workspaceResolutionFailureFromError({
+      failure: workspaceResolutionFailureFromError(
         error,
-        workspacePath: command.workspaceContext.workspacePath,
-      }),
+        command.workspaceContext.workspacePath,
+      ),
     };
   }
 }
@@ -587,26 +580,22 @@ const commandHandlers: CommandHandlerMap = {
       noVerify: true,
     });
   },
-  "workspace.pull_request_action": async (command, options) => {
-    const entry = await requireResolvedWorkspaceForCommand({
-      environmentId: command.environmentId,
-      requireGit: true,
-      runtimeManager: options.runtimeManager,
-      workspaceContext: command.workspaceContext,
-    });
-    await entry.workspace.runPullRequestAction(
-      command.operation === "merge"
-        ? { operation: "merge", method: command.method }
-        : { operation: command.operation },
-      userExecutableProcessOptions(options.runtimeManager.getShellEnv()),
-    );
-    return {};
-  },
 };
 
 const onlineRpcHandlers: OnlineRpcHandlerMap = {
+  // bb-fork(thread-start-ref): list the newest commits of the checked-out branch.
+  "workspace.commits": (command, options) =>
+    readAvailableWorkspace(command, options, async (workspace) => ({
+      commits: await workspace.listCommits({ maxCount: command.maxCount }),
+    })),
+  "desktop.broker.prove": async (command, options) => {
+    if (!options.desktopBrowserBroker)
+      throw new Error("Desktop browser broker unavailable");
+    return options.desktopBrowserBroker.prove(command.challenge);
+  },
   "environment.hook.run": runEnvironmentHook,
   "environment.hook.cancel": cancelEnvironmentHook,
+  "environment.inspect_cleanup": inspectEnvironmentCleanup,
   "desktop.browser.list_instances": forwardDesktopBrowserCommand,
   "desktop.browser.list_tabs": forwardDesktopBrowserCommand,
   "desktop.browser.create_tab": forwardDesktopBrowserCommand,
@@ -624,8 +613,10 @@ const onlineRpcHandlers: OnlineRpcHandlerMap = {
     }
     return options.ensureConnectTunnelIdentity();
   },
-  "host.list_files": listHostFiles,
-  "host.list_paths": listHostPaths,
+  "host.list_files": (command, _options, signal) =>
+    listHostFiles(command, signal),
+  "host.list_paths": (command, _options, signal) =>
+    listHostPaths(command, signal),
   "host.mkdir": mkdirHostPath,
   "host.move_path": moveHostPath,
   "host.remove_path": removeHostPath,
@@ -663,12 +654,32 @@ const onlineRpcHandlers: OnlineRpcHandlerMap = {
   "host.list_branch_options": listHostBranchOptions,
   "host.read_file": readHostFile,
   "host.read_file_chunk": readHostFileChunk,
-  "host.read_file_relative": readHostRelativeFile,
   "host.write_file": writeHostFile,
   "provider.list_models": (command, options) =>
     withResolvedBridgeLaunch(command, options, (args) =>
-      options.listModels(args),
+      options.listModels({
+        ...args,
+        contributedEnv: command.contributedEnv,
+        ...(command.selectedModel === undefined
+          ? {}
+          : { selectedModel: command.selectedModel }),
+      }),
     ),
+  "provider.list_commands": async (command, options) => {
+    const cwd =
+      command.cwd ?? path.join(options.dataDir, "provider-command-catalog");
+    if (command.cwd === null) {
+      await mkdir(cwd, { recursive: true });
+    }
+    return options.listCommands({
+      providerId: command.providerId,
+      bridgeLaunch: await resolveRuntimeBridgeLaunch(
+        command.bridgeLaunch,
+        options,
+      ),
+      cwd,
+    });
+  },
   "provider.health": (command, options) =>
     withResolvedBridgeLaunch(command, options, (args) =>
       options.providerHealth(args),
@@ -698,67 +709,6 @@ const onlineRpcHandlers: OnlineRpcHandlerMap = {
     });
   },
   "provider.installation.run": runProviderInstallationOnHost,
-  "workspace.status": (command, options) =>
-    readAvailableWorkspace(command, options, async (workspace) => ({
-      workspaceStatus: await workspace.getStatus({
-        mergeBaseBranch: command.mergeBaseBranch,
-        maxUntrackedLineStatFiles: command.maxUntrackedLineStatFiles,
-        maxUntrackedLineStatBytes: command.maxUntrackedLineStatBytes,
-      }),
-    })),
-  "workspace.diff": (command, options) =>
-    readAvailableWorkspace(command, options, async (workspace) => ({
-      diff: await workspace.getDiff({
-        target: command.target,
-        maxDiffBytes: command.maxDiffBytes,
-        maxFileListBytes: command.maxFileListBytes,
-        maxUntrackedFiles: command.maxUntrackedFiles,
-      }),
-    })),
-  "workspace.diffFiles": (command, options) =>
-    readAvailableWorkspace(command, options, (workspace) =>
-      workspace.diffFiles({
-        target: command.target,
-        maxFiles: command.maxFiles,
-      }),
-    ),
-  // bb-fork(thread-start-ref): list the newest commits of the checked-out branch.
-  "workspace.commits": (command, options) =>
-    readAvailableWorkspace(command, options, async (workspace) => ({
-      commits: await workspace.listCommits({ maxCount: command.maxCount }),
-    })),
-  "workspace.diffPatch": (command, options) =>
-    readAvailableWorkspace(command, options, async (workspace) => ({
-      patches: await workspace.diffPatch({
-        target: command.target,
-        paths: command.paths,
-        maxBytesPerFile: command.maxBytesPerFile,
-      }),
-    })),
-  "workspace.pull_request": async (command, options) => {
-    const resolution = await resolveWorkspaceForCommand({
-      environmentId: command.environmentId,
-      requireGit: true,
-      runtimeManager: options.runtimeManager,
-      workspaceContext: command.workspaceContext,
-    });
-    if (!resolution.ok) {
-      return resolution.failure.code === "not_git_repo"
-        ? { outcome: "absent" }
-        : { outcome: "unavailable", message: resolution.failure.message };
-    }
-    const lookup = await resolution.entry.workspace.getPullRequest(
-      userExecutableProcessOptions(options.runtimeManager.getShellEnv()),
-    );
-    switch (lookup.outcome) {
-      case "found":
-        return { outcome: "available", pullRequest: lookup.pullRequest };
-      case "none":
-        return { outcome: "absent" };
-      case "unavailable":
-        return { outcome: "unavailable", message: lookup.message };
-    }
-  },
   "server_move.inspect": (command, options) =>
     requireServerMove(options).inspect(command),
   "server_move.probe": (command, options) =>
@@ -780,7 +730,9 @@ export async function dispatchCommand<
   options: CommandDispatchOptions,
 ): Promise<HostDaemonCommandResult<TType>> {
   try {
-    return await commandHandlers[command.type](command, options);
+    return await withVcsProcessPriority("interactive", () =>
+      commandHandlers[command.type](command, options),
+    );
   } catch (error) {
     throwExpectedWorkspacePathNotFoundOrRethrow(error);
   }
@@ -791,9 +743,12 @@ export async function dispatchOnlineRpcCommand<
 >(
   command: Extract<HostDaemonOnlineRpcCommand, { type: TType }>,
   options: CommandDispatchOptions,
+  signal: AbortSignal,
 ): Promise<HostDaemonOnlineRpcResult<TType>> {
   try {
-    return await onlineRpcHandlers[command.type](command, options);
+    return await withVcsProcessPriority("interactive", () =>
+      onlineRpcHandlers[command.type](command, options, signal),
+    );
   } catch (error) {
     throwExpectedWorkspacePathNotFoundOrRethrow(error);
   }

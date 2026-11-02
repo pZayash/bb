@@ -1,7 +1,7 @@
 import {
   isAbsoluteFilePathWithinRoot,
   normalizeAbsoluteFilePath,
-} from "@/lib/absolute-file-path";
+} from "@bb/shared-ui/lib/absolute-file-path";
 import type { FileOpenerOverride } from "@/lib/plugin-slot-resolvers";
 import {
   createFilePreviewLineRange,

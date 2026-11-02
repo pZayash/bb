@@ -1,6 +1,6 @@
 // bb-fork(file-diff): rebuild a diff so both sides carry the whole file.
 import { parseDiffFromFile, type FileContents } from "@pierre/diffs";
-import type { ParsedGitDiffFile } from "@/components/git-diff/git-diff-parsing";
+import type { ParsedGitDiffFile } from "@bb/shared-ui/git-diff/parsing";
 import { truncateSourceCode } from "./source-code-budget";
 
 const FULL_FILE_CONTEXT_LINES = 1_000_000;

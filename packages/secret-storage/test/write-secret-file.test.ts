@@ -1,24 +1,8 @@
-import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
-import os from "node:os";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDir } from "@bb/test-helpers";
+import { describe, expect, it } from "vitest";
 import { deleteSecretFile, writeSecretFile } from "../src/index.js";
-
-const tempDirs: string[] = [];
-
-async function makeTempDir(): Promise<string> {
-  const tempDir = await mkdtemp(path.join(os.tmpdir(), "bb-write-secret-"));
-  tempDirs.push(tempDir);
-  return tempDir;
-}
-
-afterEach(async () => {
-  await Promise.all(
-    tempDirs
-      .splice(0)
-      .map((tempDir) => rm(tempDir, { force: true, recursive: true })),
-  );
-});
 
 describe("writeSecretFile", () => {
   // bb-fork(windows): `chmod 0600` is a no-op, so the mode assertion cannot hold.

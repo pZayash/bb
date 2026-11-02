@@ -150,7 +150,11 @@ it("checks both sides of plugin renames and falls back to full coverage for shar
   const root = mkdtempSync(join(tmpdir(), "bb-ci-selection-"));
   onTestFinished(() => rmSync(root, { recursive: true, force: true }));
   const git = (...args) =>
-    execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+    execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 30_000,
+    }).trim();
   const write = (path, value) => {
     mkdirSync(join(root, path, ".."), { recursive: true });
     writeFileSync(join(root, path), value);

@@ -60,6 +60,7 @@ export function threadListEntry(
     originKind: null,
     originPluginId: null,
     visibility: "visible",
+    parentNotifications: "auto",
     archivedAt: null,
     pinnedAt: null,
     deletedAt: null,
@@ -110,6 +111,7 @@ export function threadResponse(
     ...thread,
     activeBackgroundAgentCount: 0,
     canRestoreEnvironment: false,
+    canEditMessages: true,
     canSpawnChild: true,
     queuedMessageCount: 0,
   };
@@ -221,6 +223,7 @@ export function queuedMessage(args: {
     serviceTier: THREAD_DEFAULT_EXECUTION_OPTIONS.serviceTier,
     groupWithNext: false,
     sendAt: null,
+    state: "queued",
     waitingOn: null,
     failureReason: null,
     payload: { kind: "inline" },

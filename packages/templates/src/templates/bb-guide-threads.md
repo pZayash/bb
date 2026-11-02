@@ -1,13 +1,24 @@
 ---
 kind: instruction
 title: bb Guide — Threads
-summary: Command reference for thread spawning, inspecting, messaging, and lifecycle.
-intent: Provide complete thread command documentation for agents.
+summary: Command reference for spawning, handing off, forking, and editing threads.
+intent: Document how agents create threads and edit sent messages.
 editingNotes: Keep flags accurate against the CLI implementation. Run the json-flag-enforcement and command-output tests after changes.
 ---
 Thread commands
 
-Every command supports --json for machine-readable output.
+Every command supports --json for machine-readable output. Read-only commands
+take a thread ID or --self where supported; mutating lifecycle and messaging
+commands require an explicit ID or --self.
+
+Thread commands are split across four chapters:
+
+  threads            Spawning, handing off, forking, and editing sent messages
+  thread-inspection  Listing, sections, inspecting, waiting, opening in the app,
+                     and panel tabs
+  thread-messaging   Messages, plan mode, metadata and ownership, interactions,
+                     and queued messages
+  thread-lifecycle   Stop, compact, clear, retry, archive, and delete
 
 Spawning:
 
@@ -28,8 +39,10 @@ Spawning:
     --reasoning-level <level>      Reasoning level id the model lists: low, medium, high, xhigh, max, or a provider-specific id
     --environment <id-or-path>     Attach to an existing environment (ID or workspace path)
     --new-environment <kind>       Create a fresh personal workspace or managed worktree
-    --base-branch <branch>         Exact Git ref for a new managed worktree
-                                   (--new-environment worktree only)
+    --base-branch <branch>         Base branch or ref for a new managed worktree
+                                   (--new-environment worktree only; an
+                                   --environment-provider takes its branch
+                                   through --environment-inputs)
     --environment-provider <id>    Run on an environment provider by id (list them with
                                    `bb environment providers`). The provider
                                    provisions where the thread runs; its steps show in the
@@ -42,8 +55,9 @@ Spawning:
     --environment-inputs <json>    JSON value for an --environment-provider that declares
                                    inputs; `bb environment providers --json` prints each
                                    provider's inputs as JSON Schema (null when it takes
-                                   none). Required when the provider declares inputs,
-                                   refused when it does not
+                                   none). Omitted, it defaults to {} when the schema
+                                   accepts an empty object and is otherwise required;
+                                   refused when the provider declares no inputs
     --machine <id-or-name>         Run on a machine (--host is an alias)
     --service-tier <tier>          Service tier id the provider lists for the model, such as
                                    default or fast (see `bb provider models`)
@@ -53,8 +67,10 @@ Spawning:
     --permission-mode <mode>       Permission mode: accept-edits, auto, or full
     --plan                         Send the prompt as the provider's /plan action (plan first, execute after approval)
     --section <id>                 Create the thread in a section
-    --pinned                       Create the thread in Pinned
+    --pinned                       Create the thread in Pinned (combines with --section;
+                                   unpinning reveals it in that section)
     --visibility <visibility>      visible or hidden; a child inherits its parent by default
+    --parent-notifications <value> auto (default), stuck, or off; which outcomes wake the parent
     --send-at <when>               Dispatch the first message at an ISO 8601 timestamp or a duration from now (30s, 10m, 2h, 7d)
     --file <path>                  CLI-local absolute path, file: URL, or uploaded file path
     --image <path>                 CLI-local absolute path, file: URL, or uploaded image path
@@ -65,7 +81,7 @@ Spawning:
   Execution defaults resolve from explicit flags, live parent execution, and
   remembered project defaults. With no remembered model, bb uses the explicitly
   requested provider or Codex and resolves its provider-reported default model
-  on the target machine. The product reasoning and permission defaults are
+  on the target machine (or the first catalog model when none is marked). The product reasoning and permission defaults are
   medium and auto.
   accept-edits uses workspace sandboxing with user-reviewed escalation. auto uses
   the same workspace sandbox with provider-native automatic review. full is the
@@ -80,27 +96,42 @@ Spawning:
   a hidden thread stay hidden too. Pass --visibility to override the inherited
   value. A hidden child still reports its turns and blockers to its parent
   thread; only source-derived forks stay silent.
+  --parent-notifications chooses which child outcomes wake the parent. auto
+  reports every finished, failed, or interrupted turn and every blocker. stuck
+  skips completed turns and keeps failures, interruptions, and blockers on an
+  approval or question; the child sends its results with `bb thread tell`, so
+  say so in its prompt. off reports nothing. Under stuck and off, unassigning
+  the child does not notify the former parent either. `bb status` and
+  `bb thread show` print the value for a child thread.
   A machine selector accepts an exact ID or an unambiguous name. It works with
   an unmanaged --environment path, --new-environment worktree, or the personal
   workspace. It cannot be combined with an existing environment ID because that
   environment already selects its machine. Without the flag, local/server
   machine resolution is unchanged.
-  Omit --base-branch for bb's default. Explicit values are exact; use
-  origin/<branch> for a remote ref.
+  Omit --base-branch for bb's default. Default and named branches use the
+  remote when local is equal or behind, preserving local commits when ahead
+  or diverged. Explicit refs are honored exactly. Remote refs such as
+  origin/<branch> are fetched before creation. When bb picked the remote and
+  the fetch fails (for example offline or unauthenticated), the worktree
+  starts from the last fetched copy and provisioning reports it; an explicit
+  origin/<branch> fails instead. refs/remotes/origin/<branch> uses the last
+  fetched copy without fetching.
+  With no environment flag, a new thread gets a fresh worktree of the
+  project's default branch (the project checkout when the project has no
+  branch) on the primary host, or on the persistent machine that holds the
+  project's source when the primary host has none. A child of a live thread
+  in the same project gets a worktree on its parent's machine; a child of an
+  unmanaged non-Git folder reuses its parent's environment.
   Before selecting a provider, run `bb environment providers --project <id>
   --machine <id-or-name>` to see whether it is available, needs setup, or is
   unavailable and why. The first-party providers are Project checkout,
   Worktree, and Personal workspace.
 
 Handoff:
-  In the follow-up model picker, Handoff to new thread starts a new-thread
-  draft with a reference to the source thread. Choose any model, including
-  one from the current provider. Exit handoff restores the original execution
-  settings and keeps draft edits, removing the automatic source reference.
-  Closing the picker keeps handoff active; the composer also has Exit handoff.
-  CLI callers can use bb thread spawn with --provider, --model, --environment
-  and --prompt 'Continue from @thread:THREAD_ID ...'. SDK callers use
-  threads.spawn with the corresponding execution, environment and input fields.
+  The app's Handoff to new thread (in the follow-up model picker) starts a new
+  thread that references the source. From the CLI, run bb thread spawn with
+  --provider, --model, --environment and --prompt 'Continue from
+  @thread:THREAD_ID ...'; SDK callers pass the same fields to threads.spawn.
 
 Forking:
 
@@ -112,7 +143,7 @@ Forking:
     --source-seq-end <seq>         Fork after the source turn containing this event sequence (tip by default)
     --environment <id-or-path>     Existing environment ID or unmanaged workspace path
     --new-environment <kind>       Create a fresh personal workspace or managed worktree
-    --base-branch <branch>         Exact Git ref for a new worktree; omit for the project default
+    --base-branch <branch>         Base branch or ref for a new worktree; omit for the project default
     --title <title>                Thread title (idle forks default to "(1) <source title>")
     --permission-mode <mode>       Inherit source by default; accepts accept-edits, auto, full
     --visibility <visibility>      visible (default) or hidden
@@ -139,14 +170,21 @@ Forking:
 Editing a sent message:
 
   bb thread edit-message <id> --message "Replacement text"
+    --message-file <path>               Read the replacement from a file; `-` reads stdin
     --self                              Target the current thread (BB_THREAD_ID)
     --expected-request-sequence <seq>   Select the message and reject a stale target
 
   Without --expected-request-sequence, the latest eligible message is edited.
-  Codex, Claude Code, and Pi threads are supported. The original conversation
-  remains unchanged until the provider prepares the replacement history.
-  Failed and incomplete turns are eligible. If the thread is running,
-  submission stops the current turn and waits for it to settle. It then
+  Codex, Claude Code, and Pi threads are supported, including failed and
+  incomplete turns; grouped multi-message requests are not editable.
+  `canEditMessages` on `bb thread show --json` reports whether the thread's
+  provider and archive state allow edits. The
+  original conversation remains unchanged until the provider prepares the
+  replacement history. If the thread is running,
+  submission stops the current turn and waits for it to settle. Provider-owned
+  background commands, agents, and workflows are stopped before replacing the
+  session, and retained task cards keep their terminal status. Durable runs
+  managed by the Workflows plugin continue independently. It then
   replaces the selected turn and every later turn while retaining workspace
   changes. Unsent queued messages remain in the queue and dispatch after the
   replacement turn when their waits clear. An already-sending queued message
@@ -505,16 +543,10 @@ A later aggregate-only measurement replaces any older breakdown. Other providers
 continue to expose their available totals.
 
 Lifecycle ownership:
-  spawn and fork accept --lifecycle-owner-thread <id>. SDK arguments use
-  lifecycleOwnerThreadId, also returned in thread responses (null if independent).
-  The owner must be live; projects, hosts and environments may differ.
-  Ownership is immutable. Archive recursively archives/stops dependents; delete
-  recursively deletes them after runtime/storage cleanup. Failed cleanup retries
-  durably. Unarchive the owner before explicitly restoring a dependent. Stop does
-  not cascade. Sidebar parents and ordinary forks retain their existing policies.
-
-Thread storage deletion and orphan cleanup stop processes whose working
-directories are inside that storage before removing files, including dev
-servers in nested checkouts. On macOS and Linux this uses the same SIGTERM
-grace period and SIGKILL fallback as worktree removal. Windows does not
-enumerate process working directories.
+  spawn and fork accept --lifecycle-owner-thread <id> (SDK
+  lifecycleOwnerThreadId, also returned in thread responses, null if
+  independent). The owner must be live; projects, hosts and environments may
+  differ. Ownership is immutable. Archiving the owner archives and stops its
+  dependents; deleting it deletes them. Unarchive the owner before explicitly
+  restoring a dependent. Stop does not cascade. Sidebar parents and ordinary
+  forks keep their own policies.

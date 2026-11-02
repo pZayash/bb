@@ -12,7 +12,7 @@ import {
   printBorderlessTable,
   truncateCell,
 } from "../../table.js";
-import { outputJson } from "../helpers.js";
+import { collectOption, outputJson } from "../helpers.js";
 import {
   resolveMachineHostId,
   resolveMachineTargetOption,
@@ -24,6 +24,7 @@ interface ThreadListCommandOptions {
   host?: string;
   project?: string;
   parentThread?: string;
+  thread: string[];
   archived?: boolean;
   section?: string;
   unsectioned?: boolean;
@@ -46,6 +47,12 @@ export function registerListCommand(
     )
     .option("--host <id-or-name>", "Alias for --machine")
     .option("--parent-thread <id>", "Filter by parent thread ID")
+    .option(
+      "--thread <id>",
+      "Show only this thread ID, leaving out unknown or deleted IDs (repeatable, up to 200)",
+      collectOption,
+      [],
+    )
     .option("--section <id>", "Filter by thread section ID")
     .option("--unsectioned", "Show only threads outside sections")
     .option("--archived", "Show only archived threads")
@@ -62,6 +69,10 @@ export function registerListCommand(
           flagName: "--parent-thread",
           value: opts.parentThread,
         });
+        const threadIds = opts.thread.flatMap(
+          (value) =>
+            resolveExplicitIdFlag({ flagName: "--thread", value }) ?? [],
+        );
         const environmentId = resolveExplicitIdFlag({
           flagName: "--environment",
           value: opts.environment,
@@ -91,6 +102,7 @@ export function registerListCommand(
           ...(environmentId ? { environmentId } : {}),
           ...(hostId ? { hostId } : {}),
           ...(parentThreadId ? { parentThreadId } : {}),
+          ...(threadIds.length > 0 ? { threadIds } : {}),
           ...(opts.archived ? { archived: true } : {}),
           ...(sectionId ? { sectionId } : {}),
           ...(opts.unsectioned ? { unsectioned: true } : {}),

@@ -23,6 +23,7 @@ import type {
   PermissionMode,
   ReasoningLevel,
   ResolvedCreateAutomationInput,
+  ScriptExecutionUpdate,
   UpdateAutomationInput,
 } from "./rpc-types.js";
 import {
@@ -193,7 +194,7 @@ const SCRIPT_OPTIONS = {
     type: "enum",
     values: automationScriptInterpreterSchema.options,
     description:
-      "Interpreter for the script; inferred from a --script-file extension when omitted",
+      "Interpreter for the script; a new script infers it from the --script-file extension when omitted, and an update keeps the current one",
   },
   timeout: {
     type: "duration",
@@ -721,19 +722,18 @@ async function buildExecution(
   };
 }
 
-const COMPLETE_EXECUTION_OPTION_NAMES = [
+const SCRIPT_UPDATE_OPTION_NAMES = [
   "script",
   "script-file",
+  "host",
   "interpreter",
   "timeout",
   "env-json",
+  "working-directory",
 ] as const;
 
-async function buildAgentExecutionUpdate(
-  bb: Pick<BbPluginApi, "sdk">,
-  options: AgentOptionValues,
-): Promise<AgentExecutionUpdate | undefined> {
-  const agentOptionNames = [
+function hasAgentOptions(options: AgentOptionValues): boolean {
+  return [
     options.prompt,
     options.provider,
     options.model,
@@ -745,8 +745,51 @@ async function buildAgentExecutionUpdate(
     options.environment,
     options["new-environment"],
     options["base-branch"],
-  ];
-  if (!agentOptionNames.some((value) => value !== undefined)) return undefined;
+  ].some((value) => value !== undefined);
+}
+
+async function buildScriptExecutionUpdate(
+  bb: Pick<BbPluginApi, "sdk">,
+  options: ScriptOptionValues,
+  ctx: Pick<PluginCliContext, "cwd" | "threadId">,
+): Promise<{ update: ScriptExecutionUpdate; scriptSource?: ScriptFileSource }> {
+  if (options.script !== undefined && options["script-file"] !== undefined) {
+    throw cliError(
+      "Provide exactly one of --script or --script-file.",
+      "unexpected_argument",
+    );
+  }
+  const env = parseScriptEnv(options["env-json"]);
+  const workingDirectoryOption = options["working-directory"];
+  const scriptSource = await loadScriptFileSource(bb, options, ctx);
+  const update: ScriptExecutionUpdate = {};
+  if (scriptSource !== undefined) {
+    update.script = scriptSource.content;
+    update.scriptFile = scriptSource.path;
+  } else if (options.script !== undefined) {
+    update.script = options.script;
+  }
+  if (update.script === "") {
+    throw cliError("Missing script content.", "invalid_value");
+  }
+  if (options.interpreter !== undefined) {
+    update.interpreter = options.interpreter;
+  }
+  if (options.timeout !== undefined) update.timeoutMs = options.timeout;
+  if (env !== undefined) update.env = env;
+  if (workingDirectoryOption !== undefined) {
+    update.workingDirectory = parseScriptWorkingDirectory(
+      workingDirectoryOption,
+    );
+  }
+  return { update, ...(scriptSource ? { scriptSource } : {}) };
+}
+
+async function buildAgentExecutionUpdate(
+  bb: Pick<BbPluginApi, "sdk">,
+  options: AgentOptionValues,
+): Promise<AgentExecutionUpdate | undefined> {
+  if (!hasAgentOptions(options)) return undefined;
 
   validateAgentTargetOptions(options);
   const update: AgentExecutionUpdate = {};
@@ -790,6 +833,7 @@ async function buildAgentExecutionUpdate(
 
 async function buildUpdateRequest(
   bb: Pick<BbPluginApi, "sdk">,
+  service: Pick<AutomationService, "get">,
   options: UpdateOptionValues,
   automationId: string,
   ctx: Pick<PluginCliContext, "cwd" | "projectId" | "threadId">,
@@ -813,34 +857,34 @@ async function buildUpdateRequest(
     options.prompt !== undefined &&
     options.provider !== undefined &&
     options.model !== undefined;
-  if (
-    replacesAgentExecution ||
-    COMPLETE_EXECUTION_OPTION_NAMES.some((name) => options[name] !== undefined)
-  ) {
+  const hasScriptOptions = SCRIPT_UPDATE_OPTION_NAMES.some(
+    (name) => options[name] !== undefined,
+  );
+  if (replacesAgentExecution) {
     const built = await buildExecution(bb, options, ctx);
     request.execution = built.execution;
-    scriptSource = built.scriptSource;
+  } else if (hasScriptOptions) {
+    if (hasAgentOptions(options)) {
+      throw cliError(
+        "Cannot combine agent execution flags with script flags.",
+        "unexpected_argument",
+      );
+    }
+    const current = await service.get({ projectId, automationId });
+    if ("execution" in current && current.execution.mode === "agent") {
+      const built = await buildExecution(bb, options, ctx);
+      request.execution = built.execution;
+      scriptSource = built.scriptSource;
+    } else {
+      const built = await buildScriptExecutionUpdate(bb, options, ctx);
+      request.script = built.update;
+      scriptSource = built.scriptSource;
+    }
   } else {
     const agentUpdate = await buildAgentExecutionUpdate(bb, options);
     if (agentUpdate !== undefined) {
       request.agent = agentUpdate;
     }
-  }
-  const workingDirectoryOption = options["working-directory"];
-  if (request.agent !== undefined && workingDirectoryOption !== undefined) {
-    throw cliError(
-      "Cannot combine agent execution flags with --working-directory.",
-      "unexpected_argument",
-    );
-  }
-  if (
-    request.execution === undefined &&
-    request.agent === undefined &&
-    workingDirectoryOption !== undefined
-  ) {
-    request.script = {
-      workingDirectory: parseScriptWorkingDirectory(workingDirectoryOption),
-    };
   }
   if (
     request.name === undefined &&
@@ -924,7 +968,6 @@ function refreshScriptFileCommand(
   automation: AutomationDetailResponse,
   source: ScriptFileSource,
 ): string {
-  if (automation.execution.mode !== "script") return "";
   const argv = [
     "bb",
     "automation",
@@ -1070,13 +1113,40 @@ export function registerAutomationCli(args: {
       }),
       commands: {
         list: cliCommand({
-          summary: "List automations for a project",
-          options: { project: PROJECT_OPTION, json: JSON_OPTION },
+          summary: "List automations for a project or a target thread",
+          options: {
+            project: {
+              type: "string",
+              placeholder: "id",
+              description:
+                "Project whose automations to list; required unless --target-thread is given",
+            },
+            "target-thread": {
+              type: "string",
+              placeholder: "thread-id",
+              description:
+                "List automations in any project that re-prompt this thread",
+            },
+            json: JSON_OPTION,
+          },
+          constraints: [
+            { kind: "at-most-one", options: ["project", "target-thread"] },
+          ],
           run: (input, ctx) =>
             attempt(async () => {
-              const result = service.list({
-                projectId: requireProjectId(input.options.project, ctx),
-              });
+              const targetThreadId = input.options["target-thread"];
+              const result = service.list(
+                targetThreadId === undefined
+                  ? {
+                      projectId: requireProjectId(input.options.project, ctx),
+                    }
+                  : {
+                      targetThreadId: requireOptionValue(
+                        "target-thread",
+                        targetThreadId,
+                      ),
+                    },
+              );
               return {
                 exitCode: 0,
                 stdout: input.options.json
@@ -1162,7 +1232,7 @@ export function registerAutomationCli(args: {
         update: cliCommand({
           summary: "Update automation configuration",
           description:
-            "Replace the execution with a complete agent (--prompt --provider --model) or script (--script/--script-file), or patch an existing agent with any subset of its flags.",
+            "Patch an existing agent or script with any subset of its flags; omitted settings keep their values. --prompt --provider --model together replace the execution with a new agent, and script flags on an agent automation replace it with a script (--script/--script-file required).",
           positionals: [AUTOMATION_ID_POSITIONAL],
           options: {
             project: PROJECT_OPTION,
@@ -1185,6 +1255,7 @@ export function registerAutomationCli(args: {
             attempt(async () => {
               const { request, scriptSource } = await buildUpdateRequest(
                 bb,
+                service,
                 input.options,
                 input.positionals.automationId,
                 ctx,

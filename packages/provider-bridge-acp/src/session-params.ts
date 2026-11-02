@@ -41,6 +41,7 @@ export interface AcpAgentCommandParam {
 export interface AcpModelListParams {
   listCommand?: AcpAgentCommandParam;
   agent?: AcpAgentCommandParam;
+  optionsAgent?: AcpAgentCommandParam;
   primaryModels: string[];
   reasoningProbePriorityModelIds: string[];
   parameterizedModelPicker: boolean;
@@ -154,18 +155,21 @@ function buildAcpModelListCommand(
   };
 }
 
-function buildAcpModelDiscoveryAgentCommand(
-  launchSpec: AcpLaunchSpec,
-): AcpAgentCommandParam | undefined {
-  if (buildAcpModelListCommand(launchSpec) !== undefined) {
-    return undefined;
-  }
+function buildAcpAgentCommand(launchSpec: AcpLaunchSpec): AcpAgentCommandParam {
   return {
     command: launchSpec.command,
     args: [...launchSpec.args],
     ...(launchSpec.cwd !== undefined ? { cwd: launchSpec.cwd } : {}),
     ...launchEnvVars(launchSpec),
   };
+}
+
+function buildAcpModelDiscoveryAgentCommand(
+  launchSpec: AcpLaunchSpec,
+): AcpAgentCommandParam | undefined {
+  return buildAcpModelListCommand(launchSpec) !== undefined
+    ? undefined
+    : buildAcpAgentCommand(launchSpec);
 }
 
 interface AcpModelListOptions {
@@ -196,6 +200,7 @@ export function buildAcpModelListParams(
   return {
     ...(listCommand !== undefined ? { listCommand } : {}),
     ...(agent !== undefined ? { agent } : {}),
+    optionsAgent: buildAcpAgentCommand(launchSpec),
     primaryModels,
     reasoningProbePriorityModelIds,
     parameterizedModelPicker: options.parameterizedModelPicker,

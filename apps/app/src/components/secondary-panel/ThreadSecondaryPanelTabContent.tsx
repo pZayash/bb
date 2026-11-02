@@ -1,15 +1,7 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
-import type { DiffPresentation } from "@/components/code/code-rendering";
-import type { WorkspaceDiffTarget } from "@bb/domain";
 import type { MarkdownLinkRouting } from "@/components/ui/markdown-link-routing.js";
-import { Skeleton } from "@bb/shared-ui/skeleton";
-import { DiffLoadingSkeleton } from "@/components/code/code-loading-skeletons";
-import { BbDiffSplit } from "@/components/code/BbDiffSplit";
-import { useRequestPierreWorkerPool } from "@/lib/pierre-worker-pool-gate";
-import { EmptyStatePanel } from "@bb/shared-ui/empty-state";
 import {
-  useEnvironmentDiffFiles,
   useEnvironment,
   useEnvironmentFilePreview,
 } from "@/hooks/queries/environment-queries";
@@ -20,7 +12,7 @@ import {
 import {
   useThreadHostFilePreview,
   useThreadStorageFilePreview,
-} from "@/hooks/queries/thread-queries";
+} from "@/hooks/queries/thread-panel-queries";
 import { useHostFilePreview } from "@/hooks/queries/host-file-preview-query";
 import {
   buildEnvironmentFileContentUrl,
@@ -28,49 +20,19 @@ import {
   buildThreadHostFileContentUrl,
   buildThreadStorageRawContentUrl,
 } from "@/lib/file-content-urls";
-import type {
-  EnvironmentFilePreviewSource,
-  FilePreview,
-  FilePreviewDiffIntent,
-  FilePreviewLineRange,
-  WorkspaceFilePreviewStatusLabel,
+import {
+  getEnvironmentFilePreviewSourceRef,
+  type EnvironmentFilePreviewSource,
+  type FilePreview,
+  type FilePreviewLineRange,
 } from "@bb/client-core";
-import { cn } from "@bb/shared-ui/lib/utils";
-import { PANEL_SCROLL_SLOT_CLASS } from "./panelChromeClasses";
-import { DiffFilesPanel } from "./git-diff/DiffFilesPanel";
-import { clearDiffFileCardStates } from "./git-diff/diffFilesStore";
-import { buildGitDiffIdentity } from "./git-diff/gitDiffPanelHelpers";
-import { useDiffFileContentsRequester } from "./git-diff/useDiffFileContentsRequester";
 import { SecondaryPanelFilePreview } from "./ThreadStorageFilePreview";
-import type { FilePreviewDiffSlot } from "./FilePreview";
-// bb-fork(file-diff): diff mode for workspace file tabs.
-import { FileDiffToggle } from "./file-diff/FileDiffToggle.fork";
-import { FileDiffView } from "./file-diff/FileDiffView.fork";
-import { useFileDiff } from "./file-diff/useFileDiff.fork";
-// bb-fork(file-diff-view): remember an open diff per workspace file.
-import { useFileDiffTabView } from "@/lib/file-diff-tab-view.fork";
-import type { GitDiffDisplayMode } from "./GitDiffToolbar";
 import {
   buildMarkdownFileImageRouting,
   buildMarkdownHostFileImageRouting,
 } from "@/components/ui/markdown-file-image-routing";
-import { getAbsoluteDirname } from "@/lib/absolute-file-path";
+import { getAbsoluteDirname } from "@bb/shared-ui/lib/absolute-file-path";
 
-const GIT_DIFF_SKELETON_FILE_COUNT = 3;
-
-interface GitDiffTabContentProps {
-  environmentId?: string;
-  target: WorkspaceDiffTarget | undefined;
-  isPanelOpen: boolean;
-  gitDiffPresentation: DiffPresentation;
-  fileFilter: string;
-  onClearPendingGitDiffIntent?: () => void;
-  onOpenFileInEditor?: (path: string) => void;
-  onOpenFilePreview?: (path: string) => void;
-  onSelectionAddToChat?: (text: string) => void;
-  pendingGitDiffScrollPath?: string | null;
-  workspaceRootPath?: string | null;
-}
 
 interface WorkspaceFilePreviewTabContentProps {
   activePath: string;
@@ -78,13 +40,10 @@ interface WorkspaceFilePreviewTabContentProps {
   copyPath?: string | null;
   environmentId?: string | null;
   lineRange: FilePreviewLineRange | null;
-  // bb-fork(file-diff-open): set when the open request asked for the diff view.
-  diffIntent?: FilePreviewDiffIntent | null;
   markdownLinkRouting?: MarkdownLinkRouting;
   onSelectionAddToChat?: (text: string) => void;
   onOpenInEditor?: (path: string) => void;
   source: EnvironmentFilePreviewSource | null;
-  statusLabel: WorkspaceFilePreviewStatusLabel | null;
   threadId?: string | null;
 }
 
@@ -152,193 +111,9 @@ function filePreviewQueryProps(query: UseQueryResult<FilePreview>) {
   };
 }
 
-function GitDiffMessageSlot({ children }: { children: ReactNode }) {
-  return (
-    <div className={cn(PANEL_SCROLL_SLOT_CLASS, "px-4 pb-3")}>{children}</div>
-  );
-}
-
-export function GitDiffLoadingSkeleton() {
-  return (
-    <GitDiffMessageSlot>
-      <div className="space-y-2 pt-2" role="status" aria-label="Loading diff">
-      {Array.from({ length: GIT_DIFF_SKELETON_FILE_COUNT }).map((_, index) => (
-        <div
-          key={`git-diff-skeleton-${index}`}
-          className="overflow-clip rounded-lg border border-border bg-background"
-        >
-          <div className="flex h-8 items-center justify-between gap-2 py-1.5 pl-2 pr-3">
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <Skeleton className="size-4 shrink-0 rounded-sm" />
-              <Skeleton className="h-3 w-48 max-w-full rounded-sm" />
-            </div>
-            <Skeleton className="h-3 w-14 shrink-0 rounded-sm" />
-          </div>
-          <DiffLoadingSkeleton />
-        </div>
-      ))}
-      </div>
-    </GitDiffMessageSlot>
-  );
-}
-
-export function GitDiffTabContent({
-  environmentId,
-  target,
-  isPanelOpen,
-  gitDiffPresentation,
-  fileFilter,
-  onClearPendingGitDiffIntent,
-  onOpenFileInEditor,
-  onOpenFilePreview,
-  onSelectionAddToChat,
-  pendingGitDiffScrollPath,
-  workspaceRootPath,
-}: GitDiffTabContentProps) {
-  const isQueryEnabled =
-    isPanelOpen && Boolean(environmentId) && target !== undefined;
-  const {
-    data: diffFilesResponse,
-    dataUpdatedAt: diffFilesUpdatedAt,
-    isLoading: isDiffFilesLoading,
-    isPlaceholderData: isDiffFilesPlaceholder,
-    error: diffFilesError,
-  } = useEnvironmentDiffFiles(environmentId ?? "", {
-    enabled: isQueryEnabled,
-    target,
-  });
-
-  const mergeBaseRef =
-    diffFilesResponse?.outcome === "available"
-      ? diffFilesResponse.mergeBaseRef
-      : null;
-  const diffIdentity = buildGitDiffIdentity({
-    environmentId,
-    mergeBaseRef,
-    target,
-  });
-  const onRequestFileContents = useDiffFileContentsRequester({
-    environmentId,
-    target,
-    mergeBaseRef,
-  });
-
-  useEffect(() => {
-    clearDiffFileCardStates(diffIdentity);
-  }, [diffIdentity]);
-  const requestDiffWorkers = useRequestPierreWorkerPool();
-  useEffect(() => {
-    if (!isPanelOpen) return;
-    void BbDiffSplit.preload();
-    requestDiffWorkers();
-  }, [isPanelOpen, requestDiffWorkers]);
-
-  const isPreparing =
-    isQueryEnabled &&
-    (isDiffFilesLoading ||
-      (diffFilesResponse === undefined && diffFilesError === null));
-
-  if (isPreparing) {
-    return <GitDiffLoadingSkeleton />;
-  }
-
-  if (diffFilesError && diffFilesResponse === undefined) {
-    return (
-      <GitDiffMessageSlot>
-        <div className="rounded-lg border border-surface-destructive-border bg-surface-destructive px-3 py-2 text-xs text-destructive">
-          <p>
-            {diffFilesError instanceof Error
-              ? diffFilesError.message
-              : "Failed to load git diff"}
-          </p>
-        </div>
-      </GitDiffMessageSlot>
-    );
-  }
-
-  if (diffFilesResponse === undefined) {
-    return (
-      <GitDiffMessageSlot>
-        <EmptyStatePanel className="rounded-lg">
-          No diff to display.
-        </EmptyStatePanel>
-      </GitDiffMessageSlot>
-    );
-  }
-
-  if (diffFilesResponse.outcome === "unavailable") {
-    return (
-      <GitDiffMessageSlot>
-        <div className="rounded-lg border border-border bg-surface-raised px-3 py-2 text-xs text-muted-foreground">
-          <p className="font-medium text-foreground">Workspace unavailable</p>
-          <p className="mt-1 leading-5">{diffFilesResponse.failure.message}</p>
-        </div>
-      </GitDiffMessageSlot>
-    );
-  }
-
-  if (diffFilesResponse.outcome === "not_applicable") {
-    return (
-      <GitDiffMessageSlot>
-        <div className="rounded-lg border border-border bg-surface-raised px-3 py-2 text-xs text-muted-foreground">
-          <p className="mt-1 leading-5">{diffFilesResponse.message}</p>
-        </div>
-      </GitDiffMessageSlot>
-    );
-  }
-
-  if (
-    diffFilesResponse.files.length === 0 ||
-    !environmentId ||
-    target === undefined
-  ) {
-    return (
-      <GitDiffMessageSlot>
-        <EmptyStatePanel className="rounded-lg">
-          No diff to display.
-        </EmptyStatePanel>
-      </GitDiffMessageSlot>
-    );
-  }
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {diffFilesResponse.truncated ? (
-        <div
-          role="status"
-          className="mx-4 mb-2 rounded-lg border border-border bg-surface-raised px-3 py-2 text-xs text-muted-foreground"
-        >
-          Showing the first {diffFilesResponse.files.length} changed files.
-          Additional changes are omitted.
-        </div>
-      ) : null}
-      <DiffFilesPanel
-        environmentId={environmentId}
-        target={target}
-        diffIdentity={diffIdentity}
-        files={diffFilesResponse.files}
-        fileFilter={fileFilter}
-        initialPatches={diffFilesResponse.initialPatches}
-        filesUpdatedAt={diffFilesUpdatedAt}
-        presentation={gitDiffPresentation}
-        filePathRoot={workspaceRootPath}
-        isPanelOpen={isPanelOpen}
-        isPlaceholderData={isDiffFilesPlaceholder}
-        scrollToPath={pendingGitDiffScrollPath}
-        onScrolledToPath={onClearPendingGitDiffIntent}
-        onOpenFileInEditor={onOpenFileInEditor}
-        onOpenFilePreview={onOpenFilePreview}
-        onRequestFileContents={onRequestFileContents}
-        onSelectionAddToChat={onSelectionAddToChat}
-      />
-    </div>
-  );
-}
-
 export function WorkspaceFilePreviewTabContent({
   activePath,
   copyPath = null,
-  diffIntent = null,
   environmentId,
   isPanelOpen,
   lineRange,
@@ -346,53 +121,8 @@ export function WorkspaceFilePreviewTabContent({
   onSelectionAddToChat,
   onOpenInEditor,
   source,
-  statusLabel,
   threadId,
 }: WorkspaceFilePreviewTabContentProps) {
-  // bb-fork(file-diff): per-tab diff mode for Git-backed workspace files.
-  // bb-fork(file-diff-view): an open diff survives the panel remounting.
-  const { setStoredView, storedView } = useFileDiffTabView({
-    environmentId,
-    path: activePath,
-  });
-  const [isDiffActiveOverride, setIsDiffActiveOverride] = useState<
-    boolean | null
-  >(null);
-  const isDiffActive =
-    isDiffActiveOverride ??
-    (diffIntent != null || storedView?.isActive === true);
-  // bb-fork(file-diff-open): the requested view wins until the user picks one.
-  const [requestedViewModeOverride, setRequestedViewModeOverride] = useState<
-    GitDiffDisplayMode | null | undefined
-  >(undefined);
-  const requestedViewMode =
-    requestedViewModeOverride === undefined
-      ? (diffIntent?.view ?? storedView?.view ?? null)
-      : requestedViewModeOverride;
-  const diffRequestId = diffIntent?.requestId ?? null;
-  const diffBase = diffIntent?.base ?? storedView?.base;
-  const diffView = diffIntent?.view ?? storedView?.view;
-  useEffect(() => {
-    setIsDiffActiveOverride(null);
-    setRequestedViewModeOverride(undefined);
-    if (diffRequestId !== null) {
-      setStoredView({
-        ...(diffIntent?.base === undefined ? {} : { base: diffIntent.base }),
-        isActive: true,
-        ...(diffIntent?.view === undefined ? {} : { view: diffIntent.view }),
-      });
-    }
-    // oxlint-disable-next-line react/exhaustive-deps
-  }, [activePath, diffRequestId]);
-  const fileDiffController = useFileDiff({
-    enabled: isDiffActive,
-    environmentId,
-    intentKey: diffRequestId,
-    path: activePath,
-    sinceThreadStartIntent: diffBase === "thread_start",
-  });
-  const canShowFileDiff =
-    fileDiffController.availability.status !== "unavailable";
   const environmentQuery = useEnvironment(environmentId ?? null, {
     enabled:
       environmentId !== null &&
@@ -428,45 +158,11 @@ export function WorkspaceFilePreviewTabContent({
     threadId,
   ]);
 
-  // bb-fork(file-diff): only text files have a diff worth showing.
-  const fileDiff: FilePreviewDiffSlot | null =
-    canShowFileDiff && workspaceFilePreviewQuery.data?.kind === "text"
-      ? {
-          content: isDiffActive ? (
-            <FileDiffView
-              controller={fileDiffController}
-              onRequestedViewModeUsed={() =>
-                setRequestedViewModeOverride(null)
-              }
-              onSelectionAddToChat={onSelectionAddToChat}
-              requestedViewMode={requestedViewMode}
-            />
-          ) : null,
-          isActive: isDiffActive,
-          toggle: (
-            <FileDiffToggle
-              isActive={isDiffActive}
-              onToggle={() => {
-                const nextIsActive = !isDiffActive;
-                setRequestedViewModeOverride(null);
-                setIsDiffActiveOverride(nextIsActive);
-                setStoredView({
-                  ...(diffBase === undefined ? {} : { base: diffBase }),
-                  isActive: nextIsActive,
-                  ...(diffView === undefined ? {} : { view: diffView }),
-                });
-              }}
-            />
-          ),
-        }
-      : null;
-
   return (
     <SecondaryPanelFilePreview
       {...filePreviewQueryProps(workspaceFilePreviewQuery)}
       activePath={activePath}
       copyPath={copyPath}
-      fileDiff={fileDiff}
       htmlPreviewUrl={
         environmentId && source?.kind === "working-tree"
           ? buildEnvironmentFileContentUrl(environmentId, source, activePath)
@@ -476,7 +172,9 @@ export function WorkspaceFilePreviewTabContent({
       markdownLinkRouting={resolvedMarkdownLinkRouting}
       onSelectionAddToChat={onSelectionAddToChat}
       onOpenInEditor={onOpenInEditor}
-      statusLabel={statusLabel}
+      statusLabel={
+        source === null ? null : getEnvironmentFilePreviewSourceRef(source)
+      }
     />
   );
 }
@@ -519,17 +217,16 @@ export function ProjectFilePreviewTabContent({
     rootPath,
     threadId,
   ]);
-  const htmlPreviewUrl = buildProjectFileContentUrl(projectId, activePath, {
-    environmentId,
-    hostId,
-  });
 
   return (
     <SecondaryPanelFilePreview
       {...filePreviewQueryProps(projectFilePreviewQuery)}
       activePath={activePath}
       copyPath={copyPath}
-      htmlPreviewUrl={htmlPreviewUrl}
+      htmlPreviewUrl={buildProjectFileContentUrl(projectId, activePath, {
+        environmentId,
+        hostId,
+      })}
       lineRange={lineRange}
       markdownLinkRouting={resolvedMarkdownLinkRouting}
       onSelectionAddToChat={onSelectionAddToChat}

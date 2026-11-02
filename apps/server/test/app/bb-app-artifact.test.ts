@@ -1,44 +1,27 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveBundledNpmCli } from "@bb/plugin-build";
 import {
   createBbAppArtifactService,
+  defaultCommandRunner,
   resolveBbAppPackage,
   type BbAppArtifactCommandRunner,
 } from "../../src/services/install/bb-app-artifact.js";
 
 const execFileAsync = promisify(execFile);
-
-// bb-fork(windows): GNU tar reads `C:` in a path as a remote host without
-// `--force-local`.
-function tar(
-  args: readonly string[],
-  options?: { cwd?: string },
-): Promise<{ stdout: string }> {
-  return execFileAsync(
-    "tar",
-    process.platform === "win32" ? ["--force-local", ...args] : [...args],
-    options,
-  ).then((result) => ({ stdout: String(result.stdout) }));
-}
-
-// bb-fork(windows): run the bundled npm CLI through Node; bare `npm` is a `.cmd`.
-async function runArtifactCommand(
-  command: string,
-  args: readonly string[],
-  cwd: string,
-): Promise<string> {
-  const [binary, commandArgs] =
-    command === "npm" && process.platform === "win32"
-      ? [process.execPath, [resolveBundledNpmCli(), ...args]]
-      : [command, [...args]];
-  return (await execFileAsync(binary, commandArgs, { cwd })).stdout;
-}
 const roots: string[] = [];
 const ARTIFACT_LIFECYCLE_TIMEOUT_MS = 15_000;
 const MODES = ["repo-src", "repo-dist", "packaged"] as const;
@@ -123,9 +106,33 @@ async function fixture(mode: Mode) {
   return { packageRoot, refreshHostPackage, root, serverEntry };
 }
 
+async function setTreeReadOnly(directory: string): Promise<void> {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      await setTreeReadOnly(path);
+    } else {
+      await chmod(path, 0o444);
+    }
+  }
+  await chmod(directory, 0o555);
+}
+
+async function restoreTreeWritable(directory: string): Promise<void> {
+  await chmod(directory, 0o755);
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      await restoreTreeWritable(join(directory, entry.name));
+    }
+  }
+}
+
 afterEach(async () => {
   await Promise.all(
-    roots.splice(0).map((root) => rm(root, { force: true, recursive: true })),
+    roots.splice(0).map(async (root) => {
+      await restoreTreeWritable(root).catch(() => undefined);
+      await rm(root, { force: true, recursive: true });
+    }),
   );
 });
 
@@ -143,7 +150,7 @@ describe("bb-app artifact service (desktop packaging)", () => {
       await expect(service.getVersion()).resolves.toBe("1.2.3-test");
       const artifact = await service.getArtifact();
       const listing = (
-        await tar(["-tzf", artifact.path])
+        await execFileAsync("tar", ["-tzf", artifact.path])
       ).stdout.split(/\r?\n/u);
       expect(listing).toEqual(
         expect.arrayContaining([
@@ -188,8 +195,51 @@ describe("bb-app artifact service (desktop packaging)", () => {
 
       expect(artifact.size).toBeGreaterThan(0);
       expect(
-        (await tar(["-tzf", artifact.path])).stdout.split(/\r?\n/u),
+        (await execFileAsync("tar", ["-tzf", artifact.path])).stdout.split(
+          /\r?\n/u,
+        ),
       ).toContain("package/host-daemon/dist/daemon-bundle.mjs");
+    },
+    ARTIFACT_LIFECYCLE_TIMEOUT_MS,
+  );
+
+  it.skipIf(
+    process.platform === "win32" ||
+      (typeof process.getuid === "function" && process.getuid() === 0),
+  )(
+    "serves the tarball and removes its temporary copy from a read-only install",
+    async () => {
+      const test = await fixture("packaged");
+      const dataDir = join(test.root, "data");
+      const nested = join(
+        test.packageRoot,
+        "host-daemon/dist/bb-chunks/nested",
+      );
+      await mkdir(nested, { recursive: true });
+      await writeFile(join(nested, "deep.js"), "export {};\n");
+      await setTreeReadOnly(join(test.packageRoot, "host-daemon"));
+      const service = createBbAppArtifactService({
+        dataDir,
+        serverEntryUrl: pathToFileURL(test.serverEntry).href,
+      });
+
+      const artifact = await service.getArtifact();
+
+      expect(artifact.size).toBeGreaterThan(0);
+      expect(
+        (await execFileAsync("tar", ["-tzf", artifact.path])).stdout.split(
+          /\r?\n/u,
+        ),
+      ).toContain("package/host-daemon/dist/bb-chunks/nested/deep.js");
+      expect(
+        (await readdir(join(dataDir, "install-cache"))).filter((name) =>
+          name.startsWith("host-package-"),
+        ),
+      ).toEqual([]);
+      expect(
+        (await stat(join(test.packageRoot, "host-daemon/dist/bb-chunks")))
+          .mode & 0o222,
+      ).toBe(0);
     },
     ARTIFACT_LIFECYCLE_TIMEOUT_MS,
   );
@@ -248,7 +298,7 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
           await test.refreshHostPackage();
           return "built";
         }
-        return runArtifactCommand(command, args, cwd);
+        return defaultCommandRunner(command, args, cwd);
       };
       const resolved = await resolveBbAppPackage(
         pathToFileURL(test.serverEntry).href,
@@ -264,7 +314,7 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
       const artifact = await service.getArtifact();
       await expect(service.getVersion()).resolves.toBe("1.2.3-test");
       const listing = (
-        await tar(["-tzf", artifact.path])
+        await execFileAsync("tar", ["-tzf", artifact.path])
       ).stdout.split(/\r?\n/u);
       expect(listing).toContain("package/package.json");
       expect(listing).toContain("package/dist/bb-app.js");
@@ -279,7 +329,13 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
         false,
       );
       const packedPackageJson = JSON.parse(
-        (await tar(["-xOzf", artifact.path, "package/package.json"])).stdout,
+        (
+          await execFileAsync("tar", [
+            "-xOzf",
+            artifact.path,
+            "package/package.json",
+          ])
+        ).stdout,
       );
       expect(packedPackageJson).toMatchObject({
         name: "bb-app",
@@ -324,7 +380,7 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
           await test.refreshHostPackage();
           return "built";
         }
-        return runArtifactCommand(command, args, cwd);
+        return defaultCommandRunner(command, args, cwd);
       };
       const options = {
         dataDir: join(test.root, "data"),
@@ -340,7 +396,13 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
       expect(second.path).not.toBe(first.path);
       expect(second.digest).not.toBe(first.digest);
       expect(
-        (await tar(["-xOzf", second.path, "package/README.md"])).stdout,
+        (
+          await execFileAsync("tar", [
+            "-xOzf",
+            second.path,
+            "package/README.md",
+          ])
+        ).stdout,
       ).toBe("updated\n");
       expect(calls.filter((call) => call.command === "npm")).toHaveLength(2);
     },
@@ -356,7 +418,7 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
           await test.refreshHostPackage();
           return "built";
         }
-        return runArtifactCommand(command, args, cwd);
+        return defaultCommandRunner(command, args, cwd);
       };
       const baseOptions = {
         dataDir: join(test.root, "data"),
@@ -390,7 +452,7 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
           return "built";
         }
         if (failNextPack) throw new Error("npm pack exploded");
-        return runArtifactCommand(command, args, cwd);
+        return defaultCommandRunner(command, args, cwd);
       };
       const options = {
         dataDir: join(test.root, "data"),
@@ -405,14 +467,21 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
       const service = createBbAppArtifactService(options);
       await expect(service.getArtifact()).rejects.toThrow("npm pack exploded");
       expect(
-        (await tar(["-xOzf", first.path, "package/README.md"])).stdout,
+        (await execFileAsync("tar", ["-xOzf", first.path, "package/README.md"]))
+          .stdout,
       ).toBe("fixture\n");
 
       failNextPack = false;
       const second = await service.getArtifact();
       expect(second.path).not.toBe(first.path);
       expect(
-        (await tar(["-xOzf", second.path, "package/README.md"])).stdout,
+        (
+          await execFileAsync("tar", [
+            "-xOzf",
+            second.path,
+            "package/README.md",
+          ])
+        ).stdout,
       ).toBe("updated\n");
     },
     ARTIFACT_LIFECYCLE_TIMEOUT_MS,

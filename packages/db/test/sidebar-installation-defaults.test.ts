@@ -13,6 +13,8 @@ import {
   dropIdleLifecycleIndexes,
   rewindThreadPruningWork,
   dropMarketplaceSourceGitSubdirectoryColumn,
+  dropThreadParentNotificationsColumn,
+  dropQueuedMessageDeliveryModeColumn,
   dropQueuedMessageEditHeldUntilColumn,
 } from "./helpers/rewind.js";
 
@@ -92,6 +94,8 @@ describe.each(["project", "thread", "preference"] as const)(
           // bb-fork(thread-start-ref): replaying 0143 re-adds this column.
           db.$client.exec("ALTER TABLE environments DROP COLUMN start_ref");
           dropMarketplaceSourceGitSubdirectoryColumn(db);
+          dropThreadParentNotificationsColumn(db);
+          dropQueuedMessageDeliveryModeColumn(db);
           db.$client
             .prepare("DELETE FROM __drizzle_migrations WHERE created_at >= ?")
             .run(SIDEBAR_INSTALLATION_DEFAULTS_MIGRATION_TIMESTAMP);

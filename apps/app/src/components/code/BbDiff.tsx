@@ -1,4 +1,4 @@
-import { DiffLoadingSkeleton } from "@/components/code/code-loading-skeletons";
+import { DiffLoadingSkeleton } from "@bb/shared-ui/diff-loading-skeleton";
 import { useCallback, useMemo, useRef, type CSSProperties } from "react";
 import type { FileDiffOptions, SelectedLineRange } from "@pierre/diffs";
 import { FileDiff as DiffView } from "@pierre/diffs/react";
@@ -10,8 +10,8 @@ import {
   buildFileDiffPatchText,
   buildDiffDomSelectionText,
   buildDiffLineSelectionText,
-} from "@/components/git-diff/git-diff-patch-text";
-import { enrichGitDiffFileForContext } from "@/components/git-diff/git-diff-parsing";
+} from "@bb/shared-ui/git-diff/patch-text";
+import { enrichGitDiffFileForContext } from "@bb/shared-ui/git-diff/parsing";
 // bb-fork(file-diff): whole-file rendering for the file diff view.
 import { buildFullFileDiff } from "./full-file-diff.fork";
 import { useResolvedCodeThemePair } from "@/lib/code-theme";

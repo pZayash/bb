@@ -11,8 +11,8 @@ import { MenuHoverProvider } from "@bb/shared-ui/menu-item-hover";
 import { Popover, PopoverContent, PopoverTrigger } from "@bb/shared-ui/popover";
 import { cn } from "@bb/shared-ui/lib/utils";
 import { useEnvironmentCommits } from "@/hooks/queries/environment-queries";
-import { PromptBannerActionButton } from "@/components/promptbox/banner/prompt-banner-actions";
-import { searchPickerOptions } from "@/components/pickers/picker-search";
+import { PromptBannerActionButton } from "@bb/shared-ui/prompt-banner-actions";
+import { searchPickerOptions } from "@bb/shared-ui/picker-search";
 
 interface StartCommitPickerProps {
   environmentId: string | null | undefined;
@@ -93,6 +93,7 @@ export function StartCommitPicker({
         <MenuHoverProvider>
           <div className="shrink-0 border-b border-border p-1">
             <BranchPickerRow
+              value="__compare_thread_start__"
               disabled={isSaving}
               icon="GitBranch"
               selected={isActive}
@@ -107,8 +108,6 @@ export function StartCommitPicker({
           <BranchPickerSearch
             inputRef={inputRef}
             query={query}
-            enterSelection={filteredCommits[0]?.sha ?? null}
-            onEnterSelection={onSelect}
             onQueryChange={setQuery}
             ariaLabel="Search commits"
             placeholder="Search commits"
@@ -141,6 +140,7 @@ export function StartCommitPicker({
               filteredCommits.map((commit) => (
                 <BranchPickerRow
                   key={commit.sha}
+                  value={commit.sha}
                   disabled={isSaving}
                   icon="GitBranch"
                   selected={commit.sha === startRef}

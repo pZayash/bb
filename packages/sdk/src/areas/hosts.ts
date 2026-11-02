@@ -34,6 +34,7 @@ export interface HostGetArgs {
 
 export interface HostDeleteArgs {
   hostId: string;
+  force?: boolean;
 }
 
 export interface HostUpdateArgs extends UpdateHostRequest {
@@ -226,6 +227,7 @@ export function createHostsArea(args: CreateSdkAreaArgs): HostsArea {
       await transport.readVoid(
         transport.api.v1.hosts[":id"].$delete({
           param: { id: input.hostId },
+          query: input.force ? { force: "true" } : {},
         }),
       );
       return { ok: true };

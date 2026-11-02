@@ -1,19 +1,12 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { makeTempDir } from "@bb/test-helpers";
+import { expect, it } from "vitest";
+import { cancelEnvironmentHooks } from "../../src/command-handlers/environment-hook.js";
 import { dispatchOnlineRpcCommand } from "../../src/command-dispatch.js";
-import {
-  cleanupTempDirs,
-  createHarness,
-  makeTempDir,
-} from "./dispatch-helpers.js";
-
-afterEach(cleanupTempDirs);
+import { createHarness } from "./dispatch-helpers.js";
 
 it("streams hook output and cancels the process before the run RPC settles", async () => {
-  if (process.platform === "win32") {
-    return;
-  }
   const harness = createHarness();
   const path = await makeTempDir("bb-hook-dispatch-");
   await writeFile(
@@ -31,6 +24,7 @@ it("streams hook output and cancels the process before the run RPC settles", asy
           operationId: "hook-1",
         },
         options,
+        new AbortController().signal,
       );
   };
   await expect(
@@ -45,6 +39,7 @@ it("streams hook output and cancels the process before the run RPC settles", asy
         timeoutMs: 5000,
       },
       options,
+      new AbortController().signal,
     ),
   ).rejects.toThrow("cancelled");
   expect(output).toContain("running-hook");
@@ -52,9 +47,6 @@ it("streams hook output and cancels the process before the run RPC settles", asy
 });
 
 it("reconciles running and completed hook IDs without executing a second shell", async () => {
-  if (process.platform === "win32") {
-    return;
-  }
   const path = await makeTempDir("bb-hook-resume-");
   await writeFile(
     join(path, ".bb-env-setup.sh"),
@@ -70,24 +62,30 @@ it("reconciles running and completed hook IDs without executing a second shell",
     kind: "setup" as const,
     timeoutMs: 5000,
   };
-  const first = dispatchOnlineRpcCommand(command, options);
+  const first = dispatchOnlineRpcCommand(
+    command,
+    options,
+    new AbortController().signal,
+  );
   await expect
     .poll(async () => readFile(join(path, "marker"), "utf8").catch(() => ""))
     .toBe("once\n");
   const resumed = dispatchOnlineRpcCommand(
     { ...command, resumeOnly: true },
     options,
+    new AbortController().signal,
   );
   await writeFile(join(path, "proceed"), "");
   await Promise.all([first, resumed]);
-  await dispatchOnlineRpcCommand({ ...command, resumeOnly: true }, options);
+  await dispatchOnlineRpcCommand(
+    { ...command, resumeOnly: true },
+    options,
+    new AbortController().signal,
+  );
   expect(await readFile(join(path, "marker"), "utf8")).toBe("once\n");
 });
 
 it("rejects unknown recovery and cancels delayed dispatch within this daemon", async () => {
-  if (process.platform === "win32") {
-    return;
-  }
   const path = await makeTempDir("bb-hook-unknown-");
   await writeFile(join(path, ".bb-env-setup.sh"), "echo unsafe > marker\n");
   const options = createHarness().dispatchOptions({ dataDir: path });
@@ -103,12 +101,14 @@ it("rejects unknown recovery and cancels delayed dispatch within this daemon", a
         timeoutMs: 5000,
       },
       options,
+      new AbortController().signal,
     ),
   ).rejects.toThrow("outcome is unknown");
   await expect(
     dispatchOnlineRpcCommand(
       { type: "environment.hook.cancel", operationId: "unknown" },
       options,
+      new AbortController().signal,
     ),
   ).resolves.toEqual({ status: "unknown" });
   await expect(
@@ -123,15 +123,13 @@ it("rejects unknown recovery and cancels delayed dispatch within this daemon", a
         timeoutMs: 5000,
       },
       options,
+      new AbortController().signal,
     ),
   ).rejects.toThrow("cancelled before dispatch");
   await expect(readFile(join(path, "marker"))).rejects.toThrow();
 });
 
 it("reports unknown after daemon memory is lost without rerunning the script", async () => {
-  if (process.platform === "win32") {
-    return;
-  }
   const path = await makeTempDir("bb-hook-daemon-restart-");
   await writeFile(
     join(path, ".bb-env-setup.sh"),
@@ -147,21 +145,28 @@ it("reports unknown after daemon memory is lost without rerunning the script", a
     kind: "setup" as const,
     timeoutMs: 5000,
   };
-  const running = dispatchOnlineRpcCommand(command, firstOptions).catch(
-    () => undefined,
-  );
+  const running = dispatchOnlineRpcCommand(
+    command,
+    firstOptions,
+    new AbortController().signal,
+  ).catch(() => undefined);
   await expect
     .poll(async () => readFile(join(path, "started"), "utf8").catch(() => ""))
     .toBe("started\n");
   const restored = createHarness().dispatchOptions({ dataDir: path });
   try {
     await expect(
-      dispatchOnlineRpcCommand({ ...command, resumeOnly: true }, restored),
+      dispatchOnlineRpcCommand(
+        { ...command, resumeOnly: true },
+        restored,
+        new AbortController().signal,
+      ),
     ).rejects.toThrow("outcome is unknown");
     await expect(
       dispatchOnlineRpcCommand(
         { type: "environment.hook.cancel", operationId: "restart" },
         restored,
+        new AbortController().signal,
       ),
     ).resolves.toEqual({ status: "unknown" });
     expect(await readFile(join(path, "started"), "utf8")).toBe("started\n");
@@ -169,18 +174,54 @@ it("reports unknown after daemon memory is lost without rerunning the script", a
     await dispatchOnlineRpcCommand(
       { type: "environment.hook.cancel", operationId: "restart" },
       firstOptions,
+      new AbortController().signal,
     );
     await running;
   }
   await expect(readFile(join(path, "completed"))).rejects.toThrow();
 });
 
+it("cancels running hooks when the daemon shuts down", async () => {
+  const path = await makeTempDir("bb-hook-shutdown-");
+  await writeFile(
+    join(path, ".bb-env-setup.sh"),
+    "echo started > started\nsleep 120\necho unsafe > completed\n",
+  );
+  const options = createHarness().dispatchOptions({ dataDir: path });
+  const running = dispatchOnlineRpcCommand(
+    {
+      type: "environment.hook.run",
+      contributedEnv: [],
+      resumeOnly: false,
+      operationId: "shutdown",
+      path,
+      kind: "setup",
+      timeoutMs: 600_000,
+    },
+    options,
+    new AbortController().signal,
+  );
+  const settled = Promise.allSettled([running]);
+  await expect
+    .poll(async () => readFile(join(path, "started"), "utf8").catch(() => ""))
+    .toBe("started\n");
+
+  await cancelEnvironmentHooks(options.runtimeManager);
+
+  expect(await settled).toEqual([
+    {
+      status: "rejected",
+      reason: expect.objectContaining({
+        message: expect.stringContaining("cancelled"),
+      }),
+    },
+  ]);
+  await expect(readFile(join(path, "completed"))).rejects.toThrow();
+});
+
 it.each(["setup", "teardown"] as const)(
   "injects %s contributions and forwards progress as-is",
   async (kind) => {
-    if (process.platform === "win32") {
-      return;
-    }
     const path = await makeTempDir("bb-hook-environment-");
     const secret = "hook-secret-fixture";
     await writeFile(
@@ -214,10 +255,19 @@ it.each(["setup", "teardown"] as const)(
       timeoutMs: 5000,
     };
     if (kind === "setup")
-      await expect(dispatchOnlineRpcCommand(command, options)).rejects.toThrow(
-        "exit code 1",
+      await expect(
+        dispatchOnlineRpcCommand(
+          command,
+          options,
+          new AbortController().signal,
+        ),
+      ).rejects.toThrow("exit code 1");
+    else
+      await dispatchOnlineRpcCommand(
+        command,
+        options,
+        new AbortController().signal,
       );
-    else await dispatchOnlineRpcCommand(command, options);
     expect(await readFile(join(path, "received"), "utf8")).toBe(secret);
     expect(output.join("\n")).toContain(secret);
     expect(process.env.GH_TOKEN).not.toBe(secret);
@@ -227,9 +277,6 @@ it.each(["setup", "teardown"] as const)(
 it.each(["setup", "teardown"] as const)(
   "streams multiline contributed environment values from %s hook lines",
   async (kind) => {
-    if (process.platform === "win32") {
-      return;
-    }
     const path = await makeTempDir("bb-hook-multiline-");
     await writeFile(
       join(path, `.bb-env-${kind}.sh`),
@@ -258,15 +305,13 @@ it.each(["setup", "teardown"] as const)(
         timeoutMs: 5000,
       },
       options,
+      new AbortController().signal,
     );
     expect(output.join("\n")).toContain("PRIVATE_BODY");
   },
 );
 
 it("applies hook NODE_ENV and PATH contributions after sanitizing inherited state", async () => {
-  if (process.platform === "win32") {
-    return;
-  }
   const path = await makeTempDir("bb-hook-overrides-");
   await writeFile(
     join(path, ".bb-env-setup.sh"),
@@ -277,7 +322,10 @@ it("applies hook NODE_ENV and PATH contributions after sanitizing inherited stat
   options.emitEnvironmentHookProgress = (message) => {
     output.push(message.entry.text);
   };
-  const contributedPath = "/review-toolchain:/usr/bin:/bin";
+  const contributedPath =
+    process.platform === "win32"
+      ? `C:\\review-toolchain;${process.env.PATH ?? ""}`
+      : "/review-toolchain:/usr/bin:/bin";
   const contributedEnv = Object.entries({
     NODE_ENV: "production",
     PATH: contributedPath,
@@ -298,7 +346,18 @@ it("applies hook NODE_ENV and PATH contributions after sanitizing inherited stat
       timeoutMs: 5000,
     },
     options,
+    new AbortController().signal,
   );
   expect(output).toContain("NODE_ENV=production");
-  expect(output).toContain("PATH=/review-toolchain:/usr/bin:/bin");
+  if (process.platform === "win32") {
+    expect(output).toContainEqual(
+      expect.stringMatching(/^PATH=[^:]*:\/c\/review-toolchain:/u),
+    );
+  } else {
+    expect(output).toContainEqual(
+      expect.stringMatching(
+        /^PATH=\/review-toolchain:\/usr\/bin:\/bin(?::|$)/u,
+      ),
+    );
+  }
 });

@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import type { providerUsageRpcContract } from "./server.js";
+import type { providerUsageRpcContract, UsageRequest } from "./server.js";
 import {
   emptyUsageMessage,
   hasReportedUsage,
@@ -25,6 +25,7 @@ import {
   type UsageMachine,
   type UsageProvider,
   type ProviderUsage,
+  type UsageSnapshot,
   type UsageWindow,
 } from "./usage-schema.js";
 function SettingsBadge({ children }: { children: ReactNode }) {
@@ -489,6 +490,53 @@ export function UsageSettingsContent({
   );
 }
 
+interface UsageLoadTarget {
+  disposed: () => boolean;
+  setMachines: (machines: UsageMachine[]) => void;
+  setError: (error: boolean) => void;
+  // bb-fork(usage-sources): the empty state needs to know if sources exist.
+  setHasUsageSources?: (hasUsageSources: boolean) => void;
+}
+
+export async function loadUsage(
+  getUsage: (input: UsageRequest) => Promise<UsageSnapshot>,
+  selectedId: string | null,
+  force: boolean,
+  target: UsageLoadTarget,
+): Promise<void> {
+  target.setError(false);
+  try {
+    const inventory = await getUsage({
+      force: false,
+      machineIds: null,
+      providerIds: [],
+      maxAgeMs: 60_000,
+    });
+    if (target.disposed()) return;
+    target.setMachines(inventory.machines);
+    // bb-fork(usage-sources): remember whether any source exists.
+    target.setHasUsageSources?.(inventory.hasUsageSources ?? false);
+    const selected = selectUsageMachine(inventory.machines, selectedId, null);
+    const providerIds = [
+      ...new Set(selected?.providers.map((provider) => provider.providerId)),
+    ];
+    if (selected && selected.status === "connected" && providerIds.length > 0) {
+      const result = await getUsage({
+        force,
+        machineIds: [selected.id],
+        providerIds,
+        maxAgeMs: 60_000,
+      });
+      if (target.disposed()) return;
+      target.setMachines(result.machines);
+      // bb-fork(usage-sources): remember whether any source exists.
+      target.setHasUsageSources?.(result.hasUsageSources ?? false);
+    }
+  } catch {
+    if (!target.disposed()) target.setError(true);
+  }
+}
+
 export function UsageSettings() {
   const rpc = useRpc<typeof providerUsageRpcContract>();
   const [machines, setMachines] = useState<UsageMachine[]>([]);
@@ -507,44 +555,14 @@ export function UsageSettings() {
       if (running) return;
       running = true;
       setLoading(true);
-      setError(false);
       try {
-        const inventory = await rpc.call("getUsage", {
-          force: false,
-          machineIds: null,
-          providerIds: [],
-          maxAgeMs: 60_000,
-        });
-        if (disposed) return;
-        setMachines(inventory.machines);
-        setHasUsageSources(inventory.hasUsageSources);
-        const selected = selectUsageMachine(
-          inventory.machines,
+        await loadUsage(
+          (input) => rpc.call("getUsage", input),
           selectedId,
-          null,
+          force,
+          // bb-fork(usage-sources): the empty state reads this flag.
+          { disposed: () => disposed, setMachines, setError, setHasUsageSources },
         );
-        const providerIds = [
-          ...new Set(
-            selected?.providers.map((provider) => provider.providerId),
-          ),
-        ];
-        if (
-          selected &&
-          selected.status === "connected" &&
-          providerIds.length > 0
-        ) {
-          const result = await rpc.call("getUsage", {
-            force,
-            machineIds: [selected.id],
-            providerIds,
-            maxAgeMs: 60_000,
-          });
-          if (disposed) return;
-          setMachines(result.machines);
-          setHasUsageSources(result.hasUsageSources);
-        }
-      } catch {
-        if (!disposed) setError(true);
       } finally {
         running = false;
         if (!disposed) setLoading(false);

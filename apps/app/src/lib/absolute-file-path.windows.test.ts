@@ -5,7 +5,7 @@ import {
   isAbsoluteFilePathWithinRoot,
   normalizeAbsoluteFilePath,
   resolveAbsoluteFilePath,
-} from "./absolute-file-path";
+} from "@bb/shared-ui/lib/absolute-file-path";
 
 describe("normalizeAbsoluteFilePath on native Windows paths", () => {
   it("normalizes native Windows paths to forward slashes", () => {

@@ -1,15 +1,9 @@
-// bb-fork(windows): fork-local sidebar decoration; the provider mark and the model line under a thread title.
-import { useMemo, type MouseEvent } from "react";
+// bb-fork(windows): fork-local sidebar decoration; the model line under a thread title.
+import { useMemo } from "react";
 import {
-  experimental_ProviderIcon as ProviderIcon,
   experimental_useProviders,
   type PluginProvidersState,
 } from "@get-bb/plugin-sdk/app";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 export type ThreadProvider = PluginProvidersState["providers"][number];
 
@@ -90,42 +84,6 @@ function reasoningLevelLabel(
       ?.label ??
     FALLBACK_REASONING_LABELS[reasoningLevel] ??
     reasoningLevel
-  );
-}
-
-export function ThreadProviderMark({
-  provider,
-  onActivate,
-}: {
-  provider: ThreadProvider | null;
-  onActivate: () => void;
-}) {
-  const handleClick = (event: MouseEvent<HTMLSpanElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    onActivate();
-  };
-  if (provider === null) return null;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          data-sidebar-thread-provider={provider.id}
-          role="img"
-          aria-label={provider.displayName}
-          className="relative z-10 flex shrink-0 pointer-events-auto items-center text-subtle-foreground"
-          onClick={handleClick}
-        >
-          <ProviderIcon
-            providerKind="agent"
-            provider={provider}
-            className="size-3.5"
-            aria-label={provider.displayName}
-          />
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="top">{provider.displayName}</TooltipContent>
-    </Tooltip>
   );
 }
 

@@ -85,6 +85,7 @@ function model(
     model: id,
     displayName,
     description: "",
+    reasoningDiscovery: "known" as const,
     supportedReasoningEfforts: reasoning.map((reasoningEffort) => ({
       reasoningEffort,
       description: reasoningEffort,

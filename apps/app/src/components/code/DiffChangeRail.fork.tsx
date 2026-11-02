@@ -18,7 +18,7 @@ import {
   TooltipTrigger,
 } from "@bb/shared-ui/tooltip";
 import { cn } from "@bb/shared-ui/lib/utils";
-import { useGitDiffChangeRailPreference } from "@/lib/git-diff-view-preferences";
+import { useGitDiffChangeRailPreference } from "@/lib/git-diff-view-preferences.fork";
 import {
   buildDiffChangeRailBands,
   clampRailFraction,

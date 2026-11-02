@@ -206,7 +206,7 @@ async function sendThreadOwnershipNotices(
       threadName: parentSystemThreadLabel(thread),
     });
   }
-  if (previousParentThreadId) {
+  if (previousParentThreadId && thread.parentNotifications === "auto") {
     await queueParentSystemMessageBestEffort(deps, {
       childThreadId: thread.id,
       parentThreadId: previousParentThreadId,

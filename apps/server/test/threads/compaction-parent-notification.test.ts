@@ -70,6 +70,8 @@ function seedTurnRequest(
       source: "client/turn/requested",
     },
     initiator: "user",
+    // bb-fork(compaction-model): the fork's event args require the origin.
+    originPluginId: null,
     senderThreadId: null,
     requestMethod: "turn/start",
     source: "tell",

@@ -3,6 +3,7 @@ import {
   canThreadAtHierarchyDepthSpawnChild,
   MAX_THREAD_HIERARCHY_DEPTH,
   type Thread,
+  type ThreadEventTurnStatus,
 } from "@bb/domain";
 import type { AppDeps } from "../../types.js";
 import { throwParentThreadInvalid } from "../lib/lifecycle-api-errors.js";
@@ -13,18 +14,35 @@ export function isAgentDelegatedChildThread<
   return thread.parentThreadId !== null;
 }
 
+export type ParentNotificationOutcome =
+  | ThreadEventTurnStatus
+  | "needs-attention";
+
 export function isParentNotifiableChildThread<
   T extends Pick<
     Thread,
-    "parentThreadId" | "originKind" | "parentNotificationsMutedAt"
-  >,
->(thread: T): thread is T & { parentThreadId: string } {
-  // bb-fork(parent-mute): muted children keep the parent link but stay silent
-  return (
-    isAgentDelegatedChildThread(thread) &&
-    thread.originKind === null &&
-    thread.parentNotificationsMutedAt === null
-  );
+    "parentThreadId" | "originKind" | "parentNotifications"
+  > & { parentNotificationsMutedAt?: number | null },
+>(
+  thread: T,
+  outcome: ParentNotificationOutcome,
+): thread is T & { parentThreadId: string } {
+  if (
+    thread.parentThreadId === null ||
+    thread.originKind !== null ||
+    // bb-fork(parent-mute): a muted child keeps the link but stays silent.
+    (thread.parentNotificationsMutedAt ?? null) !== null
+  ) {
+    return false;
+  }
+  switch (thread.parentNotifications) {
+    case "auto":
+      return true;
+    case "stuck":
+      return outcome !== "completed";
+    case "off":
+      return false;
+  }
 }
 
 export type ParentThread = Pick<

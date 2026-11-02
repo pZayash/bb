@@ -10,7 +10,7 @@ import {
   stubRailPointerEvents,
   stubScrollGeometry,
 } from "@/test/diff-change-rail-harness";
-import { GIT_DIFF_CHANGE_RAIL_STORAGE_KEY } from "@/lib/git-diff-view-preferences";
+import { GIT_DIFF_CHANGE_RAIL_STORAGE_KEY } from "@/lib/git-diff-view-preferences.fork";
 import { DiffChangeRail, DiffChangeRailToggle } from "./DiffChangeRail.fork";
 import {
   buildDiffChangeRailBands,

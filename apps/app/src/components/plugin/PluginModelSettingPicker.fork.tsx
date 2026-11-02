@@ -12,9 +12,9 @@ import {
 import { LIST_HOVER_TRANSITION } from "@bb/shared-ui/motion";
 import { cn } from "@bb/shared-ui/lib/utils";
 import { useSystemExecutionOptions } from "@/hooks/queries/system-queries";
-import { searchPickerOptions } from "@/components/pickers/picker-search";
+import { searchPickerOptions } from "@bb/shared-ui/picker-search";
 import { PickerLoadingRows } from "@/components/pickers/PickerLoadingRows";
-import { useResetPickerScroll } from "@/components/pickers/useResetPickerScroll";
+import { useResetPickerScroll } from "@bb/shared-ui/hooks/use-reset-picker-scroll";
 import { formatModelLabel } from "@/hooks/useThreadCreationOptions";
 
 interface PluginModelSettingPickerProps {

@@ -33,6 +33,7 @@ export const hostDirectoryListingSchema = z.object({
   directory: z.string(),
   parent: z.string().nullable(),
   entries: z.array(hostDirectoryEntrySchema),
+  roots: z.array(z.string()),
 });
 export type HostDirectoryListing = z.infer<typeof hostDirectoryListingSchema>;
 
@@ -168,3 +169,8 @@ export const hostListQuerySchema = z.object({
   type: hostTypeSchema.optional(),
 });
 export type HostListQuery = z.input<typeof hostListQuerySchema>;
+
+export const hostDeleteQuerySchema = z.object({
+  force: z.enum(["true", "false"]).optional(),
+});
+export type HostDeleteQuery = z.input<typeof hostDeleteQuerySchema>;

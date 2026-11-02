@@ -1,12 +1,7 @@
 import { requestThreadStorageDeletion } from "./thread-lifecycle.js";
 import { seedThreadSessionOptionSelections } from "./thread-session-options.js";
 import { assertEnvironmentPathAvailable } from "../environments/path-admission.js";
-import {
-  markThreadDeleted,
-  getEnvironment,
-  getProjectSourceByHost,
-  getThread,
-} from "@bb/db";
+import { markThreadDeleted, getEnvironment, getThread } from "@bb/db";
 import {
   describeSessionOptionConflict,
   modelSessionOptionConflict,
@@ -17,10 +12,8 @@ import {
   type ThreadOriginKind,
   type ThreadVisibility,
 } from "@bb/domain";
-import type {
-  AppDeps,
-  LoggedPendingInteractionWorkSessionDeps,
-} from "../../types.js";
+import type { LoggedPendingInteractionWorkSessionDeps } from "../../types.js";
+import { assertProviderAcceptsPromptActions } from "../providers/provider-plan-command.js";
 import { ApiError } from "../../errors.js";
 import { ensureHostSessionReadyForWork } from "../hosts/host-lifecycle.js";
 import { buildExecutionOptions } from "./thread-commands.js";
@@ -34,6 +27,7 @@ import {
   resolveProjectExecutionDefaultsForCreate,
 } from "./project-execution-defaults.js";
 import { resolvePromptAttachmentReferences } from "../projects/attachments.js";
+import { projectCheckoutPathOnHost } from "../projects/project-workspace.js";
 import {
   appendPluginMentionContext,
   captureUserMessageSentTelemetry,
@@ -67,6 +61,11 @@ import {
   type ThreadCreateServiceRequest,
 } from "./thread-create-request.js";
 import { resolveDispatchAuthor } from "./dispatch-author.js";
+import { getActiveTurnId } from "./thread-events.js";
+import {
+  resolveTelemetryInitiator,
+  initiatorTelemetryProperty,
+} from "./telemetry-initiator.js";
 import { deriveForkTitle, deriveTitleFallback } from "./title-generation.js";
 import type { ThreadProvisionEnvironmentIntent } from "./thread-startup-store.js";
 import { resolveSystemProviderModels } from "../system/execution-options.js";
@@ -300,15 +299,6 @@ function childHostIdForResolvedEnvironment(
     case "personal":
       return resolvedEnvironment.hostId;
   }
-}
-
-function projectCheckoutPathOnHost(
-  deps: Pick<AppDeps, "db">,
-  projectId: string,
-  hostId: string,
-): string | undefined {
-  const source = getProjectSourceByHost(deps.db, projectId, hostId);
-  return source?.type === "local_path" ? source.path : undefined;
 }
 
 function modelCatalogCwdForResolvedEnvironment(
@@ -697,6 +687,7 @@ export async function createThreadFromRequest(
   } = resolveProjectExecutionDefaultsForCreate(deps, {
     executionInputSources: requestInput.executionInputSources,
     model: requestInput.model,
+    parentThread,
     projectId: requestInput.projectId,
     providerId: requestInput.providerId,
   });
@@ -733,6 +724,7 @@ export async function createThreadFromRequest(
       : {}),
     ...(sourceThread ? { sourceThreadId: sourceThread.id } : {}),
     originKind,
+    parentNotifications: requestInput.parentNotifications ?? "auto",
     pluginMetadata,
     visibility: resolveCreateThreadVisibility({
       parentThread,
@@ -804,6 +796,10 @@ export async function createThreadFromRequest(
   ) {
     request.providerId = catalogExecutionDefaults.providerId;
   }
+  assertProviderAcceptsPromptActions(deps.providerRegistry, {
+    input: request.input,
+    providerId: request.providerId,
+  });
   const resolvedExecutionDefaults = await resolveSessionOptionExecutionDefaults(
     deps,
     {
@@ -864,23 +860,37 @@ export async function createThreadFromRequest(
     ...createArgs,
     sendAt: request.sendAt,
   });
+  const { initiator } = resolveDispatchAuthor({
+    retrying: false,
+    senderThreadId: null,
+    startedOnBehalfOf: request.startedOnBehalfOf,
+  });
+  const spawnedByWorkingAgent =
+    request.senderThreadId !== undefined &&
+    getActiveTurnId(deps, request.senderThreadId) !== null;
+  const telemetryInitiator = resolveTelemetryInitiator({
+    origin: request.origin,
+    originPluginId: request.originPluginId ?? null,
+    initiator:
+      spawnedByWorkingAgent && initiator === "user" ? "agent" : initiator,
+  });
   deps.telemetry.capture({
     name: "thread_created",
     properties: {
       is_child_thread: parentThread !== null,
       provider: request.providerId,
+      ...initiatorTelemetryProperty(
+        deps.config.featureFlags,
+        telemetryInitiator,
+      ),
     },
-  });
-  const { initiator } = resolveDispatchAuthor({
-    retrying: false,
-    senderThreadId: null,
-    startedOnBehalfOf: request.startedOnBehalfOf,
   });
   if (initiator === "user" && request.input.length > 0) {
     captureUserMessageSentTelemetry(deps, {
       isChildThread: parentThread !== null,
       messageSource: "thread_create",
       providerId: request.providerId,
+      initiator: telemetryInitiator,
     });
   }
   return thread;

@@ -4,7 +4,8 @@ import type {
   ExperimentalDiffFullFileContents,
   SourceCodeLineRange,
 } from "@get-bb/plugin-sdk";
-import type { ParsedGitDiffFile } from "@/components/git-diff/git-diff-parsing";
+import type { ParsedGitDiffFile } from "@bb/shared-ui/git-diff/parsing";
+import type { DiffPresentation } from "@bb/shared-ui/git-diff/renderers";
 
 export const DEFAULT_CODE_OVERFLOW: CodeOverflowMode = "scroll";
 export const DEFAULT_DIFF_VIEW: DiffViewMode = "unified";
@@ -12,14 +13,6 @@ export const DEFAULT_DIFF_VIEW: DiffViewMode = "unified";
 interface SourceCodePresentation {
   overflow: CodeOverflowMode;
   highlightedLines: SourceCodeLineRange | null;
-}
-
-export interface DiffPresentation {
-  view: DiffViewMode;
-  overflow: CodeOverflowMode;
-  showLineNumbers: boolean;
-  // bb-fork(file-diff): render both complete sides rather than only the hunks.
-  expandUnchanged?: boolean;
 }
 
 export interface BbSourceCodeProps extends SourceCodePresentation {
@@ -32,6 +25,8 @@ export interface BbSourceCodeProps extends SourceCodePresentation {
 }
 
 export interface BbDiffProps extends DiffPresentation {
+  // bb-fork(file-diff): render both complete sides rather than only the hunks.
+  expandUnchanged?: boolean;
   file: ParsedGitDiffFile;
   patchText?: string;
   fullFileContents: ExperimentalDiffFullFileContents | null;

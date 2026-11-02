@@ -1,8 +1,7 @@
-import { execFile } from "node:child_process";
+import { experimental_execHostFile } from "@get-bb/plugin-sdk/process";
 import { open, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import {
   type ProviderHealthResult,
   type ProviderInstallationCommand,
@@ -23,7 +22,7 @@ import { resolvePiLaunch, resolvePiProcessLaunch } from "./rpc-child.js";
 // bb-fork(windows): pi shims are .cmd and need shell resolution.
 import { piLaunchRequiresWindowsShell } from "./rpc-child.windows.js";
 
-const execFileAsync = promisify(execFile);
+const execFileAsync = experimental_execHostFile;
 export const PI_MINIMUM_SUPPORTED_VERSION = "0.84.0";
 export const PI_NPM_PACKAGE = "@earendil-works/pi-coding-agent";
 const VERSION_PROBE_TIMEOUT_MS = 15_000;

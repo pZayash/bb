@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import { parseDiffFromFile } from "@pierre/diffs";
-import { parseGitDiffFiles } from "@/components/git-diff/git-diff-parsing";
+import { parseGitDiffFiles } from "@bb/shared-ui/git-diff/parsing";
 import { SOURCE_CODE_MAX_LINES } from "./source-code-budget";
 import { buildFullFileDiff } from "./full-file-diff.fork";
 

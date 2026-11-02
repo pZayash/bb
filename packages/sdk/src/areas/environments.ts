@@ -1,3 +1,5 @@
+import { createPluginsArea } from "./plugins.js";
+import { createRetiredEnvironmentReads } from "./retired-environment-reads.js";
 import { z } from "zod";
 import {
   environmentSchema,
@@ -6,35 +8,19 @@ import {
 } from "@bb/domain";
 import {
   commitActionResponseSchema,
-  pullRequestDraftActionResponseSchema,
-  pullRequestMergeActionResponseSchema,
-  pullRequestReadyActionResponseSchema,
   updateEnvironmentRequestSchema,
-} from "@bb/server-contract";
-import type {
-  CommitActionResponse,
-  EnvironmentArchiveThreadsResponse,
-  EnvironmentCommitsResponse,
-  EnvironmentDiffBranchesQuery,
-  EnvironmentDiffBranchesResponse,
-  EnvironmentDiffFileQuery,
-  EnvironmentDiffFileResponse,
-  EnvironmentDiffPatchRequest,
-  EnvironmentDiffPatchResponse,
-  EnvironmentDiffQuery,
-  EnvironmentDiffResponse,
-  EnvironmentDiffFilesResponse,
-  EnvironmentPathsQuery,
-  EnvironmentPullRequestResponse,
-  EnvironmentStatusResponse,
-  PullRequestMergeMethod,
-  PullRequestDraftActionResponse,
-  PullRequestMergeActionResponse,
-  PullRequestReadyActionResponse,
-  EnvironmentStatusQuery,
-  UpdateEnvironmentRequest,
-  WorkspacePathListResponse,
-  SystemEnvironmentProvider,
+  type CommitActionResponse,
+  // bb-fork(thread-start-ref): recent commits for the start-commit picker.
+  type EnvironmentCommitsResponse,
+  type EnvironmentArchiveThreadsResponse,
+  type EnvironmentDiffQuery,
+  type EnvironmentDiffViewedClearRequest,
+  type EnvironmentDiffViewedMarkRequest,
+  type EnvironmentDiffViewedResponse,
+  type EnvironmentPathsQuery,
+  type UpdateEnvironmentRequest,
+  type WorkspacePathListResponse,
+  type SystemEnvironmentProvider,
 } from "@bb/server-contract";
 import { signalRequestArgs, type CreateSdkAreaArgs } from "./common.js";
 
@@ -56,64 +42,52 @@ type EnvironmentNameUpdateValue = Exclude<
   undefined
 >;
 
-// bb-fork(thread-start-ref): pin the commit a thread compares from.
-type EnvironmentStartRefUpdateValue = Exclude<
-  UpdateEnvironmentRequest["startRef"],
-  undefined
->;
-
-/**
- * Every field is optional and at least one must be present; the server rejects
- * an empty update. The previous one-field union shapes forced a combinatorial
- * builder in the CLI for every new field.
- */
-export interface EnvironmentUpdateArgs {
-  environmentId: string;
-  mergeBaseBranch?: EnvironmentMergeBaseBranchUpdateValue;
+interface EnvironmentMergeBaseBranchUpdate {
+  mergeBaseBranch: EnvironmentMergeBaseBranchUpdateValue;
   name?: EnvironmentNameUpdateValue;
   // bb-fork(thread-start-ref): pin the commit a thread compares from.
   startRef?: EnvironmentStartRefUpdateValue;
 }
 
-export interface EnvironmentStatusArgs extends EnvironmentStatusQuery {
-  environmentId: string;
-  signal?: AbortSignal;
+interface EnvironmentNameUpdate {
+  mergeBaseBranch?: EnvironmentMergeBaseBranchUpdateValue;
+  name: EnvironmentNameUpdateValue;
+  // bb-fork(thread-start-ref): pin the commit a thread compares from.
+  startRef?: EnvironmentStartRefUpdateValue;
 }
 
-export type EnvironmentDiffArgs = EnvironmentDiffQuery & {
+type EnvironmentUpdateFields =
+  | EnvironmentMergeBaseBranchUpdate
+  | EnvironmentNameUpdate;
+
+export type EnvironmentUpdateArgs = EnvironmentUpdateFields & {
   environmentId: string;
-  signal?: AbortSignal;
 };
-
-export type EnvironmentDiffFileArgs = EnvironmentDiffFileQuery & {
-  environmentId: string;
-  signal?: AbortSignal;
-};
-
-export interface EnvironmentDiffBranchesArgs extends EnvironmentDiffBranchesQuery {
-  environmentId: string;
-  signal?: AbortSignal;
-}
-
-export interface EnvironmentCommitArgs {
-  environmentId: string;
-}
 
 // bb-fork(thread-start-ref): recent commits for the start-commit picker.
 export interface EnvironmentCommitsArgs {
   environmentId: string;
   signal?: AbortSignal;
 }
+export type EnvironmentCommitsResult = EnvironmentCommitsResponse;
 
-export interface EnvironmentPullRequestMergeArgs {
-  environmentId: string;
-  method: PullRequestMergeMethod;
-}
-
-export type EnvironmentDiffPatchArgs = EnvironmentDiffPatchRequest & {
+export type EnvironmentDiffArgs = EnvironmentDiffQuery & {
   environmentId: string;
   signal?: AbortSignal;
 };
+
+export interface EnvironmentCommitArgs {
+  environmentId: string;
+}
+
+export type EnvironmentDiffViewedMarkArgs = EnvironmentDiffViewedMarkRequest & {
+  environmentId: string;
+};
+
+export type EnvironmentDiffViewedClearArgs =
+  EnvironmentDiffViewedClearRequest & {
+    environmentId: string;
+  };
 
 export interface EnvironmentPathsArgs extends EnvironmentPathsQuery {
   environmentId: string;
@@ -122,21 +96,9 @@ export interface EnvironmentPathsArgs extends EnvironmentPathsQuery {
 
 export type EnvironmentArchiveThreadsResult = EnvironmentArchiveThreadsResponse;
 export type EnvironmentCommitResult = CommitActionResponse;
-export type EnvironmentCommitsResult = EnvironmentCommitsResponse;
-export type EnvironmentDiffResult = EnvironmentDiffResponse;
-export type EnvironmentDiffBranchesResult = EnvironmentDiffBranchesResponse;
-export type EnvironmentDiffFileResult = EnvironmentDiffFileResponse;
-export type EnvironmentDiffFilesResult = EnvironmentDiffFilesResponse;
-export type EnvironmentDiffPatchResult = EnvironmentDiffPatchResponse;
+export type EnvironmentDiffViewedResult = EnvironmentDiffViewedResponse;
 export type EnvironmentGetResult = Environment;
-export type EnvironmentMarkPullRequestDraftResult =
-  PullRequestDraftActionResponse;
-export type EnvironmentMarkPullRequestReadyResult =
-  PullRequestReadyActionResponse;
-export type EnvironmentMergePullRequestResult = PullRequestMergeActionResponse;
 export type EnvironmentPathsResult = WorkspacePathListResponse;
-export type EnvironmentPullRequestResult = EnvironmentPullRequestResponse;
-export type EnvironmentStatusResult = EnvironmentStatusResponse;
 export type EnvironmentUpdateResult = Environment;
 export interface EnvironmentListArgs {
   environmentProviderId?: string;
@@ -164,42 +126,39 @@ export type EnvironmentListProvidersResult = SystemEnvironmentProvider[];
 const okResponseSchema = z.object({ ok: z.literal(true) });
 
 export interface EnvironmentsArea {
-  experimental_cleanup(args: EnvironmentActionArgs): Promise<{ ok: true }>;
+  experimental_cleanup(
+    args: EnvironmentActionArgs & { recover?: boolean },
+  ): Promise<{ ok: true }>;
   archiveThreads(
     args: EnvironmentActionArgs,
   ): Promise<EnvironmentArchiveThreadsResult>;
   commit(args: EnvironmentCommitArgs): Promise<EnvironmentCommitResult>;
   // bb-fork(thread-start-ref): recent commits for the start-commit picker.
   commits(args: EnvironmentCommitsArgs): Promise<EnvironmentCommitsResult>;
-  diff(args: EnvironmentDiffArgs): Promise<EnvironmentDiffResult>;
-  diffBranches(
-    args: EnvironmentDiffBranchesArgs,
-  ): Promise<EnvironmentDiffBranchesResult>;
-  diffFile(args: EnvironmentDiffFileArgs): Promise<EnvironmentDiffFileResult>;
-  diffFiles(args: EnvironmentDiffArgs): Promise<EnvironmentDiffFilesResult>;
-  diffPatch(
-    args: EnvironmentDiffPatchArgs,
-  ): Promise<EnvironmentDiffPatchResult>;
+  experimental_diffViewed(
+    args: EnvironmentDiffArgs & { paths?: string[] },
+  ): Promise<EnvironmentDiffViewedResult>;
+  experimental_markDiffViewed(
+    args: EnvironmentDiffViewedMarkArgs,
+  ): Promise<{ ok: true }>;
+  experimental_clearDiffViewed(
+    args: EnvironmentDiffViewedClearArgs,
+  ): Promise<{ ok: true }>;
   get(args: EnvironmentGetArgs): Promise<EnvironmentGetResult>;
   list(args?: EnvironmentListArgs): Promise<EnvironmentListResult>;
   listProviders(
     args?: EnvironmentListProvidersArgs,
   ): Promise<EnvironmentListProvidersResult>;
   delete(args: EnvironmentDeleteArgs): Promise<EnvironmentDeleteResult>;
-  pullRequest(args: EnvironmentGetArgs): Promise<EnvironmentPullRequestResult>;
-  markPullRequestDraft(
-    args: EnvironmentActionArgs,
-  ): Promise<EnvironmentMarkPullRequestDraftResult>;
-  markPullRequestReady(
-    args: EnvironmentActionArgs,
-  ): Promise<EnvironmentMarkPullRequestReadyResult>;
-  mergePullRequest(
-    args: EnvironmentPullRequestMergeArgs,
-  ): Promise<EnvironmentMergePullRequestResult>;
   paths(args: EnvironmentPathsArgs): Promise<EnvironmentPathsResult>;
-  status(args: EnvironmentStatusArgs): Promise<EnvironmentStatusResult>;
   update(args: EnvironmentUpdateArgs): Promise<EnvironmentUpdateResult>;
 }
+
+// bb-fork(thread-start-ref): pin the commit a thread compares from.
+type EnvironmentStartRefUpdateValue = Exclude<
+  UpdateEnvironmentRequest["startRef"],
+  undefined
+>;
 
 function environmentUpdateJson(
   args: EnvironmentUpdateArgs,
@@ -218,14 +177,6 @@ function environmentUpdateJson(
   return updateEnvironmentRequestSchema.parse(request);
 }
 
-function environmentStatusQuery(
-  args: EnvironmentStatusArgs,
-): EnvironmentStatusQuery {
-  return {
-    mergeBaseBranch: args.mergeBaseBranch,
-  };
-}
-
 function environmentDiffQuery(args: EnvironmentDiffArgs): EnvironmentDiffQuery {
   switch (args.target) {
     case "uncommitted":
@@ -236,46 +187,6 @@ function environmentDiffQuery(args: EnvironmentDiffArgs): EnvironmentDiffQuery {
     case "commit":
       return { target: args.target, sha: args.sha };
   }
-}
-
-function environmentDiffFileQuery(
-  args: EnvironmentDiffFileArgs,
-): EnvironmentDiffFileQuery {
-  switch (args.target) {
-    case "uncommitted":
-      return {
-        path: args.path,
-        side: args.side,
-        target: args.target,
-      };
-    case "branch_committed":
-    case "all":
-      return {
-        mergeBaseRef: args.mergeBaseRef,
-        path: args.path,
-        side: args.side,
-        target: args.target,
-      };
-    case "commit":
-      return {
-        path: args.path,
-        sha: args.sha,
-        side: args.side,
-        target: args.target,
-      };
-  }
-}
-
-function environmentDiffBranchesQuery(
-  args: EnvironmentDiffBranchesArgs,
-): EnvironmentDiffBranchesQuery {
-  return {
-    ...(args.query !== undefined ? { query: args.query } : {}),
-    ...(args.limit !== undefined ? { limit: args.limit } : {}),
-    ...(args.selectedBranch !== undefined
-      ? { selectedBranch: args.selectedBranch }
-      : {}),
-  };
 }
 
 function environmentPathsQuery(
@@ -293,7 +204,7 @@ export function createEnvironmentsArea(
   args: CreateSdkAreaArgs,
 ): EnvironmentsArea {
   const { transport } = args;
-  return {
+  const area: EnvironmentsArea = {
     async archiveThreads(input) {
       return transport.readJson(
         transport.api.v1.environments[":id"]["archive-threads"].$post({
@@ -312,71 +223,46 @@ export function createEnvironmentsArea(
       );
       return commitActionResponseSchema.parse(body);
     },
-    async diff(input) {
-      return transport.readJson(
-        transport.api.v1.environments[":id"].diff.$get(
-          {
-            param: { id: input.environmentId },
-            query: environmentDiffQuery(input),
-          },
-          ...signalRequestArgs(input.signal),
-        ),
-      );
-    },
-    // bb-fork(thread-start-ref): recent commits for the start-commit picker.
-    async commits(input) {
-      return transport.readJson(
-        transport.api.v1.environments[":id"].commits.$get(
-          { param: { id: input.environmentId } },
-          ...signalRequestArgs(input.signal),
-        ),
-      );
-    },
-    async diffBranches(input) {
-      return transport.readJson(
-        transport.api.v1.environments[":id"].diff.branches.$get(
-          {
-            param: { id: input.environmentId },
-            query: environmentDiffBranchesQuery(input),
-          },
-          ...signalRequestArgs(input.signal),
-        ),
-      );
-    },
-    async diffFile(input) {
-      return transport.readJson(
-        transport.api.v1.environments[":id"].diff.file.$get(
-          {
-            param: { id: input.environmentId },
-            query: environmentDiffFileQuery(input),
-          },
-          ...signalRequestArgs(input.signal),
-        ),
-      );
-    },
-    async diffFiles(input) {
-      return transport.readJson(
-        transport.api.v1.environments[":id"].diff.files.$get(
-          {
-            param: { id: input.environmentId },
-            query: environmentDiffQuery(input),
-          },
-          ...signalRequestArgs(input.signal),
-        ),
-      );
-    },
-    async diffPatch(input) {
-      return transport.readJson(
-        transport.api.v1.environments[":id"].diff.patch.$post(
-          {
-            param: { id: input.environmentId },
-            json: {
-              paths: input.paths,
-              target: input.target,
+    async experimental_diffViewed(input) {
+      if (input.paths !== undefined) {
+        return transport.readJson(
+          transport.api.v1.environments[":id"].diff.viewed.$post(
+            {
+              param: { id: input.environmentId },
+              json: { ...environmentDiffQuery(input), paths: input.paths },
             },
+            ...signalRequestArgs(input.signal),
+          ),
+        );
+      }
+      return transport.readJson(
+        transport.api.v1.environments[":id"].diff.viewed.$get(
+          {
+            param: { id: input.environmentId },
+            query: environmentDiffQuery(input),
           },
           ...signalRequestArgs(input.signal),
         ),
+      );
+    },
+    async experimental_markDiffViewed(input) {
+      return transport.readJson(
+        transport.api.v1.environments[":id"].diff.viewed.$put({
+          param: { id: input.environmentId },
+          json: {
+            target: input.target,
+            path: input.path,
+            revision: input.revision,
+          },
+        }),
+      );
+    },
+    async experimental_clearDiffViewed(input) {
+      return transport.readJson(
+        transport.api.v1.environments[":id"].diff.viewed.$delete({
+          param: { id: input.environmentId },
+          json: { target: input.target, path: input.path },
+        }),
       );
     },
     async list(input) {
@@ -428,6 +314,7 @@ export function createEnvironmentsArea(
       return transport.readJson(
         transport.api.v1.environments[":id"]["cleanup"].$post({
           param: { id: input.environmentId },
+          query: { recover: input.recover === true ? "true" : "false" },
         }),
       );
     },
@@ -450,46 +337,6 @@ export function createEnvironmentsArea(
       );
       return environmentSchema.parse(body);
     },
-    async pullRequest(input) {
-      return transport.readJson(
-        transport.api.v1.environments[":id"]["pull-request"].$get(
-          {
-            param: { id: input.environmentId },
-          },
-          ...signalRequestArgs(input.signal),
-        ),
-      );
-    },
-    async markPullRequestDraft(input) {
-      const body = await transport.readJson(
-        transport.api.v1.environments[":id"].actions.$post({
-          param: { id: input.environmentId },
-          json: { action: "pull_request_draft" },
-        }),
-      );
-      return pullRequestDraftActionResponseSchema.parse(body);
-    },
-    async markPullRequestReady(input) {
-      const body = await transport.readJson(
-        transport.api.v1.environments[":id"].actions.$post({
-          param: { id: input.environmentId },
-          json: { action: "pull_request_ready" },
-        }),
-      );
-      return pullRequestReadyActionResponseSchema.parse(body);
-    },
-    async mergePullRequest(input) {
-      const body = await transport.readJson(
-        transport.api.v1.environments[":id"].actions.$post({
-          param: { id: input.environmentId },
-          json: {
-            action: "pull_request_merge",
-            options: { method: input.method },
-          },
-        }),
-      );
-      return pullRequestMergeActionResponseSchema.parse(body);
-    },
     async paths(input) {
       return transport.readJson(
         transport.api.v1.environments[":id"].paths.$get(
@@ -501,13 +348,11 @@ export function createEnvironmentsArea(
         ),
       );
     },
-    async status(input) {
+    // bb-fork(thread-start-ref): recent commits for the start-commit picker.
+    async commits(input) {
       return transport.readJson(
-        transport.api.v1.environments[":id"].status.$get(
-          {
-            param: { id: input.environmentId },
-            query: environmentStatusQuery(input),
-          },
+        transport.api.v1.environments[":id"].commits.$get(
+          { param: { id: input.environmentId } },
           ...signalRequestArgs(input.signal),
         ),
       );
@@ -521,4 +366,8 @@ export function createEnvironmentsArea(
       );
     },
   };
+  return Object.assign(
+    area,
+    createRetiredEnvironmentReads(createPluginsArea(args).callRpc),
+  );
 }

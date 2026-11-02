@@ -22,6 +22,7 @@ const MARKDOWN_FILE_EXTENSIONS = [".md", ".markdown"];
 const MARKDOWN_MIME_TYPES = new Set(["text/markdown", "text/x-markdown"]);
 const CSV_FILE_EXTENSIONS = [".csv"];
 const CSV_MIME_TYPES = new Set(["application/csv", "text/csv"]);
+// bb-fork(file-diff): .xhtml renders through the HTML preview too.
 const HTML_FILE_EXTENSIONS = [".html", ".htm", ".xhtml"];
 const NULL_CHARACTER = "\u0000";
 
@@ -194,6 +195,26 @@ export function areEnvironmentFilePreviewSourcesEqual(
       const exhaustive: never = a;
       return exhaustive;
     }
+  }
+}
+
+export function getEnvironmentFilePreviewSourceAtRef(
+  ref: string | undefined,
+): EnvironmentFilePreviewSource {
+  if (ref === undefined) return { kind: "working-tree" };
+  return ref === "HEAD" ? { kind: "head" } : { kind: "merge-base", ref };
+}
+
+export function getEnvironmentFilePreviewSourceRef(
+  source: EnvironmentFilePreviewSource,
+): string | null {
+  switch (source.kind) {
+    case "working-tree":
+      return null;
+    case "head":
+      return "HEAD";
+    case "merge-base":
+      return source.ref;
   }
 }
 

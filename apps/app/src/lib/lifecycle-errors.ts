@@ -11,7 +11,6 @@ export type LifecycleErrorOperation =
   | "archive_thread"
   // bb-fork(compaction-model)
   | "compact_thread"
-  | "commit"
   | "create_thread"
   | "edit_message"
   | "load_diff"
@@ -99,8 +98,6 @@ function operationTitle(operation: LifecycleErrorOperation): string {
     // bb-fork(compaction-model)
     case "compact_thread":
       return "Failed to compact context";
-    case "commit":
-      return "Commit failed";
     case "create_thread":
       return "Failed to create thread";
     case "edit_message":

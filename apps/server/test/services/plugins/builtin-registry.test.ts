@@ -34,6 +34,8 @@ const UNPREFIXED_BUNDLED_PLUGIN_IDS = [
   "memory",
   "monaco-editor",
   "pc-control",
+  "navigation",
+
   "pdf-preview",
   "plugin-api-docs",
   "plugin-api-tester",

@@ -16,6 +16,37 @@ import {
 import type { MarketplaceV2Entry } from "./marketplace-v2.js";
 
 describe("public marketplace route rendering", () => {
+  it.each([
+    ["Prompt Library [Experimental]", "attention", "Experimental"],
+    ["Prompt Library [Preview]", "neutral", "Preview"],
+    ["Prompt Library", null, null],
+  ] as const)("renders %j with a %s tag", (displayName, tone, label) => {
+    const entry = { ...MARKETPLACE_V2_FIXTURE.plugins[0]!, displayName };
+    const manifest = { ...MARKETPLACE_V2_FIXTURE, plugins: [entry] };
+    const pages = [
+      <PublicMarketplacePage
+        manifest={manifest}
+        stats={null}
+        state={{}}
+        onStateChange={() => {}}
+      />,
+      <PublicMarketplaceDetailPage
+        manifest={manifest}
+        entry={entry}
+        stats={null}
+      />,
+    ];
+    for (const page of pages) {
+      const html = renderToStaticMarkup(page);
+      expect(html.includes("marketplace-plugin-tag ")).toBe(tone !== null);
+      if (tone !== null) {
+        expect(html).toContain(
+          `class="marketplace-plugin-tag marketplace-plugin-tag-${tone}">${label}</span>`,
+        );
+      }
+    }
+  });
+
   it("renders the marketplace route with document shelves and controls", () => {
     const html = renderToStaticMarkup(
       <PublicMarketplacePage
@@ -51,6 +82,83 @@ describe("public marketplace route rendering", () => {
     expect(html).not.toContain("marketplace-category-filters");
     expect(html).toContain("mask-image");
     expect(html).toContain("marketplace-svg-icon");
+  });
+
+  it("links a six-plugin shelf to its complete ordered collection", () => {
+    const template = MARKETPLACE_V2_FIXTURE.plugins[0]!;
+    const plugins = Array.from({ length: 8 }, (_, index) => ({
+      ...template,
+      id: `curated-${index}`,
+      displayName: `Curated ${index}`,
+    }));
+    const manifest = {
+      ...MARKETPLACE_V2_FIXTURE,
+      plugins,
+      collections: [
+        {
+          id: "launch",
+          displayName: "Make bb yours",
+          pluginIds: [
+            "curated-7",
+            "curated-5",
+            "missing",
+            "curated-3",
+            "curated-1",
+            "curated-6",
+            "curated-4",
+            "curated-2",
+          ],
+        },
+      ],
+    };
+    const render = (
+      state: Parameters<typeof PublicMarketplacePage>[0]["state"],
+    ) =>
+      renderToStaticMarkup(
+        <PublicMarketplacePage
+          manifest={manifest}
+          stats={null}
+          state={state}
+          onStateChange={() => {}}
+        />,
+      );
+    const ids = (html: string) =>
+      [
+        ...html.matchAll(
+          /class="marketplace-card-link" href="\/marketplace\/(curated-\d+)"/g,
+        ),
+      ].map((match) => match[1]);
+    const shelf =
+      render({})
+        .split('class="marketplace-shelf marketplace-shelf-notable"')[1]
+        ?.split("</section>")[0] ?? "";
+    expect(shelf).toContain('href="/marketplace?collection=launch"');
+    expect(ids(shelf)).toEqual([
+      "curated-7",
+      "curated-5",
+      "curated-3",
+      "curated-1",
+      "curated-6",
+      "curated-4",
+    ]);
+    const collection = render({
+      collection: "launch",
+      sort: "most-installed",
+      category: "uncategorized",
+    });
+    expect(ids(collection)).toEqual([
+      "curated-7",
+      "curated-5",
+      "curated-3",
+      "curated-1",
+      "curated-6",
+      "curated-4",
+      "curated-2",
+    ]);
+    expect(collection).toContain('href="/marketplace">All plugins');
+    expect(render({ collection: "unknown" })).toContain(
+      "marketplace-shelf-notable",
+    );
   });
 
   it("keeps raster artwork as an image", () => {

@@ -16,6 +16,7 @@ import type { SharedInjectedSkillSource } from "./injected-skills.js";
 export interface ResolvedSharedSkills {
   runtimeSources: SharedInjectedSkillSource[];
   summaries: SkillSummary[];
+  identities: ReadonlyMap<string, { contentSha256: string; realPath: string }>;
 }
 
 export function hostPathDirname(filePath: string): string {
@@ -81,7 +82,7 @@ export async function resolveSharedSkills(
 ): Promise<ResolvedSharedSkills> {
   const roots = sharedSkillNativeRoots(deps);
   if (providerNativeRootsAreEmpty(roots)) {
-    return { runtimeSources: [], summaries: [] };
+    return { runtimeSources: [], summaries: [], identities: new Map() };
   }
   const result = await callHostRetryableOnlineRpc(deps, {
     hostId: args.hostId,
@@ -105,10 +106,12 @@ export function toResolvedSharedSkills(
   skills: readonly DiscoveredSkill[],
 ): ResolvedSharedSkills {
   const resolved: Array<NonNullable<ReturnType<typeof toSharedSkill>>> = [];
+  const summaries: SkillSummary[] = [];
   const names = new Set<string>();
   for (const skill of skills) {
     const entry = toSharedSkill(deps, skill);
     if (entry === null) continue;
+    summaries.push(entry.summary);
     if (names.has(entry.runtimeSource.name)) {
       deps.logger.debug(
         {
@@ -123,7 +126,13 @@ export function toResolvedSharedSkills(
     resolved.push(entry);
   }
   return {
+    identities: new Map(
+      skills.map((skill) => [
+        skill.id,
+        { contentSha256: skill.contentSha256, realPath: skill.realPath },
+      ]),
+    ),
     runtimeSources: resolved.map((entry) => entry.runtimeSource),
-    summaries: resolved.map((entry) => entry.summary),
+    summaries,
   };
 }
