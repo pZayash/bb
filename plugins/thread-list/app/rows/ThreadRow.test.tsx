@@ -1524,6 +1524,28 @@ describe("ThreadRow", () => {
     expect(line?.parentElement?.className).toContain("flex-1");
   });
 
+  // bb-fork(windows): regression for the merge that nested the w-full model
+  // line inside a no-wrap flex — the model squeezed the title to zero width
+  // and rows rendered only the model text.
+  it("keeps the model line on a wrapped row so the title stays visible", () => {
+    const { container } = renderThreadRow({
+      thread: createThread({
+        providerId: "codex",
+        model: "openai-codex/gpt-5.6-sol",
+        title: "Visible title",
+        displayTitle: "Visible title",
+      }),
+      providers: [makeProvider("codex", "Codex")],
+    });
+
+    const title = container.querySelector(".bb-thread-title");
+    expect(title?.textContent).toContain("Visible title");
+    const line = container.querySelector("[data-sidebar-thread-model]")
+      ?.parentElement;
+    expect(line?.classList.contains("w-full")).toBe(true);
+    expect(line?.parentElement?.className).toContain("flex-wrap");
+  });
+
   it("routes a tap on the bare row through its navigation link", () => {
     renderThreadRow();
     const link = screen.getByRole("link", { name: "Open Thread" });

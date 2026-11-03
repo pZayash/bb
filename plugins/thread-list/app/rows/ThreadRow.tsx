@@ -657,7 +657,10 @@ function ThreadRowComponent({
           "relative flex min-w-0 flex-1 items-center gap-1.5 self-stretch",
           showRowMetadata &&
             "flex-wrap content-center gap-y-0 py-1 has-[[data-thread-row-metadata][data-has-items]]:py-1.25 has-[[data-thread-row-metadata][data-has-items]]:[&_.bb-thread-title]:leading-4",
-          // bb-fork(windows): the w-full model line wraps to a row under the title.
+          // bb-fork(windows): MERGE SEAM — the model line below relies on this
+          // container wrapping. If a future upstream layout drops flex-wrap or
+          // moves the model line into a no-wrap flex, its w-full squeezes the
+          // title to zero width and rows render only the model text.
           hasModelLine && "flex-wrap",
           !isActionsOpen &&
             "group-data-[sidebar-touch-armed=true]/thread-row:hidden",
@@ -803,7 +806,9 @@ function ThreadRowComponent({
             />
           ) : null}
         </span>
-        {/* bb-fork(windows): the model and reasoning line under the title. */}
+        {/* bb-fork(windows): the model and reasoning line under the title. Keep
+            it a direct child of the wrapping row container above — do NOT nest
+            it inside the no-wrap title flex or it will hide the title again. */}
         {hasModelLine ? (
           <span
             className={cn(
