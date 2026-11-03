@@ -27,6 +27,8 @@ import { PluginContext } from "@/components/plugin/plugin-context";
 import { PluginComposerHostScopeProvider } from "@/components/plugin/plugin-composer-host";
 import { ThreadProviderContext } from "@/components/thread/thread-provider-context";
 import { useEnvironment } from "@/hooks/queries/environment-queries";
+// bb-fork(file-links): project checkout root for relative file refs outside worktrees.
+import { useProjectSourceRootPath } from "@/hooks/useProjectSourceRootPath.fork";
 import { useSystemProviderInfo } from "@/hooks/queries/system-queries";
 import { useThread } from "@/hooks/queries/thread-queries";
 import { useMarkThreadRead } from "@/hooks/mutations/thread-state-mutations";
@@ -191,6 +193,27 @@ function PluginThreadChatBody({
     (canUseHostFileNavigation
       ? timelineNavigation.workspaceRootPath
       : undefined);
+  // bb-fork(file-links): relative refs in messages also resolve against the project checkout.
+  const projectSourceRootPath = useProjectSourceRootPath(
+    thread?.projectId,
+    environment?.hostId ?? null,
+  );
+  const fallbackRelativeRoots = useMemo<readonly string[] | undefined>(() => {
+    if (
+      projectSourceRootPath !== null &&
+      projectSourceRootPath !== workspaceRootPath
+    ) {
+      return [projectSourceRootPath];
+    }
+    return canUseHostFileNavigation
+      ? timelineNavigation?.fallbackRelativeRoots
+      : undefined;
+  }, [
+    canUseHostFileNavigation,
+    projectSourceRootPath,
+    timelineNavigation?.fallbackRelativeRoots,
+    workspaceRootPath,
+  ]);
   const pluginId = useContext(PluginContext);
   const consumerMessageActions = useMemo<
     readonly ThreadTimelineConsumerMessageAction[] | undefined
@@ -312,6 +335,7 @@ function PluginThreadChatBody({
       <PluginComposerHostScopeProvider>
         <ThreadTimelineNavigationProvider
           environmentId={thread.environmentId}
+          fallbackRelativeRoots={fallbackRelativeRoots}
           hostId={environment?.hostId ?? null}
           onOpenLocalFileLink={onOpenLocalFileLink}
           resolveMentionLink={resolveMentionLink}

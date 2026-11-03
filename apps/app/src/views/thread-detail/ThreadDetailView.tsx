@@ -121,6 +121,8 @@ import { StartCommitPicker } from "@/components/workspace/StartCommitPicker.fork
 import { useThreadStartCommitView } from "@/lib/thread-start-view.fork";
 // bb-fork(quiet-reparent): the quiet switch lives in the Info panel.
 import { useQuietReparentPreference } from "@/components/secondary-panel/quiet-reparent.fork";
+// bb-fork(file-links): project checkout root for relative file refs outside worktrees.
+import { useProjectSourceRootPath } from "@/hooks/useProjectSourceRootPath.fork";
 // bb-fork(windows): shell picked beside the Start terminal action.
 import { useTerminalShellChoice } from "@/components/secondary-panel/useTerminalShellChoice";
 import { TerminalShellSelector } from "@/components/secondary-panel/TerminalShellSelector";
@@ -317,6 +319,19 @@ function ThreadDetailViewInternal(
     staleTime: 5_000,
   });
   const environment = environmentQuery.data;
+  // bb-fork(file-links): relative refs in messages also resolve against the project checkout.
+  const projectSourceRootPath = useProjectSourceRootPath(
+    thread?.projectId ?? projectId,
+    environment?.hostId ?? null,
+  );
+  const fileLinkFallbackRoots = useMemo<readonly string[]>(
+    () =>
+      projectSourceRootPath === null ||
+      projectSourceRootPath === environment?.path
+        ? []
+        : [projectSourceRootPath],
+    [environment?.path, projectSourceRootPath],
+  );
   const hostLifecycle =
     environment === undefined || environment.hostLifecycle === "active"
       ? null
@@ -1761,6 +1776,7 @@ function ThreadDetailViewInternal(
       />
       <ThreadTimelineNavigationProvider
         environmentId={thread.environmentId}
+        fallbackRelativeRoots={fileLinkFallbackRoots}
         hostId={environment?.hostId ?? null}
         onOpenLocalFileLink={handleOpenTimelineLocalFileLink}
         resolveMentionLink={resolveMentionLink}

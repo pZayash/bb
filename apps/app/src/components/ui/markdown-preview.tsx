@@ -137,7 +137,7 @@ import {
   useRewriteLocalhostLinksPreference,
 } from "@/lib/localhost-link-rewrite-preference";
 import { useAppNavigationHost } from "@/lib/app-navigation-host";
-import { useHostPathExists } from "@/hooks/queries/host-path-queries";
+import { useHostPathExistence } from "@/hooks/queries/host-path-queries";
 import { cn } from "@bb/shared-ui/lib/utils";
 import remarkDirective from "remark-directive";
 import { PromptMentionPill } from "@/components/thread/timeline/ConversationMessageMentions.js";
@@ -282,7 +282,7 @@ interface MarkdownInlineCodeFileLinkProps {
   hostId: string;
   linkRouting: MarkdownLinkRouting | undefined;
   rewriteLocalhostLinks: boolean;
-  target: ResolvedMarkdownLocalFileTarget;
+  targets: readonly ResolvedMarkdownLocalFileTarget[];
 }
 
 interface MarkdownCodeRendererProps extends MarkdownCodeProps {
@@ -374,7 +374,10 @@ function areMarkdownLocalFileLinkRoutingsEqual({
     areMarkdownRelativeLocalFileLinkRoutingsEqual({
       next: next.relativeLinks,
       previous: previous.relativeLinks,
-    })
+    }) &&
+    // bb-fork(file-links)
+    (previous.fallbackRelativeRoots ?? []).join("\0") ===
+      (next.fallbackRelativeRoots ?? []).join("\0")
   );
 }
 
@@ -531,31 +534,45 @@ function buildLocalAwareUrlTransform({
   };
 }
 
-function resolveInlineCodeFileTarget({
+function resolveInlineCodeFileTargets({
   codeText,
   localFileRouting,
 }: {
   codeText: string;
   localFileRouting: MarkdownLocalFileLinkRouting;
-}): ResolvedMarkdownLocalFileTarget | null {
+}): ResolvedMarkdownLocalFileTarget[] {
   if (codeText.length === 0 || /\s/u.test(codeText)) {
-    return null;
+    return [];
   }
 
-  const target = resolveMarkdownLocalFileTarget(
-    codeText,
-    localFileRouting.absoluteLinks,
-    localFileRouting.relativeLinks,
+  const targets: ResolvedMarkdownLocalFileTarget[] = [];
+  const addTarget = (
+    relativeLinks: MarkdownRelativeLocalFileLinkRouting | undefined,
+  ) => {
+    const target = resolveMarkdownLocalFileTarget(
+      codeText,
+      localFileRouting.absoluteLinks,
+      relativeLinks,
+    );
+    if (
+      target !== null &&
+      targets.every((existing) => existing.link.path !== target.link.path)
+    ) {
+      targets.push(target);
+    }
+  };
+  addTarget(localFileRouting.relativeLinks);
+  // bb-fork(file-links): extra roots, e.g. the project checkout behind a worktree.
+  for (const rootPath of localFileRouting.fallbackRelativeRoots ?? []) {
+    addTarget({ baseDir: rootPath, rootPath });
+  }
+
+  return targets.filter(
+    (target) =>
+      /^(?:[/\\]|\.{1,2}[/\\]|[a-zA-Z]:[/\\]|file:\/\/)/u.test(codeText) ||
+      /\.[\p{L}\p{N}_-]+$/u.test(target.link.path) ||
+      target.link.lineRange !== null,
   );
-  if (target === null) {
-    return null;
-  }
-
-  return /^(?:[/\\]|\.{1,2}[/\\]|[a-zA-Z]:[/\\]|file:\/\/)/u.test(codeText) ||
-    /\.[\p{L}\p{N}_-]+$/u.test(target.link.path) ||
-    target.link.lineRange !== null
-    ? target
-    : null;
 }
 
 const markdownLinkGraphemes = new Intl.Segmenter(undefined, {
@@ -880,11 +897,11 @@ function MarkdownCode({
   if (localFileRouting === undefined || localFileRouting.hostId === null) {
     return code;
   }
-  const localFileTarget = resolveInlineCodeFileTarget({
+  const localFileTargets = resolveInlineCodeFileTargets({
     codeText,
     localFileRouting,
   });
-  if (localFileTarget !== null) {
+  if (localFileTargets.length > 0) {
     return (
       <MarkdownInlineCodeFileLink
         code={code}
@@ -892,7 +909,7 @@ function MarkdownCode({
         hostId={localFileRouting.hostId}
         linkRouting={linkRouting}
         rewriteLocalhostLinks={rewriteLocalhostLinks}
-        target={localFileTarget}
+        targets={localFileTargets}
       />
     );
   }
@@ -906,10 +923,17 @@ function MarkdownInlineCodeFileLink({
   hostId,
   linkRouting,
   rewriteLocalhostLinks,
-  target,
+  targets,
 }: MarkdownInlineCodeFileLinkProps) {
-  const exists = useHostPathExists(hostId, target.link.path);
-  if (!exists) {
+  // bb-fork(file-links): the first resolved candidate that exists on the host wins.
+  const existence = useHostPathExistence(
+    hostId,
+    targets.map((target) => target.link.path),
+  );
+  const target = targets.find(
+    (candidate) => existence[candidate.link.path] === true,
+  );
+  if (target === undefined) {
     return code;
   }
   return (

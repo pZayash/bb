@@ -6,6 +6,8 @@ import { buildThreadHostFileContentUrl } from "@/lib/file-content-urls";
 
 interface ThreadTimelineNavigation {
   environmentId: string | null;
+  // bb-fork(file-links): extra roots for relative file refs, e.g. the project checkout behind a worktree.
+  fallbackRelativeRoots?: readonly string[];
   hostId: string | null;
   onOpenLocalFileLink: ThreadTimelineLocalFileLinkHandler;
   resolveMentionLink: PromptMentionLinkResolver;
@@ -19,6 +21,7 @@ const ThreadTimelineNavigationContext =
 export function ThreadTimelineNavigationProvider({
   children,
   environmentId,
+  fallbackRelativeRoots,
   hostId,
   onOpenLocalFileLink,
   resolveMentionLink,
@@ -28,6 +31,7 @@ export function ThreadTimelineNavigationProvider({
   const navigation = useMemo<ThreadTimelineNavigation>(
     () => ({
       environmentId,
+      fallbackRelativeRoots,
       hostId,
       onOpenLocalFileLink,
       resolveMentionLink,
@@ -36,6 +40,7 @@ export function ThreadTimelineNavigationProvider({
     }),
     [
       environmentId,
+      fallbackRelativeRoots,
       hostId,
       onOpenLocalFileLink,
       resolveMentionLink,
@@ -62,6 +67,7 @@ export function useMessageLinkRouting(
   const hostId = navigation?.hostId ?? null;
   const onOpenLocalFileLink = navigation?.onOpenLocalFileLink;
   const workspaceRootPath = navigation?.workspaceRootPath;
+  const fallbackRelativeRoots = navigation?.fallbackRelativeRoots;
   return useMemo(() => {
     if (onOpenLocalFileLink === undefined && threadId === undefined) {
       return undefined;
@@ -86,8 +92,18 @@ export function useMessageLinkRouting(
         ...(relativePaths === undefined
           ? {}
           : { relativeLinks: relativePaths }),
+        ...(fallbackRelativeRoots === undefined ||
+        fallbackRelativeRoots.length === 0
+          ? {}
+          : { fallbackRelativeRoots }),
       };
     }
     return routing;
-  }, [hostId, onOpenLocalFileLink, threadId, workspaceRootPath]);
+  }, [
+    fallbackRelativeRoots,
+    hostId,
+    onOpenLocalFileLink,
+    threadId,
+    workspaceRootPath,
+  ]);
 }

@@ -31,15 +31,17 @@ export function useHostPathExistence(
 
   const query = useQuery({
     queryKey: hostPathExistenceQueryKey(hostId, sortedPaths),
+    // bb-fork(file-links): join the per-host batch so many distinct path sets share one call.
     queryFn: enabledHostId
-      ? async ({ signal }) =>
-          (
-            await sdk.hosts.pathsExist({
-              hostId: enabledHostId,
-              paths: sortedPaths,
-              signal,
-            })
-          ).existence
+      ? async () =>
+          Object.fromEntries(
+            await Promise.all(
+              sortedPaths.map(async (path) => [
+                path,
+                await loadHostPathExists(enabledHostId, path),
+              ]),
+            ),
+          )
       : skipToken,
     staleTime: HOST_PATH_EXISTENCE_STALE_TIME_MS,
   });

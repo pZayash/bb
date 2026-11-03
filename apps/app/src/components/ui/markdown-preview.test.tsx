@@ -469,6 +469,67 @@ describe("MarkdownPreview", () => {
     ]);
   });
 
+  it("links inline-code references that resolve under a fallback root", async () => {
+    const { pathsExist, wrapper } = createMarkdownLocalFileHostTestWrapper(
+      (path) => path === "/checkout/.tmp/report.md",
+    );
+    render(
+      <MarkdownPreview
+        content="See `.tmp/report.md`."
+        linkRouting={{
+          localFile: {
+            ...inlineCodeLinkRouting.localFile,
+            fallbackRelativeRoots: ["/checkout"],
+          },
+        }}
+      />,
+      { wrapper },
+    );
+
+    const link = await screen.findByRole("link", { name: ".tmp/report.md" });
+    expect(link.getAttribute("href")).toBe("file:///checkout/.tmp/report.md");
+    fireEvent.click(link);
+    expect(
+      workspaceLinkRouting.localFile.onOpenLink,
+    ).toHaveBeenCalledExactlyOnceWith({
+      path: "/checkout/.tmp/report.md",
+      lineRange: null,
+      openTargetId: null,
+    });
+    expect(pathsExist).toHaveBeenCalledOnce();
+    expect([...pathsExist.mock.calls[0]![0].paths].sort()).toEqual([
+      "/checkout/.tmp/report.md",
+      "/workspace/.tmp/report.md",
+    ]);
+  });
+
+  it("prefers the workspace path over fallback roots when both exist", async () => {
+    const { wrapper } = createMarkdownLocalFileHostTestWrapper(() => true);
+    render(
+      <MarkdownPreview
+        content="See `.tmp/report.md`."
+        linkRouting={{
+          localFile: {
+            ...inlineCodeLinkRouting.localFile,
+            fallbackRelativeRoots: ["/checkout"],
+          },
+        }}
+      />,
+      { wrapper },
+    );
+
+    const link = await screen.findByRole("link", { name: ".tmp/report.md" });
+    expect(link.getAttribute("href")).toBe("file:///workspace/.tmp/report.md");
+    fireEvent.click(link);
+    expect(
+      workspaceLinkRouting.localFile.onOpenLink,
+    ).toHaveBeenCalledExactlyOnceWith({
+      path: "/workspace/.tmp/report.md",
+      lineRange: null,
+      openTargetId: null,
+    });
+  });
+
   it("keeps inline-code file references as code without a host to check them on", () => {
     render(
       <MarkdownPreview

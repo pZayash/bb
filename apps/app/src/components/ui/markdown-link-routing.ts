@@ -48,6 +48,8 @@ export const MarkdownLocalFileOpenTargetsContext = createContext<
 
 export interface MarkdownLocalFileLinkRouting {
   absoluteLinks: MarkdownAbsoluteLocalFileLinkRouting;
+  // bb-fork(file-links): extra roots for relative refs, e.g. the project checkout behind a worktree.
+  fallbackRelativeRoots?: readonly string[];
   hostId: string | null;
   onOpenLink: MarkdownPreviewLocalFileLinkHandler;
   relativeLinks?: MarkdownRelativeLocalFileLinkRouting;
