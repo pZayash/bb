@@ -412,6 +412,8 @@ function ThreadRowComponent({
   const shortcut = useSidebarThreadShortcut(thread.id);
   const pluginThreadRowStatus = useSidebarThreadRowStatus(thread.id);
   const threadProvider = useThreadProvider(thread.providerId);
+  // bb-fork(windows): the model line under the title exists when either is set.
+  const hasModelLine = thread.model != null || thread.reasoningLevel != null;
   const { hasUnsubmittedDraft: hasComposerDraft } = useSidebarThreadDraft(
     thread.id,
   );
@@ -571,7 +573,7 @@ function ThreadRowComponent({
     LIST_HOVER_TRANSITION,
     parentOptions?.stickyLevel === undefined && "relative",
     // bb-fork(windows): the model line makes the row taller.
-    thread.model != null || thread.reasoningLevel != null
+    hasModelLine
       ? SIDEBAR_MODEL_ROW_HEIGHT_CLASS
       : options.isCompact
         ? COARSE_POINTER_COMPACT_ROW_HEIGHT_CLASS
@@ -655,6 +657,8 @@ function ThreadRowComponent({
           "relative flex min-w-0 flex-1 items-center gap-1.5 self-stretch",
           showRowMetadata &&
             "flex-wrap content-center gap-y-0 py-1 has-[[data-thread-row-metadata][data-has-items]]:py-1.25 has-[[data-thread-row-metadata][data-has-items]]:[&_.bb-thread-title]:leading-4",
+          // bb-fork(windows): the w-full model line wraps to a row under the title.
+          hasModelLine && "flex-wrap",
           !isActionsOpen &&
             "group-data-[sidebar-touch-armed=true]/thread-row:hidden",
           !shortcut &&
@@ -722,13 +726,14 @@ function ThreadRowComponent({
                 "flex-1",
             )}
           >
-            {provider ? (
+            {/* bb-fork(windows): the provider icon always shows when the provider resolves. */}
+            {threadProvider ? (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span
-                    data-sidebar-thread-provider={provider.id}
+                    data-sidebar-thread-provider={threadProvider.id}
                     role="img"
-                    aria-label={provider.displayName}
+                    aria-label={threadProvider.displayName}
                     className="pointer-events-auto relative z-[31] flex size-4 shrink-0 items-center justify-center mr-2 text-muted-foreground"
                     onClick={(event) => {
                       event.preventDefault();
@@ -738,13 +743,14 @@ function ThreadRowComponent({
                   >
                     <ProviderIcon
                       providerKind="agent"
-                      provider={provider}
+                      provider={threadProvider}
                       className="size-3.5"
+                      aria-label={threadProvider.displayName}
                     />
                   </span>
                 </TooltipTrigger>
                 <TooltipContent side="top">
-                  {provider.displayName}
+                  {threadProvider.displayName}
                 </TooltipContent>
               </Tooltip>
             ) : null}
@@ -796,22 +802,22 @@ function ThreadRowComponent({
               revealOnHover={!isParentCollapsed}
             />
           ) : null}
-          {/* bb-fork(windows): the model and reasoning line under the title. */}
-          {thread.model != null || thread.reasoningLevel != null ? (
-            <span
-              className={cn(
-                "pointer-events-none flex w-full min-w-0 items-center gap-1 pb-1.5",
-                showProviderIcons && threadProvider !== null && "pl-5",
-              )}
-            >
-              <ThreadModelLabel
-                model={thread.model}
-                reasoningLevel={thread.reasoningLevel}
-                provider={threadProvider}
-              />
-            </span>
-          ) : null}
         </span>
+        {/* bb-fork(windows): the model and reasoning line under the title. */}
+        {hasModelLine ? (
+          <span
+            className={cn(
+              "pointer-events-none flex w-full min-w-0 items-center gap-1 pb-1.5",
+              showProviderIcons && threadProvider !== null && "pl-5",
+            )}
+          >
+            <ThreadModelLabel
+              model={thread.model}
+              reasoningLevel={thread.reasoningLevel}
+              provider={threadProvider}
+            />
+          </span>
+        ) : null}
         {!showRowMetadata || isEditing || isCustomizingActions ? null : (
           <span
             className={cn(

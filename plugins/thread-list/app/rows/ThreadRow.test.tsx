@@ -458,9 +458,10 @@ describe("ThreadRow", () => {
 
     slot.rerenderThreadRow(createThread());
     act(() => getDefaultStore().set(sidebarShowProviderIconsAtom, false));
+    // bb-fork(windows): the icon stays — the atom only gates upstream's extra mark.
     expect(
       slot.container.querySelector("[data-sidebar-thread-provider]"),
-    ).toBeNull();
+    ).not.toBeNull();
   });
 
   it("links the row to the thread href and leaves a plain click to the host", () => {
@@ -1515,11 +1516,12 @@ describe("ThreadRow", () => {
 
     const line = container.querySelector("[data-sidebar-thread-model]")
       ?.parentElement;
-    const link = screen.getByRole("link", { name: "Open Parent thread" });
     expect(line?.classList.contains("w-full")).toBe(true);
     expect(line?.classList.contains("pb-1.5")).toBe(true);
     expect(line?.classList.contains("pl-5")).toBe(true);
-    expect(line?.parentElement).toBe(link.parentElement);
+    // bb-fork(windows): the model line wraps to its own row inside the title cell.
+    expect(line?.parentElement?.className).toContain("flex-wrap");
+    expect(line?.parentElement?.className).toContain("flex-1");
   });
 
   it("routes a tap on the bare row through its navigation link", () => {
