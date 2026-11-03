@@ -222,6 +222,7 @@ function createFakeRuntime() {
       ]),
     ],
     hasOpenBackgroundWork: () => openBackgroundWork,
+    listOpenBackgroundWork: () => [],
     shutdown: vi.fn(async () => undefined),
     endActiveTurn: (threadId) => {
       activeTurnsByThreadId.delete(threadId);

@@ -1,6 +1,6 @@
 // bb-fork: upstream version + 2 while the fork carries wire deltas
 // (windows host platform, workspace.commits); the merge script sets it.
-export const HOST_DAEMON_PROTOCOL_VERSION = 260 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 261 as const;
 
 export const HOST_DAEMON_CONNECT_NEXT_PROTOCOL_VERSION = 247 as const;
 

@@ -34,4 +34,8 @@ export {
 } from "./plugin-manifest.js";
 
 export { copyPluginRuntime } from "./prepare-plugin-runtime.js";
-export { dropHostProvidedTailwind } from "./scope-plugin-utilities.js";
+export {
+  dropAnonymousPluginRootScope,
+  dropHostProvidedTailwind,
+  findUnnamedPluginRoots,
+} from "./scope-plugin-utilities.js";

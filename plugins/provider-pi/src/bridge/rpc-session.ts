@@ -577,7 +577,9 @@ export class PiRpcSession {
           : { checkpointId: args.checkpointId }),
       });
     } finally {
-      session.kill();
+      session.closed = true;
+      session.child?.closeGracefully();
+      await session.child?.waitForExit();
     }
   }
 

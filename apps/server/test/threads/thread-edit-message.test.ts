@@ -1928,7 +1928,8 @@ describe("editThreadMessage", () => {
       name: "an archived thread",
       providerId: "codex",
       archived: true,
-      refusal: "The thread is not writable",
+      // bb-fork(archive-hint): the fork names the way out of the archived state.
+      refusal: "Thread is archived (unarchive it with: bb thread unarchive",
     },
   ])(
     "reports and enforces the same refusal for $name",

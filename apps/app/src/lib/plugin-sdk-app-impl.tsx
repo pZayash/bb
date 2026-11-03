@@ -105,6 +105,7 @@ import {
   experimental_THREAD_INFO_ROW_GROUPS,
   experimental_THREAD_INFO_SECTION_GROUPS,
 } from "@get-bb/plugin-sdk";
+import { experimental_resolveThreadStatus } from "@get-bb/plugin-sdk/internal/thread-status";
 import {
   ThreadActionsContextMenu,
   ThreadActionsMenu,
@@ -249,6 +250,7 @@ export const pluginSdkAppImplementation = {
   useSidebarThreadShortcut,
   ThreadTitle: PluginThreadTitle,
   experimental_ThreadStatusGlyph: ThreadStatusGlyph,
+  experimental_resolveThreadStatus,
   useEnvironmentProviders,
   useSdk,
   experimental_useProviders: useProviders,

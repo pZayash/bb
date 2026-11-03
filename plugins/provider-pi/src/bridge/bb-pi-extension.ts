@@ -1,6 +1,6 @@
 export const BB_PI_EXTENSION_SOURCE = String.raw`
-import { readFileSync, renameSync, writeSync } from "node:fs";
-import { Socket } from "node:net";
+import { readFileSync, renameSync } from "node:fs";
+import { connect } from "node:net";
 import { StringDecoder } from "node:string_decoder";
 import * as PiRuntime from "@earendil-works/pi-coding-agent";
 // bb-fork(compaction-model): runPiCompaction powers the configured-model path.
@@ -12,39 +12,36 @@ function supportsAgentSettlement(version) {
 }
 import { Type } from "typebox";
 
-const CHILD_TO_BRIDGE_FD = 3;
-const BRIDGE_TO_CHILD_FD = 4;
-// bb-fork(windows): named-pipe channel for children spawned through cmd.exe.
-const CHANNEL_PIPE_PATH = process.env.BB_PI_BRIDGE_CHANNEL_PIPE || null;
+const BRIDGE_CHANNEL_ENV = "BB_PI_BRIDGE_CHANNEL";
+const BRIDGE_CHANNEL_TOKEN_ENV = "BB_PI_BRIDGE_CHANNEL_TOKEN";
+const BRIDGE_CHANNEL = Symbol.for("bb.pi.bridgeChannel");
 
-let channelSocket = null;
-const channelWriteQueue = [];
-
-function writeLine(fd, message) {
-  const line = JSON.stringify(message) + "\n";
-  try {
-    // bb-fork(windows): write to the named pipe when the bridge exposes one.
-    if (CHANNEL_PIPE_PATH !== null) {
-      if (channelSocket === null) {
-        channelWriteQueue.push(line);
-      } else {
-        channelSocket.write(line);
-      }
-      return;
-    }
-    // Synchronous: tool results and fork replies must never interleave.
-    writeSyncAll(fd, line);
-  } catch {
-    // The bridge is gone; nothing to report to.
+function openBridgeChannel() {
+  const address = process.env[BRIDGE_CHANNEL_ENV];
+  const token = process.env[BRIDGE_CHANNEL_TOKEN_ENV];
+  delete process.env[BRIDGE_CHANNEL_ENV];
+  delete process.env[BRIDGE_CHANNEL_TOKEN_ENV];
+  if (!address || !token) {
+    return Promise.reject(new Error("bb did not provide its Pi bridge channel"));
   }
+  return new Promise((resolve, reject) => {
+    const socket = connect(address);
+    const channel = { socket, onLine: () => undefined };
+    socket.once("error", reject);
+    socket.once("connect", () => {
+      socket.off("error", reject);
+      socket.on("error", () => undefined);
+      socket.unref();
+      socket.write(token + "\n");
+      readLines(socket, (line) => channel.onLine(line));
+      resolve(channel);
+    });
+  });
 }
 
-function writeSyncAll(fd, text) {
-  const buffer = Buffer.from(text, "utf8");
-  let offset = 0;
-  while (offset < buffer.length) {
-    offset += writeSync(fd, buffer, offset, buffer.length - offset);
-  }
+function bridgeChannel() {
+  globalThis[BRIDGE_CHANNEL] ??= openBridgeChannel();
+  return globalThis[BRIDGE_CHANNEL];
 }
 
 /** Newline-only line reader (never readline: it splits on U+2028/U+2029). */
@@ -66,33 +63,6 @@ function readLines(input, onLine) {
       onLine(line.endsWith("\r") ? line.slice(0, -1) : line);
     }
   });
-}
-
-// bb-fork(windows): Windows cannot pass the fd 3/4 pipes into a child
-// spawned through cmd.exe, so the bridge exposes a named pipe instead and
-// points us at it via the env.
-function connectChannelPipe(pipePath, onLine, attemptsLeft) {
-  const socket = new Socket();
-  socket.on("error", () => undefined);
-  socket.unref();
-  socket.once("connect", () => {
-    channelSocket = socket;
-    for (const queued of channelWriteQueue.splice(0)) {
-      socket.write(queued);
-    }
-  });
-  socket.once("close", () => {
-    if (channelSocket === socket) {
-      channelSocket = null;
-    }
-    if (attemptsLeft <= 0) return;
-    const retry = setTimeout(() => {
-      connectChannelPipe(pipePath, onLine, attemptsLeft - 1);
-    }, 50);
-    retry.unref();
-  });
-  socket.connect(pipePath);
-  readLines(socket, onLine);
 }
 
 // ---- JSON Schema → TypeBox (the bb tool definitions carry JSON Schema) ----
@@ -213,7 +183,11 @@ function buildParameters(inputSchema) {
 
 // ---- the extension ----
 
-export default function bbExtension(pi) {
+export default async function bbExtension(pi) {
+  const channel = await bridgeChannel();
+  const writeLine = (message) => {
+    if (channel.socket.writable) channel.socket.write(JSON.stringify(message) + "\n");
+  };
   const toolsFile = process.env.PI_BB_TOOLS_FILE;
   const tools = toolsFile ? JSON.parse(readFileSync(toolsFile, "utf8")) : [];
   const pendingToolCalls = new Map();
@@ -246,52 +220,14 @@ export default function bbExtension(pi) {
       void handleBridgeRequest(message);
     }
   }
-
-  if (CHANNEL_PIPE_PATH !== null) {
-    // bb-fork(windows): prefer the named pipe over fd/Bun channels.
-    connectChannelPipe(CHANNEL_PIPE_PATH, handleBridgeLine, 100);
-  } else if (typeof Bun !== "undefined") {
-    // pi ships as a Bun-compiled binary, and Bun's net.Socket cannot attach
-    // to a borrowed stdio fd (the handle stays null and nothing is ever
-    // read), so the bridge channel is read through Bun's file stream instead.
-    void (async () => {
-      const decoder = new StringDecoder("utf8");
-      let pending = "";
-      try {
-        for await (const chunk of Bun.file(BRIDGE_TO_CHILD_FD).stream()) {
-          const text = typeof chunk === "string" ? chunk : decoder.write(chunk);
-          let start = 0;
-          for (;;) {
-            const index = text.indexOf("\n", start);
-            if (index === -1) {
-              pending += text.slice(start);
-              break;
-            }
-            const line = pending + text.slice(start, index);
-            pending = "";
-            start = index + 1;
-            handleBridgeLine(line.endsWith("\r") ? line.slice(0, -1) : line);
-          }
-        }
-      } catch {
-        // The bridge is gone; nothing to report to.
-      }
-    })();
-  } else {
-    // Non-blocking: libuv polls the pipe, so pi's process.exit is never held
-    // up by an outstanding read; EOF (the bridge ended its writer) closes it.
-    const bridgeIn = new Socket({ fd: BRIDGE_TO_CHILD_FD, readable: true, writable: false });
-    bridgeIn.on("error", () => undefined);
-    bridgeIn.unref();
-    readLines(bridgeIn, handleBridgeLine);
-  }
+  channel.onLine = handleBridgeLine;
 
   async function handleBridgeRequest(message) {
     try {
       const result = await runBridgeRequest(message);
-      writeLine(CHILD_TO_BRIDGE_FD, { kind: "reply", id: message.id, result });
+      writeLine({ kind: "reply", id: message.id, result });
     } catch (error) {
-      writeLine(CHILD_TO_BRIDGE_FD, {
+      writeLine({
         kind: "reply",
         id: message.id,
         error: error instanceof Error ? error.message : String(error),
@@ -386,7 +322,7 @@ export default function bbExtension(pi) {
             { once: true },
           );
         }
-        writeLine(CHILD_TO_BRIDGE_FD, {
+        writeLine({
           kind: "tool-call",
           id,
           toolName: tool.name,
@@ -399,7 +335,7 @@ export default function bbExtension(pi) {
 
   pi.on("session_start", async (_event, ctx) => {
     sessionContext = ctx;
-    writeLine(CHILD_TO_BRIDGE_FD, {
+    writeLine({
       kind: "model-scope",
       ...currentModelScope(),
     });
@@ -416,17 +352,17 @@ export default function bbExtension(pi) {
       }
       if (missing) pi.setActiveTools([...active]);
     }
-    writeLine(CHILD_TO_BRIDGE_FD, { kind: "ready", agentSettled: supportsAgentSettlement(PiRuntime.VERSION) });
+    writeLine({ kind: "ready", agentSettled: supportsAgentSettlement(PiRuntime.VERSION) });
   });
 
   pi.on("agent_start", (_event, ctx) => {
     sessionContext = ctx ?? sessionContext;
     runId += 1;
-    writeLine(CHILD_TO_BRIDGE_FD, { kind: "agent-start", runId, previousSettlement: lastSettlement });
+    writeLine({ kind: "agent-start", runId, previousSettlement: lastSettlement });
   });
   pi.on("agent_end", async (_event, ctx) => {
     sessionContext = ctx ?? sessionContext;
-    writeLine(CHILD_TO_BRIDGE_FD, { kind: "agent-end-leaf", leafId: currentLeafId() });
+    writeLine({ kind: "agent-end-leaf", leafId: currentLeafId() });
   });
 
   // bb-fork(compaction-model): manual /compact may run on a configured model.
@@ -443,10 +379,15 @@ export default function bbExtension(pi) {
       return undefined;
     }
     try {
-      const compaction = await runConfiguredCompaction(event, ctx, spec);
+      const compaction = await runConfiguredCompaction(
+        writeLine,
+        event,
+        ctx,
+        spec,
+      );
       return compaction === null ? undefined : { compaction };
     } catch (error) {
-      reportCompactionFallback(spec, error);
+      reportCompactionFallback(writeLine, spec, error);
       return undefined;
     }
   });
@@ -458,13 +399,13 @@ export default function bbExtension(pi) {
       event: { ..._event },
       ...(ctx?.isIdle?.() === false ? { error: "Pi settlement handler ran after another extension started a new run" } : {}),
     };
-    writeLine(CHILD_TO_BRIDGE_FD, { kind: "agent-settled-leaf", ...lastSettlement });
+    writeLine({ kind: "agent-settled-leaf", ...lastSettlement });
   });
 }
 
 // bb-fork(compaction-model): helpers for the configured-model compaction path.
-function reportCompactionFallback(spec, error) {
-  writeLine(CHILD_TO_BRIDGE_FD, {
+function reportCompactionFallback(writeLine, spec, error) {
+  writeLine({
     kind: "compaction-model-fallback",
     model: spec,
     error: error instanceof Error ? error.message : String(error),
@@ -482,10 +423,11 @@ function resolveCompactionModel(ctx, spec) {
         .find((candidate) => candidate.id === modelId);
 }
 
-async function runConfiguredCompaction(event, ctx, spec) {
+async function runConfiguredCompaction(writeLine, event, ctx, spec) {
   const model = resolveCompactionModel(ctx, spec);
   if (!model) {
     reportCompactionFallback(
+      writeLine,
       spec,
       new Error(
         'Model "' + spec + '" is not available in the pi catalog on this host',
@@ -495,7 +437,7 @@ async function runConfiguredCompaction(event, ctx, spec) {
   }
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
   if (!auth.ok) {
-    reportCompactionFallback(spec, new Error(auth.error));
+    reportCompactionFallback(writeLine, spec, new Error(auth.error));
     return null;
   }
   const requestModel = auth.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model;

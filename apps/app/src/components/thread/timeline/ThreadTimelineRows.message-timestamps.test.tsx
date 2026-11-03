@@ -22,7 +22,6 @@ function messageTimestamps(timelineRows: TimelineRow[]): string[] {
           <ThreadTimelineRows
             threadId="thr_main"
             threadRuntimeDisplayStatus="idle"
-            workspaceRootPath={undefined}
             timelineRows={timelineRows}
           />
         </ThreadProviderContext.Provider>

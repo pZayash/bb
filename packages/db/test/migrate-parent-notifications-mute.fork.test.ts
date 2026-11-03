@@ -7,6 +7,7 @@ import {
   dropMarketplaceSourceGitSubdirectoryColumn,
   dropPluginEnabledFollowsDefaultColumn,
   dropQueuedMessageEditHeldUntilColumn,
+  dropThreadParentNotificationsColumn,
   rewindThreadPruningWork,
 } from "./helpers/rewind.js";
 
@@ -14,7 +15,7 @@ const LEGACY_MUTED_AT_MIGRATION_WHEN = 1790254777753;
 const LEGACY_START_REF_MIGRATION_WHEN = 1790682398124;
 const ENVIRONMENT_RETENTION_MIGRATION_WHEN = 1790230932025;
 const REMOVE_THREAD_DRAFTS_MIGRATION_WHEN = 1790613729994;
-const CONSOLIDATED_MIGRATION_WHEN = 1791879075079;
+const CONSOLIDATED_MIGRATION_WHEN = 1793689513289;
 
 function closeConnection(db: DbConnection): void {
   db.$client.close();
@@ -85,6 +86,7 @@ it("reconciles the pre-merge 0131 muted-at migration with upstream's renumbered 
     dropPluginEnabledFollowsDefaultColumn(db);
     dropQueuedMessageEditHeldUntilColumn(db);
     dropEnvironmentStartRefColumn(db);
+    dropThreadParentNotificationsColumn(db);
     dropMarketplaceSourceGitSubdirectoryColumn(db);
     rewindThreadPruningWork(db);
     db.$client

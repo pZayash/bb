@@ -356,6 +356,7 @@ async function requestOfferedProviderExecutionOptions({
       projectId: projectId ?? undefined,
       selectedModel:
         requestedProviderId === providerId ? selectedModel : undefined,
+      preferCached: true,
       signal,
     });
   const response = await request(providerId);

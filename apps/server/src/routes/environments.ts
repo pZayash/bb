@@ -6,7 +6,7 @@ import {
 import { parsePaginationQuery } from "../services/lib/validation.js";
 import {
   clearDiffViewedFiles,
-  countLiveThreadsInEnvironment,
+  environmentHasLiveThreads,
   listDiffViewedFiles,
   listEnvironments,
   markDiffViewedFile,
@@ -144,11 +144,7 @@ export function registerEnvironmentRoutes(
   const routes = publicApiRoutes.environments;
   post(routes.cleanup, async (context, query) => {
     const environment = requireEnvironment(deps.db, context.req.param("id"));
-    if (
-      countLiveThreadsInEnvironment(deps.db, {
-        environmentId: environment.id,
-      }) > 0
-    )
+    if (environmentHasLiveThreads(deps.db, environment.id))
       throw new ApiError(
         409,
         "invalid_request",
@@ -195,11 +191,7 @@ export function registerEnvironmentRoutes(
 
   del(routes.delete, (context) => {
     const environment = requireEnvironment(deps.db, context.req.param("id"));
-    if (
-      countLiveThreadsInEnvironment(deps.db, {
-        environmentId: environment.id,
-      }) > 0
-    ) {
+    if (environmentHasLiveThreads(deps.db, environment.id)) {
       throw new ApiError(
         409,
         "invalid_request",

@@ -164,14 +164,12 @@ describe("manual compaction turn parent notifications", () => {
         turnId: "child-normal-turn",
       });
 
-      vi.useFakeTimers();
       await postTurnCompleted(harness, {
         childId: child.id,
         sessionId: session.id,
         turnId: "child-normal-turn",
       });
-      await vi.advanceTimersByTimeAsync(2_000);
-      vi.useRealTimers();
+      await new Promise((resolve) => setTimeout(resolve, 4_000));
 
       expect(parentSystemRequests(harness, parent.id)).toMatchObject([
         { systemMessageKind: "child-completed" },

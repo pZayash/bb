@@ -1,11 +1,5 @@
 import type { ChildProcess } from "node:child_process";
-import { PassThrough, Writable, type Readable } from "node:stream";
-// bb-fork(windows): cmd-shim launches and the named-pipe channel live in a
-// bb-fork(windows): fork module; this file keeps only the integration seams.
-import {
-  planWindowsShellChild,
-  type WindowsChannelPipe,
-} from "./rpc-child.windows.js";
+import { PassThrough, Writable } from "node:stream";
 import {
   experimental_isProviderBridgeRecording,
   experimental_killPortableProcess,
@@ -16,7 +10,7 @@ import {
   withoutBridgeRuntimeEnv,
 } from "@get-bb/plugin-sdk/provider-bridge";
 
-import { resolveWindowsPiProcessLaunch } from "./windows-pi-launch.js";
+import { PiBridgeChannel } from "./bridge-channel.js";
 
 export const PI_BRIDGE_COMMAND_ENV = "BB_PI_BRIDGE_COMMAND";
 export const PI_BRIDGE_ARGS_ENV = "BB_PI_BRIDGE_ARGS";
@@ -94,15 +88,6 @@ export function resolvePiLaunch(env: NodeJS.ProcessEnv): {
   return { command, args: parsed };
 }
 
-export function resolvePiProcessLaunch(
-  configEnv: NodeJS.ProcessEnv,
-  childEnv: NodeJS.ProcessEnv = configEnv,
-  cwd = process.cwd(),
-): { command: string; args: string[] } {
-  const launch = resolvePiLaunch(configEnv);
-  return resolveWindowsPiProcessLaunch(launch, childEnv, cwd);
-}
-
 export function buildPiChildEnv(
   overrides: Record<string, string>,
 ): NodeJS.ProcessEnv {
@@ -123,10 +108,9 @@ export class PiRpcChild {
   private stderrTail = "";
   private exitInfo: PiRpcChildExitInfo | null = null;
   private readonly settledExit: Promise<PiRpcChildExitInfo>;
-  private readonly channelWriter: Writable | null;
+  private readonly channel: PiBridgeChannel;
   private readonly channelRecorder: ChannelRecorder | null;
   private killEscalation: ReturnType<typeof setTimeout> | null = null;
-  private readonly windowsChannel: WindowsChannelPipe | null;
   private readonly stdoutLines: string[] = [];
   private stdoutDraining = false;
 
@@ -136,33 +120,38 @@ export class PiRpcChild {
     this.settledExit = new Promise((resolve) => {
       resolveSettledExit = resolve;
     });
-    const launch = resolvePiProcessLaunch(process.env, args.env, args.cwd);
-    // bb-fork(windows): a pi launched through a cmd.exe shim cannot inherit
-    // bb-fork(windows): the fd 3/4 channel, so it talks to the bridge over a
-    // bb-fork(windows): named pipe.
-    const windowsChild = planWindowsShellChild({
-      command: launch.command,
-      env: args.env,
+    this.channel = new PiBridgeChannel({
       onLine: (line) => this.handleChannelLine(line),
+      onOverflow: (bytes) => {
+        process.stderr.write(
+          `pi bridge: dropped a ${bytes}-byte channel line\n`,
+        );
+      },
+      onError: (error) => {
+        this.stderrTail = `${this.stderrTail}pi bridge channel: ${error.message}\n`;
+        this.kill();
+      },
     });
-    this.windowsChannel = windowsChild?.channel ?? null;
-    this.child = experimental_spawnPortableProcess({
-      command: launch.command,
-      args: [...launch.args, ...args.args],
-      cwd: args.cwd,
-      env: windowsChild?.env ?? args.env,
-      stdio: windowsChild?.stdio ?? ["pipe", "pipe", "pipe", "pipe", "pipe"],
-    });
+    const launch = resolvePiLaunch(process.env);
+    try {
+      this.child = experimental_spawnPortableProcess({
+        command: launch.command,
+        args: [...launch.args, ...args.args],
+        cwd: args.cwd,
+        env: { ...args.env, ...this.channel.env },
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } catch (error) {
+      this.channel.close();
+      throw error;
+    }
     experimental_recordProviderChildIo(this.child, {
       threadId: args.recordThreadId,
     });
     this.channelRecorder = createChannelRecorder(args.recordThreadId);
     const stdout = this.child.stdout;
     const stderr = this.child.stderr;
-    const channelIn = this.child.stdio[3] as Readable | null | undefined;
-    this.channelWriter = (this.child.stdio[4] as Writable | null) ?? null;
     this.child.stdin?.on("error", () => undefined);
-    this.channelWriter?.on("error", () => undefined);
     if (stdout) {
       experimental_readBoundedLines({
         input: stdout,
@@ -181,17 +170,6 @@ export class PiRpcChild {
         process.stderr.write(`pi[${String(this.child.pid ?? "?")}]: ${text}`);
       });
     }
-    if (channelIn) {
-      experimental_readBoundedLines({
-        input: channelIn,
-        onLine: (line) => this.handleChannelLine(line),
-        onOverflow: (bytes) => {
-          process.stderr.write(
-            `pi bridge: dropped a ${bytes}-byte channel line\n`,
-          );
-        },
-      });
-    }
     const settleExit = (code: number | null, signal: NodeJS.Signals | null) => {
       if (this.exitInfo !== null) {
         return;
@@ -200,14 +178,13 @@ export class PiRpcChild {
         clearTimeout(this.killEscalation);
         this.killEscalation = null;
       }
-      // bb-fork(windows): release the named-pipe server with the child.
-      this.windowsChannel?.close();
       const info: PiRpcChildExitInfo = {
         code,
         signal,
         stderrTail: this.stderrTail,
       };
       this.exitInfo = info;
+      this.channel.close();
       resolveSettledExit(info);
       for (const [, pending] of this.pending) {
         if (pending.timer !== null) clearTimeout(pending.timer);
@@ -268,18 +245,12 @@ export class PiRpcChild {
   }
 
   sendChannel(message: Record<string, unknown>): void {
-    // bb-fork(windows): route the channel over the named pipe when present.
-    if (this.windowsChannel !== null) {
+    if (
+      this.exitInfo === null &&
+      this.channel.write(`${JSON.stringify(message)}\n`)
+    ) {
       this.channelRecorder?.toChild(message);
-      this.windowsChannel.write(`${JSON.stringify(message)}\n`);
-      return;
     }
-    const writer = this.channelWriter;
-    if (!writer || writer.destroyed || writer.writableEnded) {
-      return;
-    }
-    this.channelRecorder?.toChild(message);
-    writer.write(`${JSON.stringify(message)}\n`);
   }
 
   closeGracefully(): void {
@@ -325,11 +296,7 @@ export class PiRpcChild {
     try {
       this.child.stdin?.end();
     } catch {}
-    try {
-      this.channelWriter?.end();
-    } catch {}
-    // bb-fork(windows): signal EOF on the named-pipe channel too.
-    this.windowsChannel?.endWrites();
+    this.channel.end();
   }
 
   private writeStdin(line: string): void {

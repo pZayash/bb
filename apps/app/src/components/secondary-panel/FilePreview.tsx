@@ -765,8 +765,9 @@ function FilePreviewHeader({
               ({statusLabel})
             </span>
           )}
-          {!isNarrow ? (
-            <TooltipProvider delayDuration={300}>
+          <TooltipProvider delayDuration={300}>
+            {!isNarrow ? (
+              <>
               {onRefresh ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -826,6 +827,8 @@ function FilePreviewHeader({
                   </TooltipContent>
                 </Tooltip>
               )}
+              </>
+            ) : null}
               {externalUrl === null ? null : (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -852,7 +855,7 @@ function FilePreviewHeader({
                   </TooltipContent>
                 </Tooltip>
               )}
-              {onOpenInEditor ? (
+              {!isNarrow && onOpenInEditor ? (
                 <>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -882,8 +885,7 @@ function FilePreviewHeader({
                   target={exportTarget}
                 />
               )}
-            </TooltipProvider>
-          ) : null}
+          </TooltipProvider>
         </div>
         {showHeaderControls || isNarrow ? (
           <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -985,17 +987,6 @@ function FilePreviewHeader({
                     >
                       <Icon name="RotateCcw" aria-hidden />{" "}
                       {isRefreshing ? "Refreshing file" : "Refresh file"}
-                    </DropdownMenuItem>
-                  ) : null}
-                  {externalUrl !== null ? (
-                    <DropdownMenuItem
-                      onSelect={() =>
-                        openUrlInExternalBrowser(
-                          toAbsolutePreviewUrl(externalUrl),
-                        )
-                      }
-                    >
-                      <Icon name="Globe" aria-hidden /> Open in external browser
                     </DropdownMenuItem>
                   ) : null}
                   {onOpenInEditor ? (

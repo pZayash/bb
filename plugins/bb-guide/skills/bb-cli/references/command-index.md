@@ -132,6 +132,7 @@ Use `--selected-model <model-id>` to discover its reasoning choices and include 
 - `bb terminal create`
 - `bb terminal start`
 - `bb terminal shells`
+- `bb terminal run`
 - `bb terminal show`
 - `bb terminal attach`
 - `bb terminal send`
@@ -224,8 +225,6 @@ Use `--selected-model <model-id>` to discover its reasoning choices and include 
 - `bb environment cleanup`
 - `bb environment show`
 - `bb environment get`
-- `bb environment status`
-- `bb environment branches`
 - `bb environment commits`
 - `bb environment paths`
 - `bb environment update`

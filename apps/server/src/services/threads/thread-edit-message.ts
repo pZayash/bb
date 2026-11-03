@@ -516,6 +516,7 @@ export async function editThreadMessage(
   });
   const { initiator } = resolveDispatchAuthor({
     retrying: false,
+    systemNotice: false,
     senderThreadId,
     startedOnBehalfOf: null,
   });
@@ -711,6 +712,7 @@ export async function editThreadMessage(
       },
       queuePayload: { kind: "inline" },
       pluginSubmission: null,
+      systemNotice: null,
       origin: null,
       originPluginId: null,
       startedOnBehalfOf: null,

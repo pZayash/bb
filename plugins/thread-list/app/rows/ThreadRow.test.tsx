@@ -15,6 +15,10 @@ import { useSidebarReorderDnd } from "@/components/ui/use-sidebar-reorder-dnd";
 import { SidebarTouchSensor } from "../dnd/sidebarTouchSensor.js";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarRenameProvider } from "./SidebarInlineRename.js";
+import {
+  RENAME_PRESENTATION_CASES,
+  type RenamePresentationOutcome,
+} from "@/components/ui/inline-rename-presentation-cases";
 import type {
   PluginProvidersState,
   PluginSidebarProject,
@@ -31,7 +35,6 @@ import {
   type TestThreadActionsResolver,
   type TestThreadBulkActionsResolver,
 } from "@get-bb/plugin-sdk/testing/app";
-import { NO_COLLAPSED_CHILD_ACTIVITY } from "../model/thread-activity.js";
 import {
   makeSidebarEnvironment,
   makeSidebarThread,
@@ -405,8 +408,30 @@ function hostThreadActions({
   };
 }
 
+const pointerState = vi.hoisted(() => ({ coarse: false }));
+vi.mock("@/components/ui/hooks/use-pointer-coarse", () => ({
+  usePointerCoarse: () => pointerState.coarse,
+}));
+
+async function expectRenamePresentation(outcome: RenamePresentationOutcome) {
+  if (outcome === "none") {
+    expect(screen.queryByRole("textbox", { name: "Thread name" })).toBeNull();
+    return;
+  }
+  const input = await screen.findByRole("textbox", { name: "Thread name" });
+  expect(input).toHaveProperty("value", "Thread");
+  expect(input.closest('[role="dialog"]') === null ? "inline" : "dialog").toBe(
+    outcome,
+  );
+  fireEvent.keyDown(input, { key: "Escape" });
+  await waitFor(() =>
+    expect(screen.queryByRole("textbox", { name: "Thread name" })).toBeNull(),
+  );
+}
+
 afterEach(() => {
   cleanup();
+  pointerState.coarse = false;
   vi.restoreAllMocks();
   resetSidebarTitleDoubleClickForTest();
   resetPreferencesSyncForTest();
@@ -809,6 +834,24 @@ describe("ThreadRow", () => {
     },
   );
 
+  it.each(RENAME_PRESENTATION_CASES)(
+    "presents rename from the menu, a row action, and double click for compact=$compact coarse=$coarse",
+    async ({ compact, coarse, menu, direct, doubleClick }) => {
+      pointerState.coarse = coarse;
+      getDefaultStore().set(preferenceValueAtom("rowActions"), [
+        "bb--core/rename",
+      ]);
+      renderThreadRow({ isCompactViewport: compact });
+      fireEvent.click(screen.getByRole("button", { name: "Thread actions" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Rename" }));
+      await expectRenamePresentation(menu);
+      fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+      await expectRenamePresentation(direct);
+      fireEvent.doubleClick(screen.getByText("Thread"));
+      await expectRenamePresentation(doubleClick);
+    },
+  );
+
   it("suppresses the context menu while the title is being edited", async () => {
     renderThreadRow();
     fireEvent.doubleClick(screen.getByText("Thread"));
@@ -946,10 +989,13 @@ describe("ThreadRow", () => {
         isCompact: false,
         isCollapsed: true,
         childCount: 1,
-        childActivity: {
-          ...NO_COLLAPSED_CHILD_ACTIVITY,
-          workflow: true,
-        },
+        hiddenThreads: [
+          createThread({
+            id: "thr_hidden_child",
+            parentThreadId: "thr_test",
+            activity: activity({ workflows: 1 }),
+          }),
+        ],
         onToggleCollapsed: vi.fn(),
       },
       thread: createThread({ lastReadAt: 1, latestAttentionAt: 1 }),
@@ -1463,7 +1509,7 @@ describe("ThreadRow", () => {
           isCompact: false,
           isCollapsed,
           childCount: 1,
-          childActivity: NO_COLLAPSED_CHILD_ACTIVITY,
+          hiddenThreads: [],
           onToggleCollapsed,
         },
       });
@@ -1509,7 +1555,7 @@ describe("ThreadRow", () => {
         isCompact: false,
         isCollapsed: false,
         childCount: 1,
-        childActivity: NO_COLLAPSED_CHILD_ACTIVITY,
+        hiddenThreads: [],
         onToggleCollapsed: vi.fn(),
       },
     });
@@ -1565,7 +1611,9 @@ describe("ThreadRow", () => {
 
   it("draws other plugins' metadata only while Metadata is on", () => {
     const slot = renderThreadRow({ experiments: ["threadRowMetadata"] });
-    expect(slot.container.querySelector("[data-thread-row-metadata]")).toBeNull();
+    expect(
+      slot.container.querySelector("[data-thread-row-metadata]"),
+    ).toBeNull();
 
     act(() => getDefaultStore().set(sidebarShowRowMetadataAtom, true));
     expect(
@@ -1576,7 +1624,9 @@ describe("ThreadRow", () => {
   it("ignores the Metadata preference while its experiment is off", () => {
     getDefaultStore().set(sidebarShowRowMetadataAtom, true);
     const slot = renderThreadRow();
-    expect(slot.container.querySelector("[data-thread-row-metadata]")).toBeNull();
+    expect(
+      slot.container.querySelector("[data-thread-row-metadata]"),
+    ).toBeNull();
   });
 
   it("routes a click on other plugins' metadata like the rest of the row", () => {
@@ -1630,7 +1680,7 @@ describe("ThreadRow", () => {
         isCompact: false,
         isCollapsed: false,
         childCount: 1,
-        childActivity: NO_COLLAPSED_CHILD_ACTIVITY,
+        hiddenThreads: [],
         onToggleCollapsed: vi.fn(),
       },
     });
@@ -1659,7 +1709,7 @@ describe("ThreadRow", () => {
           isCompact: false,
           isCollapsed,
           childCount: 1,
-          childActivity: NO_COLLAPSED_CHILD_ACTIVITY,
+          hiddenThreads: [],
           onToggleCollapsed: vi.fn(),
         },
       });
@@ -1681,7 +1731,7 @@ describe("ThreadRow", () => {
         isCompact: false,
         isCollapsed: false,
         childCount: 1,
-        childActivity: NO_COLLAPSED_CHILD_ACTIVITY,
+        hiddenThreads: [],
         stickyLevel: 1,
         onToggleCollapsed: vi.fn(),
       },
@@ -1734,7 +1784,8 @@ describe("ThreadRow", () => {
     renderThreadRow({
       thread: createThread({
         activity: activity({ workflows: 1 }),
-        lastReadAt: 1, latestAttentionAt: 1,
+        lastReadAt: 1,
+        latestAttentionAt: 1,
       }),
     });
 
@@ -1758,7 +1809,8 @@ describe("ThreadRow", () => {
       renderThreadRow({
         thread: createThread({
           activity: activity({ [activityKey]: 1 }),
-          lastReadAt: 1, latestAttentionAt: 1,
+          lastReadAt: 1,
+          latestAttentionAt: 1,
         }),
       });
 
@@ -1774,7 +1826,8 @@ describe("ThreadRow", () => {
           backgroundAgents: 1,
           backgroundCommands: 1,
         }),
-        lastReadAt: 1, latestAttentionAt: 1,
+        lastReadAt: 1,
+        latestAttentionAt: 1,
       }),
     });
 
@@ -1785,7 +1838,8 @@ describe("ThreadRow", () => {
     renderThreadRow({
       thread: createThread({
         activity: activity({ backgroundAgents: 1, backgroundCommands: 1 }),
-        lastReadAt: 1, latestAttentionAt: 1,
+        lastReadAt: 1,
+        latestAttentionAt: 1,
       }),
     });
 
@@ -1810,11 +1864,11 @@ describe("ThreadRow", () => {
   });
 
   it.each([
-    { flag: "workflow" as const, indicator: "workflow" },
-    { flag: "backgroundAgent" as const, indicator: "background-agent" },
-    { flag: "backgroundCommand" as const, indicator: "background-command" },
+    { flag: "workflows" as const, indicator: "workflow" },
+    { flag: "backgroundAgents" as const, indicator: "background-agent" },
+    { flag: "backgroundCommands" as const, indicator: "background-command" },
     { flag: "planMode" as const, indicator: "plan-mode" },
-    { flag: "goal" as const, indicator: "goal" },
+    { flag: "goals" as const, indicator: "goal" },
   ])(
     "shows the $indicator indicator for collapsed parent rows with hidden child activity",
     ({ flag, indicator }) => {
@@ -1826,11 +1880,13 @@ describe("ThreadRow", () => {
           isCompact: false,
           isCollapsed: true,
           childCount: 1,
-          childActivity: {
-            ...NO_COLLAPSED_CHILD_ACTIVITY,
-            working: true,
-            [flag]: true,
-          },
+          hiddenThreads: [
+            createThread({
+              id: "thr_hidden_child",
+              parentThreadId: "thr_test",
+              activity: activity({ [flag]: 1 }),
+            }),
+          ],
           onToggleCollapsed: vi.fn(),
         },
       });
@@ -1849,13 +1905,13 @@ describe("ThreadRow", () => {
         isCompact: false,
         isCollapsed: true,
         childCount: 1,
-        childActivity: {
-          ...NO_COLLAPSED_CHILD_ACTIVITY,
-          threadIds: ["thr_hidden_child"],
-          working: true,
-          planMode: true,
-          goal: true,
-        },
+        hiddenThreads: [
+          createThread({
+            id: "thr_hidden_child",
+            parentThreadId: "thr_test",
+            activity: activity({ planMode: 1, goals: 1 }),
+          }),
+        ],
         onToggleCollapsed: vi.fn(),
       },
     });
@@ -1872,11 +1928,13 @@ describe("ThreadRow", () => {
         isCompact: false,
         isCollapsed: false,
         childCount: 1,
-        childActivity: {
-          ...NO_COLLAPSED_CHILD_ACTIVITY,
-          working: true,
-          workflow: true,
-        },
+        hiddenThreads: [
+          createThread({
+            id: "thr_hidden_child",
+            parentThreadId: "thr_test",
+            activity: activity({ workflows: 1 }),
+          }),
+        ],
         onToggleCollapsed: vi.fn(),
       },
     });
