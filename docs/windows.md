@@ -173,6 +173,9 @@ their dev supervisors, so iterating needs no production build.
   Upstream removed `scripts/bb-dev-app` and `pnpm dev:desktop` (#3669); the
   launcher now routes `dev:status`/`dev:stop` to the native dev instance control
   on every platform. Ctrl+C in the `pnpm dev` terminal keeps working.
+- `node scripts/windows/cdp-capture.mjs <url> <waitMs>` launches headless Edge
+  against a dev URL and prints console warnings/errors, exceptions, and a final
+  page probe — useful when a frontend plugin crash is invisible without devtools.
 - Terminals, providers, plugin host workers, and the bundled `bb` CLI behave as
   they do on a supervisor-managed host; the fork only changes how the dev server
   and the dev host daemon start and restart.

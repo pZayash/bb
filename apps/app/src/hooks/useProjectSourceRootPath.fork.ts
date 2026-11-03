@@ -1,6 +1,11 @@
+// bb-fork(file-links): project checkout root for relative file refs outside worktrees.
 import { useQuery } from "@tanstack/react-query";
-import { useCallback } from "react";
-import { PERSONAL_PROJECT_ID, type LocalPathProjectSource } from "@bb/domain";
+import { useCallback, useMemo } from "react";
+import {
+  areHostPathsEqual,
+  PERSONAL_PROJECT_ID,
+  type LocalPathProjectSource,
+} from "@bb/domain";
 import type { SidebarBootstrapResponse } from "@bb/server-contract";
 import { sidebarNavigationThreadSelectionQueryOptions } from "@/hooks/queries/sidebar-navigation-query";
 
@@ -29,4 +34,34 @@ export function useProjectSourceRootPath(
     enabled: projectId !== undefined && hostId !== null,
   });
   return query.data ?? null;
+}
+
+export function useFileLinkFallbackRoots({
+  projectId,
+  hostId,
+  workspaceRootPath,
+  extraRoots,
+}: {
+  projectId: string | undefined;
+  hostId: string | null;
+  workspaceRootPath: string | null | undefined;
+  extraRoots?: readonly string[];
+}): readonly string[] {
+  const projectSourceRootPath = useProjectSourceRootPath(projectId, hostId);
+  return useMemo(() => {
+    const roots: string[] = [];
+    for (const root of [
+      ...(extraRoots ?? []),
+      ...(projectSourceRootPath === null ? [] : [projectSourceRootPath]),
+    ]) {
+      if (
+        (workspaceRootPath == null ||
+          !areHostPathsEqual(root, workspaceRootPath)) &&
+        roots.every((existing) => !areHostPathsEqual(existing, root))
+      ) {
+        roots.push(root);
+      }
+    }
+    return roots;
+  }, [extraRoots, projectSourceRootPath, workspaceRootPath]);
 }

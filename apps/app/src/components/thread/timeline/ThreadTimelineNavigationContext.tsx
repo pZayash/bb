@@ -92,6 +92,7 @@ export function useMessageLinkRouting(
         ...(relativePaths === undefined
           ? {}
           : { relativeLinks: relativePaths }),
+        // bb-fork(file-links): extra roots, e.g. the project checkout behind a worktree.
         ...(fallbackRelativeRoots === undefined ||
         fallbackRelativeRoots.length === 0
           ? {}

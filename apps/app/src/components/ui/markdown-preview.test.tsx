@@ -469,6 +469,7 @@ describe("MarkdownPreview", () => {
     ]);
   });
 
+  // bb-fork(file-links): fallback roots resolve relative refs outside the workspace.
   it("links inline-code references that resolve under a fallback root", async () => {
     const { pathsExist, wrapper } = createMarkdownLocalFileHostTestWrapper(
       (path) => path === "/checkout/.tmp/report.md",
@@ -503,6 +504,7 @@ describe("MarkdownPreview", () => {
     ]);
   });
 
+  // bb-fork(file-links): the workspace candidate wins over fallback roots.
   it("prefers the workspace path over fallback roots when both exist", async () => {
     const { wrapper } = createMarkdownLocalFileHostTestWrapper(() => true);
     render(
