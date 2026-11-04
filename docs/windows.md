@@ -106,7 +106,7 @@ when the limit is hit) and `pnpm exec turbo run test --filter=@bb/templates --fo
 
 ## Fork app behavior
 
-Two fork-owned deltas change app behavior on every platform:
+Three fork-owned deltas change app behavior on every platform:
 
 - An unset `sidebar.organizationMode` preference defaults to By project
   (`project`); upstream defaults it to Custom (`chronological`). The preference
@@ -118,6 +118,12 @@ Two fork-owned deltas change app behavior on every platform:
   bootstrap first, and never redirects after an in-session navigation. This
   keeps the active chat across dev-instance reloads, which upstream loses
   because it keeps the route only in the URL and in-memory history.
+- ACP agents that title the session from the prompt would echo back the
+  `<system_instructions>` block bb injects into the first prompt, and the
+  first reported title wins. The ACP bridge (`title-echo.fork.ts`) drops
+  `session_info_update` titles that replay the injected block — or unwraps
+  the block when real user text follows it — so bb's first-message title
+  fallback or a later honest agent title is used instead.
 
 ## Terminal shells
 

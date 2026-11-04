@@ -138,9 +138,14 @@ import {
 import { resolveAcpAgentLaunch } from "./agent-launch.fork.js";
 // bb-fork(windows): context-usage prompt tail
 import {
-	forkContextUsageBlock,
-	forkTrackContextUsage,
+  forkContextUsageBlock,
+  forkTrackContextUsage,
 } from "./context-usage.fork.js";
+// bb-fork(windows): filter session titles that echo injected instructions
+import {
+  forkFilterTitleEchoDeltas,
+  forkSystemInstructionsBlock,
+} from "./title-echo.fork.js";
 import type { AcpAgentCapabilities } from "../client/capabilities.js";
 import {
   createAcpSessionModel,
@@ -411,9 +416,12 @@ function emitForSession(
 ): void {
   sendThreadDeltas(
     session.bbThreadId,
-    session.translator.translateAcpEvent(
-      { jsonrpc: "2.0", method, params },
-      { threadId: session.bbThreadId },
+    forkFilterTitleEchoDeltas(
+      session,
+      session.translator.translateAcpEvent(
+        { jsonrpc: "2.0", method, params },
+        { threadId: session.bbThreadId },
+      ),
     ),
   );
 }
@@ -1823,7 +1831,8 @@ function buildPromptContentBlocks(
     session.pendingInstructions = undefined;
     blocks.push({
       type: "text",
-      text: `<system_instructions>\n${instructions}\n</system_instructions>`,
+      // bb-fork(windows): tracked so echoed session titles can be filtered.
+      text: forkSystemInstructionsBlock(session, instructions),
     });
   }
 
