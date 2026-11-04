@@ -79,6 +79,14 @@ export const {
   experimental_PluginIcon,
   experimental_ThreadTitleText,
   experimental_VoiceInputTextarea,
+  // bb-fork(storybook): resync the stub with pluginSdkAppImplementation so ladle starts.
+  experimental_THREAD_CONTEXT_SEGMENT_GROUPS,
+  experimental_InfoList,
+  experimental_InfoListRow,
+  experimental_InfoSection,
+  experimental_ThreadRowMetadata,
+  experimental_useRpcQuery,
+  experimental_resolveThreadStatus,
 } = pluginSdkAppImplementation;
 
 export const experimental_useComposerMentionSearch =

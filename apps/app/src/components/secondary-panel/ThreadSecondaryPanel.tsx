@@ -967,9 +967,10 @@ function ThreadSecondaryPanelContent({
       style={
         !renderAsDrawer && !isSecondaryPanelResizing
           ? {
+              // bb-fork(secondary-panel): clamp to the Panel slot so a stale cqw width cannot overflow and clip content at the edge.
               width: isConversationCollapsed
                 ? "100%"
-                : `var(--secondary-swipe-width, ${persistedWidthPercent}cqw)`,
+                : `min(var(--secondary-swipe-width, ${persistedWidthPercent}cqw), 100%)`,
             }
           : undefined
       }
