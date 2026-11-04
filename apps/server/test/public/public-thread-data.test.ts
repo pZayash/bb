@@ -2640,7 +2640,7 @@ describe("public thread data routes", () => {
     });
   });
 
-  it("returns null default execution options for stale stored provider capabilities", async () => {
+  it("reconciles default execution options for stale stored provider capabilities", async () => {
     await withTestHarness(async (harness) => {
       const { environment, thread } = seedThreadFixture(harness, {
         thread: { providerId: "pi" },
@@ -2678,7 +2678,13 @@ describe("public thread data routes", () => {
       );
 
       expect(response.status).toBe(200);
-      await expect(readJson(response)).resolves.toBeNull();
+      await expect(readJson(response)).resolves.toEqual({
+        model: "openai/codex-mini",
+        permissionMode: "full",
+        reasoningLevel: "medium",
+        serviceTier: "default",
+        source: "client/turn/requested",
+      });
     });
   });
 

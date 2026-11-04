@@ -58,9 +58,9 @@ describe("resolveModelReasoningLevel", () => {
     ).toBe("high");
   });
 
-  it("keeps the remembered level when the model lists none", () => {
+  it("runs a model with no reported efforts at its default", () => {
     expect(resolveModelReasoningLevel(model([], "medium"), "xhigh")).toBe(
-      "xhigh",
+      "medium",
     );
     expect(resolveModelReasoningLevel(undefined, "low")).toBe("low");
   });

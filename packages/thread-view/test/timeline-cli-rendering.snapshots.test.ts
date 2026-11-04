@@ -444,6 +444,52 @@ describe("timeline CLI rendering snapshots", () => {
     `);
   });
 
+  it("shows collapsed step-summary entries inside a finished turn in minimal output", () => {
+    const event = createTimelineEventFactory({ threadId: "thread-1" });
+    const timeline = renderIdleTimeline([
+      event.turnStarted({ createdAt: 0 }),
+      event.commandCompleted({
+        itemId: "cmd-1",
+        command: "pnpm test",
+        aggregatedOutput: "Tests passed\n",
+        exitCode: 0,
+        createdAt: 1_000,
+      }),
+      event.commandCompleted({
+        itemId: "cmd-2",
+        command: "pnpm lint",
+        aggregatedOutput: "Lint passed\n",
+        exitCode: 0,
+        createdAt: 2_000,
+      }),
+      event.assistantCompleted({
+        itemId: "assistant-1",
+        text: "Done.",
+        createdAt: 3_000,
+      }),
+      event.turnCompleted({ createdAt: 4_000 }),
+    ]);
+
+    const minimalText = formatThreadTimelineText(timeline.rows, {
+      color: false,
+      verbose: false,
+    });
+
+    expect(minimalText).not.toContain("Tests passed");
+    expect(minimalText).not.toContain("Lint passed");
+    expect(minimalText).toMatchInlineSnapshot(`
+      "── Worked for (4s) ─────────────────────────────────────────
+        ── Ran 2 commands
+          ── Ran pnpm test
+            $ pnpm test
+          ── Ran pnpm lint
+            $ pnpm lint
+
+      ── Assistant ───────────────────────────────────────────────
+      Done."
+    `);
+  });
+
   it("pads top-level separators by display width", () => {
     const event = createTimelineEventFactory({ threadId: "thread-1" });
     const command = "调".repeat(10);

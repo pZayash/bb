@@ -191,9 +191,17 @@ interface AcpSessionPolicy {
   workspaceWriteRoots: string[];
 }
 
+interface AcpPermissionToolCallSummary {
+  toolCallId?: string | undefined;
+  title?: string | undefined;
+  kind?: string | undefined;
+  rawKind?: string | undefined;
+}
+
 interface PendingAcpPermission {
   responder: AcpAgentRequestResponder;
   options: AcpPermissionOption[];
+  toolCall: AcpPermissionToolCallSummary | undefined;
 }
 
 interface AcpPendingTurnInput {
@@ -1916,7 +1924,36 @@ function pickPermissionOptionId(
   }
 }
 
+function describePermissionToolCall(
+  toolCall: AcpPermissionToolCallSummary | undefined,
+): string {
+  const parts: string[] = [];
+  if (toolCall?.toolCallId !== undefined) {
+    parts.push(`toolCallId "${toolCall.toolCallId}"`);
+  }
+  const kind =
+    toolCall?.kind === "other"
+      ? (toolCall.rawKind ?? "other")
+      : (toolCall?.kind ?? toolCall?.rawKind);
+  const identity = [toolCall?.title, kind].filter(
+    (part): part is string => part !== undefined && part !== "",
+  );
+  if (identity.length > 0) {
+    parts.push(`tool ${identity.map((part) => `"${part}"`).join(" ")}`);
+  }
+  return parts.length === 0 ? "an unnamed tool call" : parts.join("; ");
+}
+
+function describePermissionOptions(
+  options: readonly AcpPermissionOption[],
+): string {
+  return `offered options: ${options
+    .map((option) => `"${option.optionId}" (${option.kind})`)
+    .join(", ")}`;
+}
+
 function respondPermission(
+  session: AcpThreadSession,
   pending: PendingAcpPermission,
   decision: "allow_once" | "allow_for_session" | "deny" | null,
 ): void {
@@ -1926,6 +1963,11 @@ function respondPermission(
   }
   const optionId = pickPermissionOptionId(pending.options, decision);
   if (optionId === undefined) {
+    emitForSession(session, ACP_WARNING_METHOD, {
+      threadId: session.bbThreadId,
+      summary: "bb cancelled the agent's permission request",
+      details: `The agent offered no option matching "${decision}". ${describePermissionToolCall(pending.toolCall)}; ${describePermissionOptions(pending.options)}`,
+    });
     pending.responder.result({ outcome: { outcome: "cancelled" } });
     return;
   }
@@ -2012,6 +2054,16 @@ function handlePermissionRequest(
     session.cancelRequested ||
     session.activePromptKind === "compaction"
   ) {
+    const reason = session.stopping
+      ? "the session is stopping"
+      : session.cancelRequested
+        ? "the prompt was cancelled"
+        : "a compaction is running";
+    emitForSession(session, ACP_WARNING_METHOD, {
+      threadId: session.bbThreadId,
+      summary: "bb cancelled the agent's permission request",
+      details: `bb dismissed it because ${reason}: ${describePermissionToolCall(parsed.data.toolCall)}; ${describePermissionOptions(parsed.data.options)}`,
+    });
     responder.result({ outcome: { outcome: "cancelled" } });
     return;
   }
@@ -2040,10 +2092,31 @@ function handlePermissionRequest(
   const pending: PendingAcpPermission = {
     responder,
     options: parsed.data.options,
+    toolCall:
+      toolCall?.toolCallId !== undefined
+        ? {
+            toolCallId: bound?.toolCallId ?? toolCall.toolCallId,
+            title: toolCall.title ?? bound?.event?.title,
+            kind: toolCall.kind ?? bound?.event?.kind,
+            rawKind: toolCall.rawKind ?? bound?.event?.rawKind,
+          }
+        : undefined,
   };
 
   if (session.policy.permissionMode === "full") {
-    respondPermission(pending, "allow_once");
+    const optionId = pickPermissionOptionId(pending.options, "allow_once");
+    emitForSession(session, ACP_WARNING_METHOD, {
+      threadId: session.bbThreadId,
+      summary: 'Permission auto-approved (permission mode "full")',
+      details: [
+        describePermissionToolCall(pending.toolCall),
+        optionId === undefined
+          ? "no allow option offered; bb will cancel the request"
+          : `allow_once via option "${optionId}"`,
+        describePermissionOptions(pending.options),
+      ].join("; "),
+    });
+    respondPermission(session, pending, "allow_once");
     return;
   }
 
@@ -2101,13 +2174,13 @@ function handlePermissionRequest(
             resolution: resolution.data,
           })
         : null;
-      respondPermission(pending, response?.decision ?? null);
+      respondPermission(session, pending, response?.decision ?? null);
     })
     .catch(() => {
       if (!session.pendingPermissions.delete(pending)) {
         return;
       }
-      respondPermission(pending, null);
+      respondPermission(session, pending, null);
     });
 }
 

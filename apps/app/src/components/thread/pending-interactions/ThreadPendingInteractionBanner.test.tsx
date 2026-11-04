@@ -294,6 +294,37 @@ describe("ThreadPendingInteractionBanner tool-use approval", () => {
   });
 });
 
+describe("ThreadPendingInteractionBanner ACP tool-use approval", () => {
+  it("renders the bridge's argument summary on the card", () => {
+    const acpToolUse: PendingInteraction = {
+      ...toolUseApproval,
+      id: "pint_acp",
+      payload: {
+        kind: "approval",
+        reason: null,
+        availableDecisions: ["allow_once", "deny"],
+        subject: {
+          kind: "tool_use",
+          itemId: "call_dsh",
+          tool: "other",
+          presentation: {
+            label: { pending: "Running tool", completed: "Ran tool" },
+            icon: { glyph: "Toolbox" },
+            title: "custom_fetch",
+            detail: "url: https://example.com/docs, timeout: 30",
+          },
+        },
+      },
+    };
+    renderBanner(acpToolUse);
+    const ask = screen.getByTestId("tool-use-ask");
+    expect(ask.textContent).toContain("custom_fetch");
+    expect(ask.textContent).toContain(
+      "url: https://example.com/docs, timeout: 30",
+    );
+  });
+});
+
 describe("ThreadPendingInteractionBanner request family", () => {
   it("opens a plan review with visible plan-verdict actions without approving it automatically", () => {
     renderBanner(planReview);

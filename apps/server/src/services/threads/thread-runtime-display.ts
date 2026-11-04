@@ -14,7 +14,10 @@ import {
   type ThreadClientTurnRequestKey,
   type ThreadWithPendingInteractionState,
 } from "@bb/db";
-import { LEGACY_CODEX_GOAL_EXTENSION_KIND } from "@bb/domain";
+import {
+  LEGACY_CODEX_GOAL_EXTENSION_KIND,
+  resolveReasoningLevelCandidate,
+} from "@bb/domain";
 import type {
   ReasoningLevel,
   Thread,
@@ -48,6 +51,8 @@ import {
 } from "./thread-message-edit-policy.js";
 import { toThreadEventWithMeta } from "./timeline.js";
 import { intendedThreadHostId } from "./dispatch-attempt.js";
+import { getSupportedReasoningLevelsForProvider } from "./thread-reasoning-policy.js";
+import type { LifecycleDedupers } from "../../lifecycle-dedupers.js";
 
 type ThreadRuntimeDisplayHub = Pick<
   NotificationHub,
@@ -61,6 +66,7 @@ interface ThreadRuntimeDisplayDeps {
 
 interface ThreadPromptBannerDeps extends ThreadRuntimeDisplayDeps {
   providerRegistry: ProviderRegistryService;
+  lifecycleDedupers?: LifecycleDedupers;
 }
 
 interface ResolveThreadRuntimeStateArgs {
@@ -556,7 +562,7 @@ interface ThreadExecutionResolution {
 // bb-fork(windows): the sidebar shows the model and its reasoning level, so the
 // bb-fork(windows): row needs both resolved the way the next turn resolves them.
 function buildThreadExecutionByThreadId(
-  deps: ThreadRuntimeDisplayDeps,
+  deps: ThreadPromptBannerDeps,
   threads: readonly ThreadWithPendingInteractionState[],
 ): Map<string, ThreadExecutionResolution> {
   const executionByThreadId = new Map<string, ThreadExecutionResolution>();
@@ -589,10 +595,35 @@ function buildThreadExecutionByThreadId(
       thread.modelOverride ??
       lastExecution?.model ??
       (projectApplies ? projectDefault?.model : undefined);
-    const reasoningLevel =
+    const reasoningCandidate =
       thread.reasoningLevelOverride ??
       lastExecution?.reasoningLevel ??
       (projectApplies ? projectDefault?.reasoningLevel : undefined);
+    const catalogModel =
+      model !== undefined &&
+      thread.environmentHostId !== null &&
+      deps.lifecycleDedupers !== undefined
+        ? deps.lifecycleDedupers.providerModelCatalogs.getCachedModel(deps, {
+            hostId: thread.environmentHostId,
+            providerId: thread.providerId,
+            workspacePaths:
+              thread.environmentPath === null
+                ? []
+                : [thread.environmentPath],
+            model,
+          })
+        : null;
+    const reasoningLevel =
+      reasoningCandidate === undefined
+        ? undefined
+        : resolveReasoningLevelCandidate({
+            candidate: reasoningCandidate,
+            declared: getSupportedReasoningLevelsForProvider(
+              deps.providerRegistry,
+              thread.providerId,
+            ),
+            model: catalogModel,
+          }).level;
     if (model !== undefined || reasoningLevel !== undefined) {
       executionByThreadId.set(thread.id, {
         model: model ?? null,

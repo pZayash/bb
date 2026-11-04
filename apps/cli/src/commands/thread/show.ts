@@ -516,9 +516,7 @@ export function registerShowCommand(
         }
         const timelineQuery = {
           threadId,
-          ...(format === "verbose"
-            ? { includeNestedRows: "true" as const }
-            : {}),
+          includeNestedRows: "true" as const,
           ...(segmentLimit === null
             ? {}
             : { segmentLimit: String(segmentLimit) }),

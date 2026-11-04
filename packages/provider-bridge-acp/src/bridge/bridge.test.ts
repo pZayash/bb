@@ -3212,7 +3212,7 @@ describe("acp bridge", () => {
     );
   });
 
-  it("auto-allows permission requests in full mode", async () => {
+  it("auto-allows permission requests in full mode and records an audit warning", async () => {
     const { providerThreadId } = await startThread({ permissionMode: "full" });
     const turnId = sendTurnRequest("turn/start", providerThreadId, {
       input: [{ type: "text", text: "request-permission", mentions: [] }],
@@ -3226,6 +3226,16 @@ describe("acp bridge", () => {
       ),
     ).toHaveLength(0);
     expect(agentMessageTexts()).toContain("permission:yes");
+    expect(threadEventsOfType("provider/warning")).toMatchObject([
+      {
+        category: "general",
+        summary: 'Permission auto-approved (permission mode "full")',
+        details: expect.stringContaining('toolCallId "perm-tool-1"'),
+      },
+    ]);
+    expect(
+      threadEventsOfType("provider/warning")[0]?.["details"],
+    ).toEqual(expect.stringContaining('allow_once via option "yes"'));
   });
 
   it("forwards permission requests to the runtime in ask mode", async () => {
@@ -3268,6 +3278,7 @@ describe("acp bridge", () => {
 
     await waitForTurnCompleted();
     expect(agentMessageTexts()).toContain("permission:no");
+    expect(threadEventsOfType("provider/warning")).toEqual([]);
   });
 
   it("presents an external-directory write permission as a file-change approval", async () => {
@@ -3356,6 +3367,64 @@ describe("acp bridge", () => {
     );
     await waitForTurnCompleted();
     expect(agentMessageTexts()).toContain("permission:always");
+  });
+
+  it("cancels and audits a permission request whose options cannot satisfy the decision", async () => {
+    const { providerThreadId } = await startThread({ permissionMode: "full" });
+    const turnId = sendTurnRequest("turn/start", providerThreadId, {
+      input: [
+        { type: "text", text: "request-permission-reject-only", mentions: [] },
+      ],
+    });
+    await waitForResponse(turnId);
+    await waitForTurnCompleted();
+
+    expect(agentMessageTexts()).toContain("permission:cancelled");
+    expect(threadEventsOfType("provider/warning")).toMatchObject([
+      { summary: 'Permission auto-approved (permission mode "full")' },
+      {
+        summary: "bb cancelled the agent's permission request",
+        details: expect.stringContaining(
+          'The agent offered no option matching "allow_once"',
+        ),
+      },
+    ]);
+  });
+
+  it("audits a permission request that arrives while a prompt is being cancelled", async () => {
+    const { providerThreadId } = await startThread({
+      permissionMode: "accept-edits",
+      permissionEscalation: "ask",
+      envVars: { FAKE_ACP_PERMISSION_ON_CANCEL: "1" },
+    });
+    const turnId = sendTurnRequest("turn/start", providerThreadId, {
+      input: [{ type: "text", text: "hang", mentions: [] }],
+      options: executionOptions({ permissionMode: "accept-edits" }),
+    });
+    await waitForResponse(turnId);
+    const steer = sendTurnRequest("turn/steer", providerThreadId, {
+      expectedTurnId: "turn-1",
+      input: [{ type: "text", text: "hello", mentions: [] }],
+      options: executionOptions({ permissionMode: "accept-edits" }),
+    });
+    expect((await waitForResponse(steer)).error).toBeUndefined();
+    await waitForTurnCompleted();
+
+    expect(
+      output.messages.filter(
+        (message) => message.method === "interaction/request",
+      ),
+    ).toHaveLength(0);
+    expect(agentMessageTexts().join("")).toContain("permission:cancelled");
+    expect(threadEventsOfType("provider/warning")).toMatchObject([
+      {
+        summary: "bb cancelled the agent's permission request",
+        details: expect.stringContaining("the prompt was cancelled"),
+      },
+    ]);
+    expect(
+      threadEventsOfType("provider/warning")[0]?.["details"],
+    ).toEqual(expect.stringContaining('toolCallId "cancel-permission-tool"'));
   });
 
   it.each(["add", "update"])("acknowledges fs %s writes", async (kind) => {

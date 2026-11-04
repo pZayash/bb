@@ -5,6 +5,7 @@ import {
 } from "@bb/db";
 import {
   reconcileReasoningLevel,
+  resolveReasoningLevelSupport,
   type AvailableModel,
   type CallerExecutionInputSource,
   type ReasoningLevel,
@@ -73,11 +74,11 @@ export function resolveThreadExecutionOverrideUpdate(
   const effectiveModelEntry = effectiveModel
     ? models.find((candidate) => candidate.model === effectiveModel)
     : undefined;
-  const supportedReasoning: readonly ReasoningLevel[] = effectiveModelEntry
-    ? effectiveModelEntry.supportedReasoningEfforts.map(
-        (effort) => effort.reasoningEffort,
-      )
-    : getSupportedReasoningLevelsForProvider(registry, providerId);
+  const supportedReasoning: readonly ReasoningLevel[] =
+    resolveReasoningLevelSupport({
+      declared: getSupportedReasoningLevelsForProvider(registry, providerId),
+      model: effectiveModelEntry,
+    }).levels;
 
   let nextReasoning = existing.reasoningLevelOverride;
   if ("reasoningLevel" in patch) {

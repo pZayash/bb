@@ -361,11 +361,9 @@ function formatWorkSummary(
       context,
     ),
   ];
-  if (context.verbose || row.kind === "bundle-summary") {
-    const details = formatWorkSummaryDetails(row, context);
-    if (details.length > 0) {
-      lines.push(indentBlock(details.join("\n"), "  "));
-    }
+  const details = formatWorkSummaryDetails(row, context);
+  if (details.length > 0) {
+    lines.push(indentBlock(details.join("\n"), "  "));
   }
   return lines.join("\n");
 }

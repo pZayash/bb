@@ -69,6 +69,9 @@
  *                              id) in the same chunk as the session/new and
  *                              session/fork responses
  * - FAKE_ACP_IGNORE_CANCEL=1 → never answer a prompt after session/cancel
+ * - FAKE_ACP_PERMISSION_ON_CANCEL=1
+ *                            → on session/cancel, send a permission request
+ *                              before settling the held prompt
  * - FAKE_ACP_READY_FILE      → written once the agent process is up
  * - FAKE_ACP_LINGERING_DESCENDANT_PID_FILE
  *                            → spawn a descendant that ignores SIGTERM, so
@@ -101,6 +104,8 @@
  * - "then-unprompted-stream"     → message chunks and a finished tool call
  * - "then-unprompted-permission" → a permission request, then its outcome
  * - "then-unprompted-open-tool"  → a tool call that stays in progress
+ * - "request-permission-reject-only"
+ *                                → a permission request with only reject options
  * - "hang-with-open-command"     → start a command, then hang until cancelled
  *                                  without ever closing it (Cursor's shape)
  * - "stop-reason:<reason>"       → end the turn with that stop reason
@@ -611,6 +616,26 @@ async function handlePrompt(message) {
           { optionId: "yes", name: "Allow", kind: "allow_once" },
           { optionId: "no", name: "Deny", kind: "reject_once" },
         ],
+      });
+      outcome =
+        result?.outcome?.outcome === "selected"
+          ? result.outcome.optionId
+          : "cancelled";
+    } catch {
+      outcome = "error";
+    }
+    notifyUpdate(messageChunk(`permission:${outcome}`));
+  } else if (text.includes("request-permission-reject-only")) {
+    let outcome = "cancelled";
+    try {
+      const result = await requestClient("session/request_permission", {
+        sessionId: activeSessionId,
+        toolCall: {
+          toolCallId: "perm-tool-reject-only",
+          title: "Run rm",
+          kind: "execute",
+        },
+        options: [{ optionId: "no", name: "Deny", kind: "reject_once" }],
       });
       outcome =
         result?.outcome?.outcome === "selected"
@@ -1278,6 +1303,37 @@ async function handleMessage(message) {
                 "Internal error: 'NoneType' object has no attribute 'startswith'",
             },
           });
+          return;
+        }
+        if (process.env.FAKE_ACP_PERMISSION_ON_CANCEL === "1") {
+          void (async () => {
+            let outcome = "none";
+            try {
+              const result = await requestClient(
+                "session/request_permission",
+                {
+                  sessionId: activeSessionId,
+                  toolCall: {
+                    toolCallId: "cancel-permission-tool",
+                    title: "Deploy the build",
+                    kind: "execute",
+                  },
+                  options: [
+                    { optionId: "allow", name: "Allow", kind: "allow_once" },
+                    { optionId: "reject", name: "Reject", kind: "reject_once" },
+                  ],
+                },
+              );
+              outcome =
+                result?.outcome?.outcome === "selected"
+                  ? result.outcome.optionId
+                  : (result?.outcome?.outcome ?? "none");
+            } catch {
+              outcome = "error";
+            }
+            notifyUpdate(messageChunk(`permission:${outcome}`));
+            send({ jsonrpc: "2.0", id, result: { stopReason: "cancelled" } });
+          })();
           return;
         }
         send({ jsonrpc: "2.0", id, result: { stopReason: "cancelled" } });

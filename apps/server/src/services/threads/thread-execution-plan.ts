@@ -1,9 +1,15 @@
-import { getAppSettings, getQueuedThreadStartMessage, getThread } from "@bb/db";
+import {
+  getAppSettings,
+  getEnvironment,
+  getQueuedThreadStartMessage,
+  getThread,
+} from "@bb/db";
 import {
   DEFAULT_SERVICE_TIER,
-  isStandardReasoningLevel,
   providerServiceTierOptions,
+  reconcilePermissionMode,
   reconcileServiceTier,
+  resolveReasoningLevelCandidate,
   type CallerExecutionInputSource,
   type PermissionMode,
   type ReasoningLevel,
@@ -14,13 +20,14 @@ import {
   type Thread,
 } from "@bb/domain";
 import { ApiError } from "../../errors.js";
-import type { AppDeps } from "../../types.js";
+import type { AppDeps, WorkSessionDeps } from "../../types.js";
 import type { ProviderRegistryService } from "../providers/provider-registry.js";
 import {
   clampPermissionModeToHost,
   isHostPermissionCeilingConflictError,
   resolveEnvironmentHostId,
 } from "../hosts/permission-ceiling.js";
+import { projectCheckoutPathOnHost } from "../projects/project-workspace.js";
 import { loadThreadExecutionDefaults } from "./project-execution-defaults.js";
 import {
   normalizeRecordedPermissionMode,
@@ -28,7 +35,11 @@ import {
 } from "./thread-default-policy.js";
 import { getLastExecutionOptions } from "./thread-events.js";
 import { toThreadQueuedMessage } from "./thread-queued-messages.js";
-import { getSupportedReasoningLevelsForProvider } from "./thread-reasoning-policy.js";
+import {
+  getSupportedReasoningLevelsForProvider,
+  loadCachedReasoningCatalogModel,
+  loadLiveReasoningCatalogModel,
+} from "./thread-reasoning-policy.js";
 
 interface ExecutionPlanFieldInput<TValue> {
   source: CallerExecutionInputSource;
@@ -69,7 +80,7 @@ interface ResolveThreadPermissionModeArgs {
   defaults: ThreadExecutionDefaults;
   hostId: string | null;
   lastExecution: RecordedThreadExecutionOptions | null;
-  requested?: PermissionMode;
+  requested?: ExecutionPlanFieldInput<PermissionMode>;
   thread: Thread;
 }
 
@@ -112,18 +123,26 @@ function resolveThreadPermissionMode(
   const permissionMode = clampPermissionModeToHost(deps, {
     hostId: args.hostId,
     permissionMode:
-      args.requested ??
+      args.requested?.value ??
       (args.lastExecution !== null
         ? normalizeRecordedPermissionMode(args.lastExecution.permissionMode)
         : args.defaults.permissionMode),
     providerId: args.thread.providerId,
   });
-  validateProviderPermissionMode(
-    deps.providerRegistry,
+  const supported = deps.providerRegistry.getSupportedPermissionModes(
     args.thread.providerId,
-    permissionMode,
   );
-  return permissionMode;
+  if (!supported || supported.includes(permissionMode)) {
+    return permissionMode;
+  }
+  if (args.requested?.source === "explicit") {
+    throw new ProviderCapabilityValidationError(
+      400,
+      "invalid_request",
+      `Provider ${args.thread.providerId} only supports ${supported.join(", ")} permission mode.`,
+    );
+  }
+  return reconcilePermissionMode(permissionMode, supported);
 }
 
 export function resolveExistingThreadPermissionMode(
@@ -233,44 +252,54 @@ export function buildExistingThreadExecutionInput(
   };
 }
 
-function validateProviderPermissionMode(
-  registry: ProviderRegistryService,
-  providerId: string,
-  permissionMode: PermissionMode,
-): void {
-  const supported = registry.getSupportedPermissionModes(providerId);
-  if (!supported || supported.includes(permissionMode)) {
-    return;
-  }
-
-  throw new ProviderCapabilityValidationError(
-    400,
-    "invalid_request",
-    `Provider ${providerId} only supports ${supported.join(", ")} permission mode.`,
-  );
+interface ResolvePlanReasoningLevelArgs {
+  candidate: ReasoningLevel;
+  explicit: boolean;
+  hostId: string | null;
+  model: string;
+  providerId: string;
+  workspacePaths: readonly string[];
 }
 
-function validateProviderReasoningLevel(
-  registry: ProviderRegistryService,
-  providerId: string,
-  reasoningLevel: ReasoningLevel,
-): void {
-  const supportedLevels = getSupportedReasoningLevelsForProvider(
-    registry,
-    providerId,
+async function resolvePlanReasoningLevel(
+  deps: WorkSessionDeps,
+  args: ResolvePlanReasoningLevelArgs,
+): Promise<ReasoningLevel> {
+  const catalogArgs = {
+    hostId: args.hostId,
+    model: args.model,
+    providerId: args.providerId,
+    workspacePaths: args.workspacePaths,
+  };
+  const declared = getSupportedReasoningLevelsForProvider(
+    deps.providerRegistry,
+    args.providerId,
   );
-  if (
-    supportedLevels.length === 0 ||
-    supportedLevels.includes(reasoningLevel) ||
-    !isStandardReasoningLevel(reasoningLevel)
-  ) {
-    return;
+  let resolution = resolveReasoningLevelCandidate({
+    candidate: args.candidate,
+    declared,
+    model: loadCachedReasoningCatalogModel(deps, catalogArgs),
+  });
+  if (resolution.candidateSupported || !args.explicit) {
+    return resolution.level;
   }
-
+  const liveModel = await loadLiveReasoningCatalogModel(deps, catalogArgs);
+  if (liveModel !== null) {
+    resolution = resolveReasoningLevelCandidate({
+      candidate: args.candidate,
+      declared,
+      model: liveModel,
+    });
+    if (resolution.candidateSupported) {
+      return resolution.level;
+    }
+  }
   throw new ProviderCapabilityValidationError(
     400,
     "invalid_request",
-    `Provider ${providerId} does not support ${reasoningLevel} reasoning level. Supported reasoning levels: ${supportedLevels.join(", ")}.`,
+    resolution.support.source === "model"
+      ? `Model ${args.model} on provider ${args.providerId} does not support ${args.candidate} reasoning level. Supported reasoning levels: ${resolution.support.levels.join(", ")}.`
+      : `Provider ${args.providerId} does not support ${args.candidate} reasoning level. Supported reasoning levels: ${resolution.support.levels.join(", ")}.`,
   );
 }
 
@@ -309,7 +338,7 @@ function resolveProviderServiceTier(
 }
 
 export async function resolveExistingThreadExecutionPlan(
-  deps: Pick<AppDeps, "db" | "providerRegistry">,
+  deps: WorkSessionDeps,
   args: ResolveExistingThreadExecutionPlanArgs,
 ): Promise<ExistingThreadExecutionPlan> {
   const thread = requireThread(deps, args.threadId);
@@ -325,29 +354,49 @@ export async function resolveExistingThreadExecutionPlan(
     throw createMissingThreadExecutionModelError(args.threadId);
   }
 
+  const environment =
+    thread.environmentId === null
+      ? null
+      : getEnvironment(deps.db, thread.environmentId);
+  const hostId =
+    args.hostId === undefined
+      ? (environment?.hostId ?? null)
+      : args.hostId;
+  const checkoutPath =
+    hostId === null
+      ? undefined
+      : projectCheckoutPathOnHost(deps, thread.projectId, hostId);
+  const workspacePaths = [
+    ...new Set(
+      [environment?.path ?? undefined, checkoutPath].filter(
+        (path): path is string => path !== undefined,
+      ),
+    ),
+  ];
+
   const permissionMode = resolveThreadPermissionMode(deps, {
     defaults,
-    hostId:
-      args.hostId === undefined
-        ? resolveEnvironmentHostId(deps, thread.environmentId)
-        : args.hostId,
+    hostId,
     lastExecution,
     ...(args.input.permissionMode !== undefined
-      ? { requested: args.input.permissionMode.value }
+      ? { requested: args.input.permissionMode }
       : {}),
     thread,
   });
 
-  const reasoningLevel =
+  const reasoningCandidate =
     args.input.reasoningLevel?.value ??
     thread.reasoningLevelOverride ??
     lastExecution?.reasoningLevel ??
     defaults.reasoningLevel;
-  validateProviderReasoningLevel(
-    deps.providerRegistry,
-    thread.providerId,
-    reasoningLevel,
-  );
+  const reasoningLevel = await resolvePlanReasoningLevel(deps, {
+    candidate: reasoningCandidate,
+    explicit: args.input.reasoningLevel?.source === "explicit",
+    hostId,
+    model,
+    providerId: thread.providerId,
+    workspacePaths,
+  });
 
   const serviceTier = getAppSettings(deps.db).allowFastServiceTier
     ? resolveProviderServiceTier(deps.providerRegistry, {
@@ -370,7 +419,7 @@ export async function resolveExistingThreadExecutionPlan(
 }
 
 export async function tryResolveExistingThreadExecutionPlan(
-  deps: Pick<AppDeps, "db" | "providerRegistry">,
+  deps: WorkSessionDeps,
   args: ResolveExistingThreadExecutionPlanArgs,
 ): Promise<ExistingThreadExecutionPlan | null> {
   try {

@@ -3,7 +3,7 @@ import {
   describeSessionOptionConflict,
   effectiveSessionOptionSelections,
   modelSessionOptionConflict,
-  reconcileReasoningLevel,
+  resolveReasoningLevelCandidate,
   type AvailableModel,
   type ReasoningLevel,
   type SessionOptionSelections,
@@ -44,16 +44,11 @@ export function resolveModelReasoningLevel(
   model: AvailableModel | undefined,
   preferredReasoningLevel: ReasoningLevel,
 ): ReasoningLevel {
-  const supportedReasoningLevels =
-    model?.supportedReasoningEfforts.map((effort) => effort.reasoningEffort) ??
-    [];
-  return supportedReasoningLevels.length === 0
-    ? preferredReasoningLevel
-    : reconcileReasoningLevel(
-        preferredReasoningLevel,
-        supportedReasoningLevels,
-        model?.defaultReasoningEffort,
-      );
+  return resolveReasoningLevelCandidate({
+    candidate: preferredReasoningLevel,
+    declared: [],
+    model,
+  }).level;
 }
 
 function toModelPickerOption(

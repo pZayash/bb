@@ -30,6 +30,7 @@ const acpRawInputPathSchema = z
     path: z.string().optional(),
     filePath: z.string().optional(),
     file_path: z.string().optional(),
+    filepath: z.string().optional(),
     target_file: z.string().optional(),
   })
   .passthrough();
@@ -96,6 +97,7 @@ export function extractAcpToolCallPaths(
     parsed.data.path,
     parsed.data.filePath,
     parsed.data.file_path,
+    parsed.data.filepath,
     parsed.data.target_file,
   ].find(isNonBlank);
   return rawInputPath === undefined

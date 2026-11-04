@@ -306,6 +306,22 @@ export async function resolveQueuedMessageExecutionChange(
       permissionMode: request.permissionMode ?? current.permissionMode,
       reasoningLevel: request.reasoningLevel ?? current.reasoningLevel,
       serviceTier: request.serviceTier ?? current.serviceTier,
+      executionInputSources: {
+        model:
+          request.model === undefined ? "client-preference" : "explicit",
+        permissionMode:
+          request.permissionMode === undefined
+            ? "client-preference"
+            : "explicit",
+        reasoningLevel:
+          request.reasoningLevel === undefined
+            ? "client-preference"
+            : "explicit",
+        serviceTier:
+          request.serviceTier === undefined
+            ? "client-preference"
+            : "explicit",
+      },
     },
     { threadId: args.thread.id },
   );
@@ -362,6 +378,12 @@ function sendQueuedMessagePayload(
     permissionMode: queuedMessage.permissionMode,
     reasoningLevel: queuedMessage.reasoningLevel,
     serviceTier: queuedMessage.serviceTier,
+    executionInputSources: {
+      model: "client-preference",
+      permissionMode: "client-preference",
+      reasoningLevel: "client-preference",
+      serviceTier: "client-preference",
+    },
     ...(senderThreadId !== null ? { senderThreadId } : {}),
   };
 }

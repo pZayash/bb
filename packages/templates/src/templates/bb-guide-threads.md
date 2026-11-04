@@ -88,6 +88,15 @@ Spawning:
   explicit sandbox and approval bypass. Plan mode is separate from permissions.
   Subagents inherit the parent's permission mode by default, adapted to the child provider's supported modes. Explicit requests and a thread's recorded mode take precedence; nesting a thread does not cap its permissions. The host permission ceiling still applies.
   Parenting is opt-in. Inside a thread, pass --parent-self to parent the new thread to the current thread.
+  A thread hierarchy is at most four levels deep; a parent assignment that
+  would exceed the cap is refused. Spawning inside a thread without
+  --parent-self or --parent-thread still records BB_THREAD_ID as the new
+  thread's senderThreadId, but the thread is not a child: it reports to no
+  parent and consumes no hierarchy depth.
+  A child thread's agent session gets a shortened bb introduction that keeps
+  the parent-messaging rules and drops the CLI and orchestration guidance;
+  the BB Guide plugin's "Send BB introduction" setting turns the introduction
+  off entirely.
   Hidden threads are for plugin/background workers. They remain addressable by
   ID while staying out of sidebar organization and unread/pending favicon
   attention. Thread lists exclude them unless

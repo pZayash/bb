@@ -138,6 +138,19 @@ environment. A custom OpenCode wrapper must declare
 Missing credentials, rejected keys, and collection errors remain unavailable
 states rather than zero usage. Never print API keys when diagnosing setup.
 
+When a BB thread on any provider — including an `acp-*` one — spawns a child
+thread with `bb thread spawn --parent-self`, the child's session receives a
+shortened bb introduction: it keeps the parent-messaging rules (answer the
+parent in the final response, or `bb thread tell` when `bb status` shows parent
+notifications stuck or off) and drops the CLI and orchestration guidance aimed
+at interactive sessions. Thread hierarchies are capped at four levels, so a
+great-grandchild thread cannot spawn children of its own. `bb thread spawn`
+without `--parent-self` or `--parent-thread` only records `BB_THREAD_ID` as the
+new thread's `senderThreadId`: the spawned thread has no parent, reports back
+to nobody automatically, and consumes no hierarchy depth — an agent that omits
+the flag produces an orphan. The BB Guide plugin's "Send BB introduction"
+setting turns the injected introduction off entirely.
+
 ## Custom ACP agents
 
 Register another ACP agent in the ACP providers plugin's `customAgents`

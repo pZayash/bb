@@ -156,6 +156,7 @@ function retryExecution(failed: FailedTurnRecord): {
   reasoningLevel: SendMessageRequest["reasoningLevel"];
   serviceTier: SendMessageRequest["serviceTier"];
   permissionMode?: PermissionMode;
+  executionInputSources: SendMessageRequest["executionInputSources"];
 } {
   const { execution } = failed.request;
   const permissionMode = permissionModeSchema.safeParse(
@@ -165,6 +166,12 @@ function retryExecution(failed: FailedTurnRecord): {
     model: execution.model,
     reasoningLevel: execution.reasoningLevel,
     serviceTier: execution.serviceTier,
+    executionInputSources: {
+      model: "client-preference",
+      permissionMode: "client-preference",
+      reasoningLevel: "client-preference",
+      serviceTier: "client-preference",
+    },
     ...(permissionMode === undefined ? {} : { permissionMode }),
   };
 }

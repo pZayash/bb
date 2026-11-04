@@ -1,3 +1,7 @@
+import {
+  THREAD_EVENT_ITEM_PRESENTATION_DETAIL_MAX_LENGTH,
+  pendingInteractionPayloadSchema,
+} from "@bb/domain";
 import { describe, expect, it } from "vitest";
 import { CURSOR_ACP_DIALECT } from "./dialect.js";
 import {
@@ -347,6 +351,160 @@ describe("buildAcpPermissionInteractionPayload file-change subjects", () => {
   });
 });
 
+describe("approval detail from the bound tool call", () => {
+  it("shows a bound tool call's arguments when the request carries only a toolCallId", () => {
+    const payload = buildAcpPermissionInteractionPayload({
+      toolCall: {
+        toolCallId: "dsh-1",
+        startedToolCall: {
+          sessionUpdate: "tool_call",
+          toolCallId: "dsh-1",
+          title: "custom_fetch",
+          kind: "other",
+          rawKind: "custom_fetch",
+          rawInput: { url: "https://example.com/docs", timeout: 30 },
+        },
+      },
+      options: allowDenyOptions,
+    });
+
+    const subject = payload.kind === "approval" ? payload.subject : undefined;
+    if (subject?.kind !== "tool_use") {
+      throw new Error("expected a tool_use subject");
+    }
+    expect(subject.presentation.detail).toBe(
+      "url: https://example.com/docs, timeout: 30",
+    );
+    expect(pendingInteractionPayloadSchema.safeParse(payload).success).toBe(
+      true,
+    );
+  });
+
+  it("asks a bound write-kind call as a file change with its filepath", () => {
+    const payload = buildAcpPermissionInteractionPayload({
+      toolCall: {
+        toolCallId: "dsh-write",
+        startedToolCall: {
+          sessionUpdate: "tool_call",
+          toolCallId: "dsh-write",
+          title: "write",
+          kind: "other",
+          rawKind: "write",
+          rawInput: { filepath: "/tmp/dsh/notes.md", content: "hello" },
+        },
+      },
+      options: allowDenyOptions,
+    });
+
+    expect(payload).toMatchObject({
+      kind: "approval",
+      subject: {
+        kind: "file_change",
+        itemId: "dsh-write",
+        writeScope: "/tmp/dsh/notes.md",
+      },
+    });
+  });
+
+  it("asks a path-plus-content rawInput as a file change, and command-shaped rawInput as a command", () => {
+    const writeShape = buildAcpPermissionInteractionPayload({
+      toolCall: {
+        toolCallId: "call-shape",
+        kind: "other",
+        rawInput: { file_path: "/tmp/a.md", newText: "draft" },
+      },
+      options: allowDenyOptions,
+    });
+    expect(writeShape).toMatchObject({
+      subject: { kind: "file_change", writeScope: "/tmp/a.md" },
+    });
+
+    const commandShape = buildAcpPermissionInteractionPayload({
+      toolCall: {
+        toolCallId: "call-cmd",
+        kind: "other",
+        rawInput: { command: "npm test -- --watch" },
+      },
+      options: allowDenyOptions,
+    });
+    expect(commandShape).toMatchObject({
+      subject: { kind: "command", command: "npm test -- --watch" },
+    });
+  });
+
+  it("reads a filepath rawInput key as the write path for an edit-kind call", () => {
+    const payload = buildAcpPermissionInteractionPayload({
+      toolCall: {
+        toolCallId: "call-fp",
+        kind: "edit",
+        rawInput: { filepath: "/tmp/qa-1719/notes.md" },
+      },
+      options: allowDenyOptions,
+    });
+
+    expect(payload).toMatchObject({
+      subject: { kind: "file_change", writeScope: "/tmp/qa-1719/notes.md" },
+    });
+  });
+
+  it("leaves the detail absent when nothing carries rawInput", () => {
+    const payload = buildAcpPermissionInteractionPayload({
+      toolCall: { toolCallId: "call-naked", kind: "other" },
+      options: allowDenyOptions,
+    });
+
+    const subject = payload.kind === "approval" ? payload.subject : undefined;
+    if (subject?.kind !== "tool_use") {
+      throw new Error("expected a tool_use subject");
+    }
+    expect(subject.presentation.detail).toBeUndefined();
+  });
+
+  it("redacts secret-looking keys and caps oversized arguments so the payload still validates", () => {
+    const huge = `prelude ${"x".repeat(200 * 1024)}`;
+    const payload = buildAcpPermissionInteractionPayload({
+      toolCall: {
+        toolCallId: "call-huge",
+        kind: "other",
+        rawInput: { data: huge, api_key: "sk-live-secret" },
+      },
+      options: allowDenyOptions,
+    });
+
+    const subject = payload.kind === "approval" ? payload.subject : undefined;
+    if (subject?.kind !== "tool_use") {
+      throw new Error("expected a tool_use subject");
+    }
+    expect(subject.presentation.detail?.length ?? 0).toBeLessThanOrEqual(
+      THREAD_EVENT_ITEM_PRESENTATION_DETAIL_MAX_LENGTH,
+    );
+    expect(pendingInteractionPayloadSchema.safeParse(payload).success).toBe(
+      true,
+    );
+
+    const secrets = buildAcpPermissionInteractionPayload({
+      toolCall: {
+        toolCallId: "call-secret",
+        kind: "other",
+        rawInput: {
+          description: "Post to the API",
+          api_token: "sk-another-secret",
+        },
+      },
+      options: allowDenyOptions,
+    });
+    const secretSubject =
+      secrets.kind === "approval" ? secrets.subject : undefined;
+    if (secretSubject?.kind !== "tool_use") {
+      throw new Error("expected a tool_use subject");
+    }
+    expect(secretSubject.presentation.detail).toContain("[redacted]");
+    expect(secretSubject.presentation.detail).not.toContain(
+      "sk-another-secret",
+    );
+  });
+});
+
 describe("permission reason", () => {
   it("carries the agent's reason on a command approval", () => {
     const payload = buildAcpPermissionInteractionPayload({
@@ -397,6 +555,32 @@ describe("permission reason", () => {
     expect(
       subject?.kind === "tool_use" ? subject.presentation.detail : "unset",
     ).toBeUndefined();
+  });
+
+  it("falls back to the bound tool call's content for the reason", () => {
+    const payload = buildAcpPermissionInteractionPayload({
+      toolCall: {
+        toolCallId: "call-reason",
+        kind: "other",
+        startedToolCall: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-reason",
+          kind: "other",
+          content: [
+            {
+              type: "content",
+              content: { type: "text", text: "Needs write access to /tmp" },
+            },
+          ],
+        },
+      },
+      options: allowDenyOptions,
+    });
+
+    expect(payload).toMatchObject({
+      kind: "approval",
+      reason: "Needs write access to /tmp",
+    });
   });
 
   it("still names the tool when the agent gives no reason", () => {

@@ -109,6 +109,19 @@ provider's own, shown under the entry's optional `label` and sent back as
 `reasoningLevel` unchanged. A bridge that receives an id it does not know
 omits it rather than failing the turn.
 
+The server resolves `reasoningLevel` per model: when the model's
+`model/list` entry reports `reasoningDiscovery: "known"` the discovered
+effort list is authoritative (a `known` entry with no efforts accepts only
+its `defaultReasoningEffort`), and `capabilities.reasoningLevels` is the
+fallback for models whose discovery is `unknown` or missing. An explicitly
+requested level the authoritative list does not contain is rejected with
+400; an inherited or remembered level that no longer fits is moved to the
+nearest supported level — the model's default when the standard ladder
+cannot rank it — and the resolved level is what the turn records and the
+sidebar shows. An effort id discovered through `model/list` needs no entry
+in the declared `reasoningLevels` labels to be accepted; without a label it
+is shown under its raw id.
+
 A `model/list` entry may also carry `sessionOptions`, the
 `bb/session-options` option shape with `value` as the provider's default. A
 `select` lists only the values that model supports; a `boolean` with

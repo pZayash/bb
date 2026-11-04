@@ -101,7 +101,9 @@ export function boundAcpToolPayload(value: unknown): unknown {
   );
 }
 
-function boundAcpToolArgs(value: unknown): Record<string, unknown> | undefined {
+export function boundAcpToolArgs(
+  value: unknown,
+): Record<string, unknown> | undefined {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
   }

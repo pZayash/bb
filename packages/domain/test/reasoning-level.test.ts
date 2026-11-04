@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { reconcileReasoningLevel } from "../src/reasoning-level.js";
+import {
+  reconcileReasoningLevel,
+  resolveReasoningLevelCandidate,
+  resolveReasoningLevelSupport,
+  type ReasoningLevelCatalogModel,
+} from "../src/reasoning-level.js";
 
 describe("reconcileReasoningLevel", () => {
   it("reconciles ultracode down to xhigh on a model without ultracode", () => {
@@ -91,5 +96,133 @@ describe("reconcileReasoningLevel", () => {
     expect(reconcileReasoningLevel("high", ["off", "on"], "on")).toBe("on");
     expect(reconcileReasoningLevel("high", ["off", "on"], "gone")).toBe("off");
     expect(reconcileReasoningLevel("high", ["low", "on"], "on")).toBe("low");
+  });
+});
+
+function catalogModel(
+  levels: readonly string[],
+  defaultLevel: string,
+  reasoningDiscovery: "known" | "unknown" = "known",
+): ReasoningLevelCatalogModel {
+  return {
+    defaultReasoningEffort: defaultLevel,
+    reasoningDiscovery,
+    supportedReasoningEfforts: levels.map((reasoningEffort) => ({
+      reasoningEffort,
+    })),
+  };
+}
+
+describe("resolveReasoningLevelSupport", () => {
+  it("uses the model's discovered efforts when discovery is known", () => {
+    const support = resolveReasoningLevelSupport({
+      declared: ["low", "medium", "high"],
+      model: catalogModel(["off", "think"], "think"),
+    });
+    expect(support).toEqual({
+      defaultLevel: "think",
+      levels: ["think", "off"],
+      source: "model",
+    });
+  });
+
+  it("treats a known model with no efforts as supporting only its default", () => {
+    const support = resolveReasoningLevelSupport({
+      declared: ["low", "medium", "high"],
+      model: catalogModel([], "medium"),
+    });
+    expect(support).toEqual({
+      defaultLevel: "medium",
+      levels: ["medium"],
+      source: "model",
+    });
+  });
+
+  it("falls back to the declared ladder when discovery is unknown", () => {
+    const support = resolveReasoningLevelSupport({
+      declared: ["low", "medium", "high"],
+      model: catalogModel(["off"], "off", "unknown"),
+    });
+    expect(support).toEqual({
+      defaultLevel: null,
+      levels: ["low", "medium", "high"],
+      source: "declared",
+    });
+  });
+
+  it("falls back to the declared ladder when there is no catalog model", () => {
+    const support = resolveReasoningLevelSupport({
+      declared: ["low"],
+      model: null,
+    });
+    expect(support).toEqual({
+      defaultLevel: null,
+      levels: ["low"],
+      source: "declared",
+    });
+  });
+
+  it("reports unknown when neither catalog nor declaration knows anything", () => {
+    const support = resolveReasoningLevelSupport({
+      declared: [],
+      model: catalogModel(["off"], "off", "unknown"),
+    });
+    expect(support).toEqual({
+      defaultLevel: null,
+      levels: [],
+      source: "unknown",
+    });
+  });
+});
+
+describe("resolveReasoningLevelCandidate", () => {
+  it("keeps a candidate the merged list offers", () => {
+    expect(
+      resolveReasoningLevelCandidate({
+        candidate: "think",
+        declared: ["low"],
+        model: catalogModel(["think"], "think"),
+      }),
+    ).toMatchObject({ candidateSupported: true, level: "think" });
+  });
+
+  it("keeps a provider-specific candidate the model lists but the declaration does not", () => {
+    expect(
+      resolveReasoningLevelCandidate({
+        candidate: "deep-think",
+        declared: ["low", "medium"],
+        model: catalogModel(["think", "deep-think"], "think"),
+      }),
+    ).toMatchObject({ candidateSupported: true, level: "deep-think" });
+  });
+
+  it("passes the candidate through when nothing is known", () => {
+    expect(
+      resolveReasoningLevelCandidate({
+        candidate: "whatever",
+        declared: [],
+        model: null,
+      }),
+    ).toMatchObject({ candidateSupported: true, level: "whatever" });
+  });
+
+  it("reconciles an unsupported candidate to the nearest level", () => {
+    expect(
+      resolveReasoningLevelCandidate({
+        candidate: "ultra",
+        declared: [],
+        model: catalogModel(["low", "medium", "high", "xhigh", "max"], "medium"),
+      }),
+    ).toMatchObject({ candidateSupported: false, level: "max" });
+  });
+
+  it("reconciles an unsupported candidate to the model default when ranks cannot decide", () => {
+    expect(
+      resolveReasoningLevelCandidate({
+        candidate: "gone",
+        declared: [],
+        model: catalogModel(["off", "on"], "on"),
+      }),
+    ).toMatchObject({ candidateSupported: false, level: "on" });
   });
 });

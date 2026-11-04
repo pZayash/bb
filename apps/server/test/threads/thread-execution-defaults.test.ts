@@ -17,6 +17,7 @@ import { availableModelFixture } from "../helpers/available-models.js";
 import { waitForQueuedCommand } from "../helpers/commands.js";
 import { textInput } from "../helpers/prompt-input.js";
 import { seedModelCatalog } from "../helpers/provider-model-catalogs.js";
+import { minimalProviderRegistration } from "../helpers/provider-registry.js";
 import {
   seedEnvironment,
   seedHostSession,
@@ -481,6 +482,83 @@ describe("thread execution defaults", () => {
           resolveExistingThreadPermissionMode(harness.deps, child.id),
         ).toBe(testCase.expected.permissionMode);
       }
+    });
+  });
+});
+
+describe("cross-provider spawn reconciliation", () => {
+  it("reconciles the inherited reasoning default the spawned provider does not support", async () => {
+    await withTestHarness(async (harness) => {
+      harness.deps.providerRegistry.register(
+        minimalProviderRegistration({
+          pluginId: "provider-acp",
+          info: {
+            pluginId: "provider-acp",
+            available: true,
+            maintenance: {
+              health: false,
+              usage: false,
+              installation: false,
+            },
+            capabilities: {
+              supportsThreadArchive: false,
+              supportsThreadRename: false,
+              supportsServiceTier: false,
+              supportsNativeUserQuestion: false,
+              supportsFork: false,
+              supportsSessionRewind: false,
+              supportsManualCompaction: false,
+              modelCatalogScope: "host",
+              permissionModes: ["accept-edits", "full"],
+            },
+            composerActions: [],
+            completedTurnDisplay: "collapse",
+            displayName: "Narrow",
+            id: "narrow",
+            logoUrl: null,
+          },
+          serverCapabilities: {
+            fork: "none",
+            reasoningLevels: ["low", "high"],
+            supportsManualCompaction: false,
+          },
+        }),
+      );
+      const { host } = seedHostSession(harness.deps);
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+      });
+      const environment = seedEnvironment(harness.deps, {
+        hostId: host.id,
+        projectId: project.id,
+      });
+      const parent = seedThread(harness.deps, {
+        projectId: project.id,
+        environmentId: environment.id,
+        providerId: "codex",
+      });
+      seedThreadRuntimeState(harness.deps, {
+        threadId: parent.id,
+        environmentId: environment.id,
+        providerThreadId: "parent-session",
+        ...parentExecution,
+        permissionMode: "auto",
+      });
+      const child = seedThread(harness.deps, {
+        projectId: project.id,
+        environmentId: environment.id,
+        parentThreadId: parent.id,
+        providerId: "narrow",
+      });
+
+      const execution = await buildExecutionOptions(
+        harness.deps,
+        { model: "narrow-model" },
+        { threadId: child.id },
+      );
+
+      expect(execution.reasoningLevel).toBe("high");
+      expect(execution.permissionMode).toBe("full");
     });
   });
 });

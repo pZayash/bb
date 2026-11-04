@@ -19,10 +19,10 @@ it("introduces bb without user-question guidance", async () => {
   });
   try {
     await plugin(bb);
-    const introduction = harness.registrations.instructionProvider?.({
-      threadId: "thr_test",
-      projectId: "proj_test",
-    });
+    const { instructions: introduction } =
+      await harness.behavior.resolveAgentConfiguration(
+        makePluginAgentConfigurationContext(),
+      );
     expect(introduction).toContain("You are working inside bb");
     expect(introduction).toContain("agentic IDE");
     expect(introduction).toContain(
@@ -39,6 +39,42 @@ it("introduces bb without user-question guidance", async () => {
   }
 });
 
+it("slims the introduction for child threads", async () => {
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "bb-guide",
+    agentSkillIds: bundledSkills,
+  });
+  try {
+    await plugin(bb);
+    const parent = (
+      await harness.behavior.resolveAgentConfiguration(
+        makePluginAgentConfigurationContext(),
+      )
+    ).instructions;
+    const child = (
+      await harness.behavior.resolveAgentConfiguration(
+        makePluginAgentConfigurationContext({
+          thread: { parentThreadId: "thr_parent" },
+        }),
+      )
+    ).instructions;
+    expect(parent).toContain("You are working inside bb");
+    expect(parent).toContain("Run `bb guide`");
+    expect(parent).toContain("`bb voice transcribe <path>`");
+    expect(child).toContain("child thread inside bb");
+    expect(child).toContain("answer it in your final response");
+    expect(child).toContain("bb thread tell");
+    expect(child).toContain("`@thread:thr_abc123`");
+    expect(child).not.toContain("Run `bb guide`");
+    expect(child).not.toContain("Run `bb status` to see");
+    expect(child).not.toContain("Do not spawn new threads");
+    expect(child).not.toContain("voice transcribe");
+    expect(child).toBe(child?.trim());
+  } finally {
+    await harness.lifecycle.dispose();
+  }
+});
+
 it("keeps the introduction and skill switches independent across reloads", async () => {
   const { bb, harness } = createFakePluginHost({
     pluginId: "bb-guide",
@@ -46,24 +82,25 @@ it("keeps the introduction and skill switches independent across reloads", async
   });
   try {
     await plugin(bb);
-    const instructions = () =>
-      harness.registrations.instructionProvider?.({
-        threadId: "thr_test",
-        projectId: "proj_test",
-      });
+    const instructions = async () =>
+      (
+        await harness.behavior.resolveAgentConfiguration(
+          makePluginAgentConfigurationContext(),
+        )
+      ).instructions;
     const skills = async () =>
       (
         await harness.behavior.resolveAgentConfiguration(
           makePluginAgentConfigurationContext(),
         )
       ).skills;
-    expect(instructions()).toContain("You are working inside bb");
+    expect(await instructions()).toContain("You are working inside bb");
     expect((await skills()).sort()).toEqual([...bundledSkills].sort());
     await harness.behavior.setSettings({
       introduction: false,
       pluginAuthoring: false,
     });
-    expect(instructions()).toBeNull();
+    expect(await instructions()).toBeNull();
     expect(await skills()).toEqual([
       "bb-cli",
       "skill-creator",
@@ -72,10 +109,10 @@ it("keeps the introduction and skill switches independent across reloads", async
     await harness.behavior.setSettings({ skills: false });
     expect(await skills()).toEqual([]);
     await harness.lifecycle.reload(plugin);
-    expect(instructions()).toBeNull();
+    expect(await instructions()).toBeNull();
     expect(await skills()).toEqual([]);
     await harness.behavior.setSettings({ introduction: true, skills: true });
-    expect(instructions()).toContain("bb status");
+    expect(await instructions()).toContain("bb status");
     expect(await skills()).toEqual([
       "bb-cli",
       "skill-creator",

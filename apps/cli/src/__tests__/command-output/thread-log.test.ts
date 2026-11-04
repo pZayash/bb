@@ -57,9 +57,103 @@ describe("bb thread log command output", () => {
     expect(output).toContain("steer pending");
     expect(getTimeline).toHaveBeenCalledWith({
       param: { id: "thread-log" },
-      query: {},
+      query: { includeNestedRows: "true" },
     });
     expect(getEvents).not.toHaveBeenCalled();
+  });
+
+  it("bb thread log minimal shows collapsed tool entries inside a completed turn", async () => {
+    vi.stubEnv("NO_COLOR", "1");
+    const commandRow = (args: {
+      id: string;
+      command: string;
+      output: string;
+      sourceSeqStart: number;
+    }) => ({
+      ...fixtures.makeTimelineBase({
+        id: args.id,
+        sourceSeqStart: args.sourceSeqStart,
+        startedAt: args.sourceSeqStart * 1_000,
+        createdAt: args.sourceSeqStart * 1_000,
+      }),
+      turnId: "turn-1",
+      kind: "work" as const,
+      workKind: "command" as const,
+      status: "completed" as const,
+      callId: args.id,
+      command: args.command,
+      cwd: null,
+      source: null,
+      output: args.output,
+      exitCode: 0,
+      completedAt: args.sourceSeqStart * 1_000 + 500,
+      approvalStatus: null,
+      activityIntents: [],
+    });
+    const getTimeline = vi.fn(async () =>
+      fixtures.makeTimelineResponse([
+        {
+          ...fixtures.makeTimelineBase({
+            id: "thread-log:turn-1:turn",
+            sourceSeqStart: 1,
+            sourceSeqEnd: 4,
+            startedAt: 1_000,
+            createdAt: 1_000,
+          }),
+          kind: "turn",
+          turnId: "turn-1",
+          status: "completed",
+          summaryCount: 1,
+          completedAt: 4_000,
+          children: [
+            commandRow({
+              id: "cmd-1",
+              command: "pnpm test",
+              output: "Tests passed\n",
+              sourceSeqStart: 1,
+            }),
+            commandRow({
+              id: "cmd-2",
+              command: "pnpm lint",
+              output: "Lint passed\n",
+              sourceSeqStart: 2,
+            }),
+            {
+              ...fixtures.makeTimelineBase({
+                id: "assistant-1",
+                sourceSeqStart: 3,
+              }),
+              turnId: "turn-1",
+              kind: "conversation",
+              messageSeq: 3,
+              role: "assistant",
+              text: "All checks passed.",
+              attachments: null,
+              turnRequest: null,
+            },
+          ],
+        },
+      ]),
+    );
+    stubServerApi({
+      "v1.threads.:id.timeline.$get": getTimeline,
+    });
+
+    await runCommand(["thread", "log", "thread-log"], register);
+
+    expect(getTimeline).toHaveBeenCalledWith({
+      param: { id: "thread-log" },
+      query: { includeNestedRows: "true" },
+    });
+    const output = String(vi.mocked(console.log).mock.calls[0]?.[0]);
+    expect(output).toContain("Worked for");
+    expect(output).toContain("Ran 2 commands");
+    expect(output).toContain("Ran pnpm test");
+    expect(output).toContain("$ pnpm test");
+    expect(output).toContain("$ pnpm lint");
+    expect(output).toContain("All checks passed.");
+    expect(output).not.toContain("Tests passed");
+    expect(output).not.toContain("Lint passed");
   });
 
   it("bb thread log renders approval state on command and file-change rows", async () => {
@@ -548,9 +642,19 @@ describe("bb thread log command output", () => {
     await runCommand(["thread", "log", "thread-log", "--all"], register);
 
     expect(getTimeline.mock.calls.map((call) => call[0].query)).toEqual([
-      { segmentLimit: "100" },
-      { segmentLimit: "100", beforeAnchorSeq: "30", beforeAnchorId: "user-3" },
-      { segmentLimit: "100", beforeAnchorSeq: "20", beforeAnchorId: "user-2" },
+      { includeNestedRows: "true", segmentLimit: "100" },
+      {
+        includeNestedRows: "true",
+        segmentLimit: "100",
+        beforeAnchorSeq: "30",
+        beforeAnchorId: "user-3",
+      },
+      {
+        includeNestedRows: "true",
+        segmentLimit: "100",
+        beforeAnchorSeq: "20",
+        beforeAnchorId: "user-2",
+      },
     ]);
     const output = String(vi.mocked(console.log).mock.calls[0]?.[0]);
     expect(output.indexOf("first prompt")).toBeGreaterThan(-1);
@@ -642,7 +746,7 @@ describe("bb thread log command output", () => {
     expect(getEvents).not.toHaveBeenCalled();
     expect(getTimeline).toHaveBeenCalledWith({
       param: { id: "thread-log-self" },
-      query: {},
+      query: { includeNestedRows: "true" },
     });
     expect(collectLogLines(vi.mocked(console.error))).toEqual([]);
   });

@@ -15,13 +15,18 @@ import {
   ClientTurnRequestId,
   EnvironmentStatus,
   promptInputHasCommandMention,
+  resolveReasoningLevelCandidate,
 } from "@bb/domain";
 import {
   type HostDaemonCommand,
   type ThreadStopIntent,
   type TurnSubmitTarget,
 } from "@bb/host-daemon-contract";
-import type { AppDeps, LoggedWorkSessionDeps } from "../../types.js";
+import type {
+  AppDeps,
+  LoggedWorkSessionDeps,
+  WorkSessionDeps,
+} from "../../types.js";
 import type { CommandResultSideEffectsDeps } from "../../internal/command-result-side-effects.js";
 import { ApiError } from "../../errors.js";
 import {
@@ -44,6 +49,7 @@ import {
   resolveExistingThreadExecutionPlan,
   type ExistingThreadExecutionInputRequest,
 } from "./thread-execution-plan.js";
+import { getSupportedReasoningLevelsForProvider } from "./thread-reasoning-policy.js";
 import { clampPermissionModeToHost } from "../hosts/permission-ceiling.js";
 import type { ProviderRegistryService } from "../providers/provider-registry.js";
 import { resolveProviderPlanCommand } from "../providers/provider-plan-command.js";
@@ -242,17 +248,18 @@ function toRuntimeExecutionOptions(
       model: args.execution.model,
     },
   );
-  const reasoningLevel =
-    model === null ||
-    model.supportedReasoningEfforts.some(
-      (effort) => effort.reasoningEffort === args.execution.reasoningLevel,
-    )
-      ? args.execution.reasoningLevel
-      : undefined;
+  const reasoningLevel = resolveReasoningLevelCandidate({
+    candidate: args.execution.reasoningLevel,
+    declared: getSupportedReasoningLevelsForProvider(
+      args.deps.providerRegistry,
+      args.providerId,
+    ),
+    model,
+  }).level;
   const base = {
     model: args.execution.model,
     serviceTier: args.execution.serviceTier,
-    ...(reasoningLevel === undefined ? {} : { reasoningLevel }),
+    reasoningLevel,
     ...(promptMode !== undefined ? { promptMode } : {}),
     ...(Object.keys(sessionOptions).length > 0 ? { sessionOptions } : {}),
     providerOptions,
@@ -285,7 +292,7 @@ function toRuntimeExecutionOptions(
 }
 
 export async function buildExecutionOptions(
-  deps: Pick<AppDeps, "db" | "hub" | "providerRegistry">,
+  deps: WorkSessionDeps,
   request: ExecutionOptionsRequest,
   args: BuildExecutionOptionsArgs,
 ): Promise<ResolvedThreadExecutionOptions> {

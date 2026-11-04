@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { introduction } from "./introduction.js";
+import { childIntroduction, introduction } from "./introduction.js";
 
 export default async function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
@@ -46,11 +46,13 @@ export default async function plugin(bb: BbPluginApi) {
   settings.onChange((next) => {
     current = next;
   });
-  bb.agents.contributeInstructions(() =>
-    current.introduction ? introduction : null,
-  );
-  bb.agents.configure(() => ({
+  bb.agents.configure((context) => ({
     tools: [],
+    instructions: current.introduction
+      ? context.thread.parentThreadId
+        ? childIntroduction
+        : introduction
+      : undefined,
     skills: current.skills
       ? [
           ...(current.bbCli ? ["bb-cli"] : []),
