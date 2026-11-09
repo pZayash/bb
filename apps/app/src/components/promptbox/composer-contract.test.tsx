@@ -514,10 +514,15 @@ describe.each(COMPOSERS)("$name", (composer) => {
       );
     });
 
-    it("runs the surface's Enter action when Enter is pressed in the editor", async () => {
+    // bb-fork(windows): the enter action runs on Mod+Alt+Enter, not Enter.
+    it("runs the surface's Enter action when the submit chord is pressed in the editor", async () => {
       const { onSubmit, onModifierSubmit } = renderSurface(surface);
       const box = await composerBox();
-      fireEvent.keyDown(composer.editorElement(box), { key: "Enter" });
+      fireEvent.keyDown(composer.editorElement(box), {
+        key: "Enter",
+        ctrlKey: true,
+        altKey: true,
+      });
       const [ran, skipped] =
         surface.enter === "submit"
           ? [onSubmit, onModifierSubmit]

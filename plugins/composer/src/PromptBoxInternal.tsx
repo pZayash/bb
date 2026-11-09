@@ -132,6 +132,13 @@ import {
   ComposerEditorSlot,
 } from "./ComposerEditorSlot";
 import { isModifierSubmitKeyEvent } from "./modifier-submit-key";
+// bb-fork(windows): Enter inserts a newline; sending needs Mod+Alt+Enter.
+import {
+  FORK_ENTER_SUBMITS,
+  forkPrimarySubmitAriaKeyshortcut,
+  forkPrimarySubmitShortcutLabel,
+  isForkPrimarySubmitKeyEvent,
+} from "./submit-key-chords.fork";
 import { composerSubmittingBlockedReason } from "./composer-submit-gate";
 
 import { ComposerSendMenu } from "./ComposerSendMenu";
@@ -1049,7 +1056,10 @@ export function PromptBoxInternal({
     disabledReason: submitDisabledReason,
     label: submitLabel,
     icon: submitIcon,
-    title: submitTitle = "Submit (Enter)",
+    // bb-fork(windows): advertise the fork's Mod+Alt+Enter submit chord.
+    title: submitTitle = FORK_ENTER_SUBMITS
+      ? "Submit (Enter)"
+      : `Submit (${forkPrimarySubmitShortcutLabel()})`,
     isRunning = false,
     onStop,
     enter: primarySubmitAction,
@@ -1073,6 +1083,15 @@ export function PromptBoxInternal({
     surface === "thread" && isCompactViewport && isPointerCoarse;
   const isIPadOSWebKitDevice = useMemo(isIPadOSWebKit, []);
   const editorEnterKeyHint = isPointerCoarse ? "enter" : "send";
+  // bb-fork(windows): advertise the Mod+Alt+Enter submit chord too.
+  const editorAriaKeyshortcuts = FORK_ENTER_SUBMITS
+    ? modifierSubmitAction?.shortcut.ariaKeyshortcuts
+    : [
+          forkPrimarySubmitAriaKeyshortcut(),
+          modifierSubmitAction?.shortcut.ariaKeyshortcuts,
+        ]
+          .filter((shortcut): shortcut is string => Boolean(shortcut))
+          .join(" ");
   const formRef = useRef<HTMLFormElement>(null);
   const typeaheadMenuRef = useRef<HTMLDivElement>(null);
   const blurAfterPointerSubmitRef = useRef(false);
@@ -1699,11 +1718,8 @@ export function PromptBoxInternal({
         attributes: {
           "aria-label": effectivePlaceholder,
           "data-placeholder": effectivePlaceholder,
-          ...(modifierSubmitAction
-            ? {
-                "aria-keyshortcuts":
-                  modifierSubmitAction.shortcut.ariaKeyshortcuts,
-              }
+          ...(editorAriaKeyshortcuts
+            ? { "aria-keyshortcuts": editorAriaKeyshortcuts }
             : {}),
           autocomplete: "off",
           class: cn(
@@ -3213,7 +3229,8 @@ export function PromptBoxInternal({
         !event.metaKey &&
         !event.altKey &&
         !event.ctrlKey &&
-        (event.shiftKey || !canSubmitWithEnterKey);
+        // bb-fork(windows): plain Enter inserts a newline on this fork.
+        (event.shiftKey || !canSubmitWithEnterKey || !FORK_ENTER_SUBMITS);
       if (
         isPromptNewlineKey &&
         currentEditor &&
@@ -3224,7 +3241,10 @@ export function PromptBoxInternal({
       }
 
       if (!canSubmitWithEnterKey) return false;
-      const isSubmitKey = event.key === "Enter" && !event.shiftKey;
+      // bb-fork(windows): only Mod+Alt+Enter submits; Enter is a newline.
+      const isSubmitKey = FORK_ENTER_SUBMITS
+        ? event.key === "Enter" && !event.shiftKey
+        : isForkPrimarySubmitKeyEvent(event);
 
       if (!isSubmitKey) return false;
       event.preventDefault();

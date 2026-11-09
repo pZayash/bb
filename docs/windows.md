@@ -203,3 +203,20 @@ The dev flow stays a maintainer surface rather than a shipped product path:
 native Windows ships through the supervisor ([README.windows.md](../README.windows.md))
 and the `npx bb-app` package, and the repository's remaining development commands
 are POSIX-first.
+
+## Composer keyboard shortcuts
+
+This fork changes the prompt box submit keys so a missed keystroke cannot send
+a half-written message:
+
+| Key | Action |
+| --- | --- |
+| Enter, Shift+Enter | Insert a newline |
+| Ctrl+Alt+Enter | Primary submit — send, steer, or queue the draft, whichever the `enter` action does upstream |
+| Ctrl+Enter | Modifier action (steer/queue), unchanged |
+
+The `steerActiveThreadOnEnter` setting still picks which action is primary; it
+now binds to Ctrl+Alt+Enter instead of Enter. Submit button titles and the
+editor `aria-keyshortcuts` advertise the new chord. The flip switches are
+`FORK_ENTER_SUBMITS` in `plugins/composer/src/submit-key-chords.fork.ts` and
+`apps/app/src/components/promptbox/primary-submit-shortcut.fork.ts`.

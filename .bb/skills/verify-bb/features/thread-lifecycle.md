@@ -29,7 +29,7 @@ from a created thread row.
    Reply exactly: BB verification complete. Do not use tools or change files.
    ```
 
-2. Capture the filled prompt and click **Submit (Enter)**. Wait for the URL
+2. Capture the filled prompt and click **Submit (Ctrl + Alt + Enter)**. Wait for the URL
    to contain `/projects/` and `/threads/`. Record both returned IDs.
 3. Wait for a separate assistant response, **BB verification complete.**
    Confirm with `node apps/cli/dist/index.js thread output "$BB_VERIFY_THREAD_ID" --json`

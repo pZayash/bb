@@ -149,7 +149,8 @@ describe("ComposerBox on a real iPadOS ProseMirror build", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("submits a Magic Keyboard Enter once, with no replayed second submit", () => {
+  // bb-fork(windows): hardware Enter inserts a newline; the chord submits.
+  it("inserts one newline on a Magic Keyboard Enter and submits once on the Mod+Alt+Enter chord, with no replay", () => {
     const onChange = vi.fn();
     const onSubmit = vi.fn();
     render(
@@ -164,19 +165,30 @@ describe("ComposerBox on a real iPadOS ProseMirror build", () => {
       />,
     );
 
-    fireEvent.keyDown(getPromptEditorElement(), {
+    const editor = getPromptEditorElement();
+    fireEvent.keyDown(editor, {
       key: "Enter",
       code: "Enter",
       keyCode: 13,
     });
 
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onChange).toHaveBeenLastCalledWith("Run this\n", []);
+
+    fireEvent.keyDown(editor, {
+      key: "Enter",
+      code: "Enter",
+      keyCode: 13,
+      metaKey: true,
+      altKey: true,
+    });
     expect(onSubmit).toHaveBeenCalledOnce();
 
     act(() => {
       vi.advanceTimersByTime(IOS_ENTER_REPLAY_MS * 2);
     });
     expect(onSubmit).toHaveBeenCalledOnce();
-    expect(onChange).not.toHaveBeenCalled();
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 
   it("turns a software-keyboard Return into a newline through the iOS replay", () => {

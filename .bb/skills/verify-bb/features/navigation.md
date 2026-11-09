@@ -45,7 +45,7 @@ recipe. External writes require a disposable test target and task authorization.
 
 ## Maintenance notes
 
-- Root compose uses one new-thread draft across project selections. Enter multiline text with Shift+Enter; do not pass literal newlines to dev-browser fill() on the rich editor because they can submit. Source: `apps/app/src/hooks/usePromptDraftStorage.ts:17`.
+- Root compose uses one new-thread draft across project selections. Enter multiline text with Enter or Shift+Enter; bb-fork(windows): literal newlines from dev-browser fill() cannot submit — only Ctrl+Alt+Enter sends. Source: `apps/app/src/hooks/usePromptDraftStorage.ts:17`.
 - Ctrl+K opens thread search. For command actions use Ctrl+Shift+P and preserve the leading > when filling the command search field; removing > switches to thread search. Source: `apps/server/src/services/system/app-keybindings.ts:145`.
 - On Linux web, previous/next use Ctrl+Shift+[ and Ctrl+Shift+]; numbered jumps use Ctrl+Shift+1…9. Scope visible sidebar order and await the resulting route. Serialize CLI open/pane commands across all connected profiles. Source: `apps/server/src/services/system/app-keybindings.ts:153`.
 - Select Sidebar display options → Manually before creating or organizing sections. By project and By machine do not expose the same manual section controls. Section create/rename/delete are global, while collapsed/order preferences are client-local; inspect source for the supported drag interaction. Source: `plugins/thread-list/app/list/ProjectList.tsx:427`.

@@ -681,6 +681,12 @@ vi.mock("@/hooks/mutations/thread-runtime-mutations", () => ({
     isPending: false,
     mutate: promptAreaMocks.clearThreadGoalMutate,
   }),
+  // bb-fork(compaction-model): ThreadDetailPromptArea reads useCompactThread
+  // bb-fork(compaction-model): for the manual-compaction control.
+  useCompactThread: () => ({
+    isPending: false,
+    mutate: vi.fn(),
+  }),
   useCreateThread: () => ({
     isPending: false,
     mutateAsync: promptAreaMocks.createThreadMutateAsync,

@@ -125,10 +125,13 @@ function MinimalComposer() {
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (renderer.dispatchAppCommandKey(event.nativeEvent)) return;
-    if (event.key !== "Enter" || event.shiftKey) return;
+    if (event.key !== "Enter") return;
+    // bb-fork(windows): Mod+Alt+Enter runs the enter action and Mod+Enter
+    // bb-fork(windows): the modifier action; plain Enter is a textarea newline.
+    if (!(event.metaKey || event.ctrlKey) || event.shiftKey) return;
     event.preventDefault();
-    if (event.metaKey || event.ctrlKey) submission.modifier?.run();
-    else submission.enter.run();
+    if (event.altKey) submission.enter.run();
+    else submission.modifier?.run();
   };
 
   return (

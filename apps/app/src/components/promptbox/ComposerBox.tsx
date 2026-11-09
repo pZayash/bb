@@ -128,6 +128,12 @@ import {
   modifierSubmitShortcutAria,
   modifierSubmitShortcutLabel,
 } from "./modifier-submit-shortcut";
+// bb-fork(windows): Enter inserts a newline; primary submit is Mod+Alt+Enter.
+import {
+  FORK_ENTER_SUBMITS,
+  forkPrimarySubmitShortcut,
+  forkPrimarySubmitShortcutLabel,
+} from "./primary-submit-shortcut.fork";
 
 interface TypeaheadMentionConfig {
   triggers?: readonly PluginMentionTrigger[];
@@ -255,7 +261,20 @@ function composerSubmission(
     swapSubmitActions && steer !== null ? [steer, draft] : [draft, steer];
   return {
     ...state,
-    enter: { ...enter, shortcut: ENTER_SHORTCUT },
+    // bb-fork(windows): retitle "(Enter)" hints to the Mod+Alt+Enter chord.
+    title: FORK_ENTER_SUBMITS
+      ? state.title
+      : state.title?.replace(
+          " (Enter)",
+          ` (${forkPrimarySubmitShortcutLabel()})`,
+        ),
+    // bb-fork(windows): advertise the Mod+Alt+Enter submit chord.
+    enter: {
+      ...enter,
+      shortcut: FORK_ENTER_SUBMITS
+        ? ENTER_SHORTCUT
+        : forkPrimarySubmitShortcut(),
+    },
     modifier:
       modifier === null
         ? null
