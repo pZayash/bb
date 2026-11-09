@@ -8,3 +8,7 @@ packages:
   # dependencies are installed into each plugin's own node_modules — plugins
   # bring their own dependencies.
   - "examples/plugins/*"
+
+# bb-fork(windows): packages/bb-app is pinned to better-sqlite3 12.x (see
+# docs/windows.md); 13.x's implicit node-gyp build needs ClangCL, which
+# Windows dev machines do not have, and its bundled prebuild is never used.
