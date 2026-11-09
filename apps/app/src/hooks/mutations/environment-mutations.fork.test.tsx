@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { sdk } from "@/lib/sdk";
 import { createQueryClientTestHarness } from "@/test/queryClientTestHarness";
 import { environmentQueryKey } from "../queries/query-keys";
-import { useUpdateEnvironment } from "./environment-mutations";
+import { useUpdateEnvironment } from "./environment-mutations.fork";
 
 vi.mock("@/lib/sdk", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/sdk")>();

@@ -1,5 +1,6 @@
 import { emitPluginEnvironmentRemoved } from "../plugins/plugin-thread-events.js";
 import { withHostCleanup } from "../hosts/cleanup-context.js";
+import { preservePathPluginsInside } from "../plugins/path-plugin-preservation.js";
 import { findHostDataDir } from "../lib/entity-lookup.js";
 import { getLatestThreadSequence, updateThread } from "@bb/db";
 import {
@@ -126,6 +127,7 @@ import {
   isHostUnavailableApiError,
 } from "../hosts/online-rpc.js";
 import { ApiError } from "../../errors.js";
+import { defineItemSweep, type ItemSweep } from "../system/item-sweep.js";
 
 type Deps = ThreadProvisioningDeps;
 
@@ -316,7 +318,6 @@ const REMOVE_RETRY_MS = 60_000;
 const MAX_REMOVE_ATTEMPTS = 5;
 const PROVIDER_OWNER_MISMATCH_MESSAGE =
   "The environment provider belongs to a different plugin or has no recorded owner. Automatic removal is blocked.";
-const PROVIDER_LIFECYCLE_SWEEP_YIELD_INTERVAL = 25;
 
 const RETIRED_CREATE_CONTEXT_FIELDS = { rebuild: false, previous: null };
 
@@ -727,6 +728,9 @@ async function runRemove(
           signal,
         });
       }
+      if (row.providerOwnsPath && row.path !== null) {
+        await preservePathPluginsInside(deps.db, row.path);
+      }
       const invocation = await invokeEnvironmentProvider(
         record,
         "environment remove",
@@ -1124,35 +1128,30 @@ export async function recoverEnvironmentCleanup(
   }).done;
 }
 
-function yieldToEventLoop(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
+export function providerLifecycleSweep(deps: Deps): ItemSweep {
+  return defineItemSweep({
+    name: "environment-provider-lifecycle",
+    concurrency: Number.POSITIVE_INFINITY,
+    list: () =>
+      listEnvironmentProviders().flatMap((record) =>
+        listProviderLifecycleEnvironments(deps.db, record.provider.id, {
+          pluginId: record.pluginId,
+          teardownMessage: PROVIDER_OWNER_MISMATCH_MESSAGE,
+        }),
+      ),
+    key: (row) => row.id,
+    process: (row) =>
+      sweepProviderEnvironment(deps, row.id).catch((error) => {
+        deps.logger.warn(
+          { environmentId: row.id, error: errorMessage(error) },
+          "Environment removal will retry",
+        );
+      }),
+  });
 }
 
 export async function sweepProviderLifecycles(deps: Deps): Promise<void> {
-  const pending: Promise<void>[] = [];
-  for (const record of listEnvironmentProviders()) {
-    for (const row of listProviderLifecycleEnvironments(
-      deps.db,
-      record.provider.id,
-      {
-        pluginId: record.pluginId,
-        teardownMessage: PROVIDER_OWNER_MISMATCH_MESSAGE,
-      },
-    )) {
-      pending.push(
-        sweepProviderEnvironment(deps, row.id).catch((error) => {
-          deps.logger.warn(
-            { environmentId: row.id, error: errorMessage(error) },
-            "Environment removal will retry",
-          );
-        }),
-      );
-      if (pending.length % PROVIDER_LIFECYCLE_SWEEP_YIELD_INTERVAL === 0)
-        await yieldToEventLoop();
-    }
-    await yieldToEventLoop();
-  }
-  await Promise.all(pending);
+  await providerLifecycleSweep(deps).run(deps, Date.now());
   releaseFinishedEnvironmentPreparationOwners(deps.db);
 }
 

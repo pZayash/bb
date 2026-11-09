@@ -88,7 +88,6 @@ function activity(
     backgroundAgents: 0,
     backgroundCommands: 0,
     planMode: 0,
-    goals: 0,
     ...overrides,
   };
 }
@@ -522,9 +521,9 @@ describe("ThreadRow", () => {
     ["meta", { metaKey: true }],
     ["ctrl", { ctrlKey: true }],
   ])(
-    "selects the row on %s-shift-click and still splits without shift with multi-select on",
+    "selects the row on %s-shift-click and still splits without shift",
     (_label, modifier) => {
-      const slot = renderThreadRow({ experiments: ["sidebarMultiSelect"] });
+      const slot = renderThreadRow();
       const link = screen.getByRole("link", { name: "Open Thread" });
       const row = link.closest("[data-sidebar-rename-row]");
       expect(row?.hasAttribute("data-sidebar-thread-selected")).toBe(false);
@@ -550,7 +549,6 @@ describe("ThreadRow", () => {
       thread: first,
       siblings: [second, third],
       projects: [makePluginProject()],
-      experiments: ["sidebarMultiSelect"],
       threadBulkActions: (threads) => {
         bulkTargets.push(threads.map((target) => target.id));
         return [];
@@ -587,9 +585,7 @@ describe("ThreadRow", () => {
   it.each(["sidebar", "outside"])(
     "clears selection on empty %s space but keeps it for rows and menus",
     (target) => {
-      const { container } = renderThreadRow({
-        experiments: ["sidebarMultiSelect"],
-      });
+      const { container } = renderThreadRow();
       container.setAttribute("data-sidebar", "sidebar");
       const link = screen.getByRole("link", { name: "Open Thread" });
       const row = link.closest("[data-sidebar-rename-row]")!;
@@ -905,10 +901,10 @@ describe("ThreadRow", () => {
       }),
     },
     {
-      label: "goal + pending input",
+      label: "plan mode + pending input",
       thread: createThread({
         hasPendingInteraction: true,
-        activity: activity({ goals: 1 }),
+        activity: activity({ planMode: 1 }),
       }),
     },
     {
@@ -1632,7 +1628,7 @@ describe("ThreadRow", () => {
   it("routes a click on other plugins' metadata like the rest of the row", () => {
     getDefaultStore().set(sidebarShowRowMetadataAtom, true);
     const slot = renderThreadRow({
-      experiments: ["sidebarMultiSelect", "threadRowMetadata"],
+      experiments: ["threadRowMetadata"],
     });
     const link = screen.getByRole("link", { name: "Open Thread" });
     const row = link.closest("[data-sidebar-rename-row]");
@@ -1802,7 +1798,6 @@ describe("ThreadRow", () => {
       indicator: "background-command",
     },
     { activityKey: "planMode" as const, indicator: "plan-mode" },
-    { activityKey: "goals" as const, indicator: "goal" },
   ])(
     "shows the $indicator indicator for $activityKey activity",
     ({ activityKey, indicator }) => {
@@ -1868,7 +1863,6 @@ describe("ThreadRow", () => {
     { flag: "backgroundAgents" as const, indicator: "background-agent" },
     { flag: "backgroundCommands" as const, indicator: "background-command" },
     { flag: "planMode" as const, indicator: "plan-mode" },
-    { flag: "goals" as const, indicator: "goal" },
   ])(
     "shows the $indicator indicator for collapsed parent rows with hidden child activity",
     ({ flag, indicator }) => {
@@ -1909,7 +1903,7 @@ describe("ThreadRow", () => {
           createThread({
             id: "thr_hidden_child",
             parentThreadId: "thr_test",
-            activity: activity({ planMode: 1, goals: 1 }),
+            activity: activity({ planMode: 1 }),
           }),
         ],
         onToggleCollapsed: vi.fn(),
@@ -2151,7 +2145,6 @@ describe("ThreadRow", () => {
       .mockReturnValue(false);
     const slot = renderThreadRow({
       options: { ...DEFAULT_OPTIONS, consumeClickSuppression },
-      experiments: ["sidebarMultiSelect"],
     });
     const link = screen.getByRole("link", { name: "Open Thread" });
 

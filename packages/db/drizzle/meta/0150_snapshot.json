@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "7fcc9af3-4323-45c3-9e84-ccb0e985691b",
+  "id": "cc65d665-e418-46fd-9511-811bbd588edf",
   "prevId": "e2dcfab4-f075-4425-b3c6-259b9a4723d3",
   "tables": {
     "app_settings": {
@@ -754,13 +754,6 @@
         },
         "merge_base_branch": {
           "name": "merge_base_branch",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "start_ref": {
-          "name": "start_ref",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -4924,6 +4917,14 @@
           "autoincrement": false,
           "default": "'starting'"
         },
+        "status_changed_at": {
+          "name": "status_changed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
         "startup_context": {
           "name": "startup_context",
           "type": "text",
@@ -4934,13 +4935,6 @@
         "parent_thread_id": {
           "name": "parent_thread_id",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "parent_notifications_muted_at": {
-          "name": "parent_notifications_muted_at",
-          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

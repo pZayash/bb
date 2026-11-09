@@ -216,7 +216,7 @@ function FollowUpPromptBoxStackOnly({
     isRunning: false,
     isSubmitting: false,
   });
-  if (!stack && !composerScope) {
+  if (!stack) {
     return null;
   }
   return (
@@ -224,11 +224,7 @@ function FollowUpPromptBoxStackOnly({
       <PluginComposerHostProvider value={pluginComposerHost ?? null}>
         <div data-promptbox-shell="" className="space-y-2">
           <div className={`grid gap-2 ${PROMPT_STACK_TRACK_CLASS}`}>
-            {composerScope ? (
-              <ComposerBannersSlot>{stack}</ComposerBannersSlot>
-            ) : (
-              stack
-            )}
+            {stack}
           </div>
         </div>
       </PluginComposerHostProvider>

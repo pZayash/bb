@@ -6,6 +6,7 @@ import {
   deriveStoredEventItemFields,
   getThread,
   getLatestThreadSequence,
+  isStoredTurnContextCompactionOnly,
   listStoredTurnCompletedKeys,
   listThreadEnvironmentAssignmentsOnHost,
   MissingStoredTurnStartedError,
@@ -46,8 +47,6 @@ import {
 } from "../services/system/event-pruning.js";
 import { queueChildThreadTurnNotificationBestEffort } from "../services/threads/child-thread-notifications.js";
 import { isParentNotifiableChildThread } from "../services/threads/thread-parent.js";
-// bb-fork(compact-notify): suppress child outcome reports for manual compaction
-import { isManualCompactionTurn } from "../services/threads/thread-manual-compaction.fork.js";
 import {
   continueAfterEnvironmentDirectoryUpdate,
   findEnvironmentDirectoryContinuation,
@@ -64,6 +63,7 @@ import {
 } from "../services/lib/error-log-fields.js";
 import { applyLoggedThreadLifecycleEvent } from "../services/threads/lifecycle-outcome.js";
 import { dropSettledThreadSessionOptionSelections } from "../services/threads/thread-session-options.js";
+import { rejectUnstartedTurnRequest } from "../services/threads/unconfirmed-turn-requests.js";
 import { rememberSessionModelCatalog } from "../services/providers/session-model-catalog.js";
 import { applyTurnCompletedEvent } from "./turn-completed-events.js";
 import {
@@ -546,16 +546,16 @@ async function applyEventEffects(
                 threadId: turnCompleted.thread.id,
                 turnId,
               }));
-          // bb-fork(compact-notify): a manual compaction turn is a service
-          // operation, not task progress, so it must not report to the parent.
-          const manualCompactionTurn = isManualCompactionTurn(deps, {
-            threadId: turnCompleted.thread.id,
-            turnId,
-          });
+          const compactionOnly =
+            event.status === "completed" &&
+            isStoredTurnContextCompactionOnly(deps.db, {
+              threadId: turnCompleted.thread.id,
+              turnId,
+            });
           if (
             !alreadyHandledByCommandFailure &&
             !manuallyStopped &&
-            !manualCompactionTurn
+            !compactionOnly
           ) {
             addParentTurnNotificationFollowUp({
               failedParentNotificationThreadIds,
@@ -590,17 +590,23 @@ async function applyEventEffects(
 
       if (
         event.type === "system/error" &&
-        event.code === "provider_process_exited"
+        (event.code === "provider_process_exited" ||
+          event.code === "provider_turn_start_failed")
       ) {
         const thread = getThread(deps.db, entry.threadId);
         if (!thread) {
           continue;
         }
-        deps.pendingInteractions.interruptPendingInteractionsForThreadIds({
-          threadIds: [entry.threadId],
-          reason:
-            "Provider process exited while awaiting user interaction; retry the thread to continue",
-        });
+        if (event.code === "provider_process_exited") {
+          deps.pendingInteractions.interruptPendingInteractionsForThreadIds({
+            threadIds: [entry.threadId],
+            reason:
+              "Provider process exited while awaiting user interaction; retry the thread to continue",
+          });
+        }
+        if (event.scope.kind === "thread") {
+          rejectUnstartedTurnRequest(deps, entry.threadId);
+        }
         const outcome = applyLoggedThreadLifecycleEvent(deps, {
           event: { type: "run.failed" },
           threadId: entry.threadId,

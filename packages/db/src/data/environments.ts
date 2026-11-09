@@ -260,7 +260,6 @@ export interface UpdateEnvironmentMetadataInput {
 
 export interface RecordEnvironmentCurrentBranchInput {
   branchName: string | null;
-  defaultBranch?: string | null;
 }
 
 export interface ListRetiredLoadedEnvironmentIdsOnHostArgs {
@@ -385,9 +384,6 @@ export function recordEnvironmentCurrentBranch(
 ) {
   return updateEnvironmentMetadataRecord(db, notifier, id, {
     branchName: input.branchName,
-    ...(input.defaultBranch !== undefined
-      ? { defaultBranch: input.defaultBranch }
-      : {}),
   });
 }
 
@@ -498,39 +494,15 @@ export function applyEnvironmentLifecycleEventInTransaction(
     set.path = null;
   }
 
-  const conditions = [
-    eq(environments.id, args.environmentId),
-    eq(environments.status, environment.status),
-  ];
-  if (args.event.type === "destroy.recorded") {
-    conditions.push(
-      sql`(
-        EXISTS (
-          SELECT 1 FROM hosts
-          WHERE hosts.id = ${environments.hostId}
-          AND hosts.phase = 'removing'
-        )
-        OR (
-          NOT EXISTS (
-            SELECT 1 FROM threads
-            WHERE threads.environment_id = ${environments.id}
-            AND threads.archived_at IS NULL
-            AND threads.deleted_at IS NULL
-          )
-          AND NOT EXISTS (
-            SELECT 1 FROM threads
-            WHERE threads.environment_id = ${environments.id}
-            AND threads.status = 'stopping'
-          )
-        )
-      )`,
-    );
-  }
-
   const updated = db
     .update(environments)
     .set(set)
-    .where(and(...conditions))
+    .where(
+      and(
+        eq(environments.id, args.environmentId),
+        eq(environments.status, environment.status),
+      ),
+    )
     .returning()
     .get();
   if (!updated) {

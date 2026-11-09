@@ -1,4 +1,5 @@
 import { createCoreComposerActions } from "@/lib/plugin-composer-handle";
+import { visibleQueuedMessages } from "@/lib/queued-system-notice";
 import { useQueuedMessagesExpanded } from "@/components/promptbox/banner/queued-messages-expanded";
 import type { MachineRemovalStatus } from "@/lib/machine-removal-display";
 import { ThreadMachineStatus } from "@/components/promptbox/banner/ThreadMachineStatus";
@@ -29,7 +30,6 @@ import type {
   PromptInput,
   ThreadQueuedMessage,
   ThreadTimelineActivePromptMode,
-  ThreadTimelineGoal,
   ThreadTimelineModelFallback,
   ThreadTimelinePendingTodos,
   ThreadWithRuntime,
@@ -64,7 +64,6 @@ import {
   type ThreadPromptParentThreadSection,
   type ThreadPromptChildThreadsSection,
 } from "@/components/promptbox/banner/ThreadPromptContextBanner";
-import { ThreadGoalCard } from "@/components/promptbox/banner/ThreadGoalCard";
 import { ThreadTodoCard } from "@/components/promptbox/banner/ThreadTodoCard";
 import { ThreadPromptModeCard } from "@/components/promptbox/banner/ThreadPromptModeCard";
 import { ThreadWorkflowStack } from "@/components/promptbox/banner/ThreadWorkflowStack";
@@ -109,7 +108,6 @@ import {
 import {
   useCreateThread,
   useCancelThreadPlan,
-  useClearThreadGoal,
   useCompactThread,
   useStopThread,
 } from "@/hooks/mutations/thread-runtime-mutations";
@@ -213,7 +211,6 @@ interface ThreadDetailPromptAreaProps {
   threadStartControl?: ReactNode;
   pendingTodos: ThreadTimelinePendingTodos | null;
   activePromptMode: ThreadTimelineActivePromptMode | null;
-  goal: ThreadTimelineGoal | null;
   providerCommands: readonly ProviderCommand[] | null;
   sessionOptions: readonly ThreadTimelineSessionOption[] | null;
   modelFallback: ThreadTimelineModelFallback | null;
@@ -423,7 +420,6 @@ export function ThreadDetailPromptArea({
   threadStartControl,
   pendingTodos,
   activePromptMode,
-  goal,
   providerCommands,
   sessionOptions,
   modelFallback,
@@ -466,6 +462,10 @@ export function ThreadDetailPromptArea({
     enabled: true,
   });
   const queuedMessages = queuedMessagesQuery.data ?? EMPTY_QUEUED_MESSAGES;
+  const drawerQueuedMessages = useMemo(
+    () => visibleQueuedMessages(queuedMessages),
+    [queuedMessages],
+  );
   const queuedMessagesPending =
     queuedMessagesQuery.data === undefined && queuedMessageCount > 0;
   const queuedMessagesRef =
@@ -513,7 +513,6 @@ export function ThreadDetailPromptArea({
     thread.providerId,
   );
   const cancelThreadPlan = useCancelThreadPlan();
-  const clearThreadGoal = useClearThreadGoal();
   const unarchiveThread = useUnarchiveThread();
   const restoreThreadEnvironment = useRestoreThreadEnvironment();
   const createThread = useCreateThread();
@@ -613,9 +612,7 @@ export function ThreadDetailPromptArea({
     string | null
   >(null);
   const [isChildThreadsExpanded, setIsChildThreadsExpanded] = useState(false);
-  const [isGoalExpanded, setIsGoalExpanded] = useState(false);
   const [isTodoExpanded, setIsTodoExpanded] = useState(false);
-  const [isPromptModeExpanded, setIsPromptModeExpanded] = useState(false);
   const [expandedWorkflowIds, setExpandedWorkflowIds] = useState<
     ReadonlySet<string>
   >(() => new Set());
@@ -639,7 +636,8 @@ export function ThreadDetailPromptArea({
   const isWorkflowStackExpanded = workflowStackExpandedThreadId === thread.id;
   const [queueExpanded, setQueueExpanded] = useQueuedMessagesExpanded({
     threadId: thread.id,
-    queuedMessages: queuedMessagesQuery.data ?? null,
+    queuedMessages:
+      queuedMessagesQuery.data === undefined ? null : drawerQueuedMessages,
   });
   const [isBackgroundCommandsExpanded, setIsBackgroundCommandsExpanded] =
     useState(false);
@@ -967,12 +965,10 @@ export function ThreadDetailPromptArea({
   const handleStopThread = useCallback(() => {
     stopThread.mutate(thread.id);
   }, [stopThread, thread.id]);
-  const handleCancelPlan = useCallback(() => {
-    cancelThreadPlan.mutate(thread.id);
-  }, [cancelThreadPlan, thread.id]);
-  const handleClearGoal = useCallback(() => {
-    clearThreadGoal.mutate(thread.id);
-  }, [clearThreadGoal, thread.id]);
+  const { mutateAsync: cancelThreadPlanAsync } = cancelThreadPlan;
+  const handleExitPlanMode = useCallback(async () => {
+    await cancelThreadPlanAsync(thread.id);
+  }, [cancelThreadPlanAsync, thread.id]);
   const submitMode = useMemo<FollowUpSubmitMode>(() => {
     if (isHandoffSelection && !isStopRequested) {
       if (effectiveSelectedModel.length > 0) {
@@ -1802,30 +1798,10 @@ export function ThreadDetailPromptArea({
     () => (
       <ThreadPromptModeCard
         activePromptMode={activePromptMode}
-        isExitPending={cancelThreadPlan.isPending}
-        isExpanded={isPromptModeExpanded}
-        onExitPlanMode={handleCancelPlan}
-        onToggle={() => setIsPromptModeExpanded((value) => !value)}
+        onExitPlanMode={handleExitPlanMode}
       />
     ),
-    [
-      activePromptMode,
-      cancelThreadPlan.isPending,
-      handleCancelPlan,
-      isPromptModeExpanded,
-    ],
-  );
-  const activeGoalCard = useMemo(
-    () => (
-      <ThreadGoalCard
-        goal={goal}
-        isClearPending={clearThreadGoal.isPending}
-        isExpanded={isGoalExpanded}
-        onClearGoal={handleClearGoal}
-        onToggle={() => setIsGoalExpanded((value) => !value)}
-      />
-    ),
-    [clearThreadGoal.isPending, goal, handleClearGoal, isGoalExpanded],
+    [activePromptMode, handleExitPlanMode],
   );
   const inlineEditSessionId = inlineEditingQueuedMessage?.editSessionId ?? null;
   const inlineEditQueuedMessageId =
@@ -2148,7 +2124,6 @@ export function ThreadDetailPromptArea({
           onToggle={() => setIsBackgroundCommandsExpanded((value) => !value)}
         />
         {shouldHideComposer ? null : activePromptModeCard}
-        {shouldHideComposer ? null : activeGoalCard}
         <ThreadTodoCard
           pendingTodos={
             thread.archivedAt === null && environmentGoneStatus === null
@@ -2229,7 +2204,7 @@ export function ThreadDetailPromptArea({
         ) : (
           <LazyQueuedMessagesList
             attachedToComposer={true}
-            queuedMessages={queuedMessages}
+            queuedMessages={drawerQueuedMessages}
             resolveMentionLink={resolveMentionLink}
             inlineEditor={queuedMessageEditor ?? undefined}
             sendAction={shouldSteerWhenReady ? "steer-when-ready" : "send-now"}
@@ -2250,6 +2225,7 @@ export function ThreadDetailPromptArea({
             onDelete={handleDeleteQueuedMessage}
             expanded={queueExpanded}
             onExpandedChange={setQueueExpanded}
+            threadStatus={thread.status}
           />
         )}
       </>
@@ -2266,6 +2242,7 @@ export function ThreadDetailPromptArea({
       thread.projectId,
       // bb-fork(thread-start-ref): the start-commit control above the banner.
       threadStartControl,
+      thread.status,
       handleChangeQueuedMessageSendTime,
       handleDeleteQueuedMessage,
       beginEditQueuedMessage,
@@ -2282,7 +2259,6 @@ export function ThreadDetailPromptArea({
       isUnarchiveCurrentThreadPending,
       isQueueMutationPending,
       queuedMessageEditor,
-      activeGoalCard,
       activePromptModeCard,
       isTodoExpanded,
       activeWorkflows,
@@ -2297,7 +2273,7 @@ export function ThreadDetailPromptArea({
       pendingTodos,
       displayedProcessingQueuedMessage,
       queuedMessageCount,
-      queuedMessages,
+      drawerQueuedMessages,
       queuedMessagesPending,
       resolveMentionLink,
       runtimeDisplayStatus,
@@ -2335,17 +2311,14 @@ export function ThreadDetailPromptArea({
           onExpandedChange={setIsChildThreadsExpanded}
         />
         {activePromptMode ? activePromptModeCard : null}
-        {goal ? activeGoalCard : null}
       </>
     ),
     [
-      activeGoalCard,
       activePromptMode,
       activePromptModeCard,
       childThreadsBannerKey,
       childThreadsSection,
       isChildThreadsExpanded,
-      goal,
     ],
   );
 

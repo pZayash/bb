@@ -4,7 +4,6 @@ import {
   FILE_LIST_QUERY_MAX_LENGTH,
   gitBranchNameSchema,
   workspaceCommitSummarySchema,
-  workspaceDiffTargetSchema,
 } from "@bb/domain";
 import { apiErrorSchema } from "../errors.js";
 import {
@@ -67,28 +66,6 @@ export const environmentPathsQuerySchema = z.object({
 });
 export type EnvironmentPathsQuery = z.infer<typeof environmentPathsQuerySchema>;
 
-const mergeBaseBranchQuerySchema = z
-  .string("A merge base branch is required")
-  .pipe(gitBranchNameSchema);
-
-export const environmentDiffQuerySchema = z.discriminatedUnion("target", [
-  z.object({
-    target: z.literal("uncommitted"),
-  }),
-  z.object({
-    target: z.literal("branch_committed"),
-    mergeBaseBranch: mergeBaseBranchQuerySchema,
-  }),
-  z.object({
-    target: z.literal("all"),
-    mergeBaseBranch: mergeBaseBranchQuerySchema,
-  }),
-  z.object({
-    target: z.literal("commit"),
-    sha: z.string().regex(/^[0-9a-f]{4,40}$/iu),
-  }),
-]);
-export type EnvironmentDiffQuery = z.infer<typeof environmentDiffQuerySchema>;
 
 export const environmentArchiveThreadsResponseSchema = z.object({
   ok: z.literal(true),
@@ -137,14 +114,6 @@ export type EnvironmentActionApiError = z.infer<
   typeof environmentActionApiErrorSchema
 >;
 
-export const diffViewedFileSchema = z
-  .object({
-    path: z.string().min(1),
-    revision: z.string().min(1),
-  })
-  .strict();
-export type DiffViewedFile = z.infer<typeof diffViewedFileSchema>;
-
 // bb-fork(thread-start-ref): recent commits for the start-commit picker.
 const environmentWorkspaceNotApplicableOutcomeSchema = z
   .object({
@@ -174,43 +143,5 @@ export const environmentCommitsResponseSchema = z.discriminatedUnion(
 );
 export type EnvironmentCommitsResponse = z.infer<
   typeof environmentCommitsResponseSchema
->;
-
-export const environmentDiffViewedResponseSchema = z
-  .object({
-    files: z.array(diffViewedFileSchema),
-  })
-  .strict();
-export type EnvironmentDiffViewedResponse = z.infer<
-  typeof environmentDiffViewedResponseSchema
->;
-
-export const environmentDiffViewedQueryRequestSchema =
-  environmentDiffQuerySchema.and(
-    z.object({ paths: z.array(z.string().min(1).max(4096)).max(500) }),
-  );
-export type EnvironmentDiffViewedQueryRequest = z.infer<
-  typeof environmentDiffViewedQueryRequestSchema
->;
-
-export const environmentDiffViewedMarkRequestSchema = z
-  .object({
-    target: workspaceDiffTargetSchema,
-    path: z.string().min(1).max(4096),
-    revision: z.string().min(1).max(1024),
-  })
-  .strict();
-export type EnvironmentDiffViewedMarkRequest = z.infer<
-  typeof environmentDiffViewedMarkRequestSchema
->;
-
-export const environmentDiffViewedClearRequestSchema = z
-  .object({
-    target: workspaceDiffTargetSchema,
-    path: z.string().min(1).max(4096).optional(),
-  })
-  .strict();
-export type EnvironmentDiffViewedClearRequest = z.infer<
-  typeof environmentDiffViewedClearRequestSchema
 >;
 

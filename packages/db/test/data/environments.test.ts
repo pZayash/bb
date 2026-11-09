@@ -307,13 +307,12 @@ describe("environments", () => {
       environment.id,
       {
         branchName: "feature/current",
-        defaultBranch: "trunk",
       },
     );
 
     expect(updated).toMatchObject({
       branchName: "feature/current",
-      defaultBranch: "trunk",
+      defaultBranch: "main",
       baseBranch: null,
       mergeBaseBranch: null,
     });

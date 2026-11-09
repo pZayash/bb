@@ -46,6 +46,7 @@ import SidebarLeftIcon from "@hugeicons/core-free-icons/SidebarLeftIcon";
 import SlidersHorizontalIcon from "@hugeicons/core-free-icons/SlidersHorizontalIcon";
 import SourceCodeIcon from "@hugeicons/core-free-icons/SourceCodeIcon";
 import TextWrapIcon from "@hugeicons/core-free-icons/TextWrapIcon";
+import StarIcon from "@hugeicons/core-free-icons/StarIcon";
 import UserIcon from "@hugeicons/core-free-icons/UserIcon";
 import UserSwitchIcon from "@hugeicons/core-free-icons/UserSwitchIcon";
 import WorkflowCircle03Icon from "@hugeicons/core-free-icons/WorkflowCircle03Icon";
@@ -101,6 +102,7 @@ const PLUGIN_ICONS: Readonly<Record<string, IconSvgElement | undefined>> = {
   Repeat: RepeatIcon,
   SlidersHorizontal: SlidersHorizontalIcon,
   SideChat: SentIcon,
+  Star: StarIcon,
   Terminal: ComputerTerminal01Icon,
   UserRound: UserIcon,
   UserSwitch: UserSwitchIcon,

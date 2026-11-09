@@ -620,6 +620,7 @@ export const threads = sqliteTable(
     status: text("status", { enum: threadStatusValues })
       .notNull()
       .default("starting"),
+    statusChangedAt: integer("status_changed_at").notNull().default(0),
     startupContext: text("startup_context"),
     parentThreadId: text("parent_thread_id").references(
       (): AnySQLiteColumn => threads.id,
@@ -711,6 +712,17 @@ export const threadPluginMetadata = sqliteTable(
     metadataJson: text("metadata_json").notNull(),
   },
   (table) => [primaryKey({ columns: [table.threadId, table.pluginId] })],
+);
+
+export const threadPurges = sqliteTable(
+  "thread_purges",
+  {
+    threadId: text("thread_id")
+      .primaryKey()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    requestedAt: integer("requested_at").notNull(),
+  },
+  (table) => [index("thread_purges_requested_idx").on(table.requestedAt)],
 );
 
 export const threadTabs = sqliteTable("thread_tabs", {
@@ -956,6 +968,19 @@ export const maintenanceScanCursors = sqliteTable(
   ],
 );
 
+export const sweepItemFailures = sqliteTable(
+  "sweep_item_failures",
+  {
+    sweep: text("sweep").notNull(),
+    itemKey: text("item_key").notNull(),
+    attempts: integer("attempts").notNull(),
+    firstFailedAt: integer("first_failed_at").notNull(),
+    retryAt: integer("retry_at").notNull(),
+    lastError: text("last_error").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.sweep, table.itemKey] })],
+);
+
 export const promptHistoryEntries = sqliteTable(
   "prompt_history_entries",
   {
@@ -1166,24 +1191,6 @@ export const providerModelCatalogs = sqliteTable(
   ],
 );
 
-export const diffViewedFiles = sqliteTable(
-  "diff_viewed_files",
-  {
-    environmentId: text("environment_id")
-      .notNull()
-      .references(() => environments.id, { onDelete: "cascade" }),
-    targetKey: text("target_key").notNull(),
-    path: text("path").notNull(),
-    revision: text("revision").notNull(),
-    updatedAt: integer("updated_at").notNull(),
-  },
-  (table) => [
-    primaryKey({
-      columns: [table.environmentId, table.targetKey, table.path],
-    }),
-  ],
-);
-
 export const terminalSessions = sqliteTable(
   "terminal_sessions",
   {
@@ -1228,6 +1235,9 @@ export const terminalSessions = sqliteTable(
     ),
     index("terminal_sessions_host_status_idx").on(table.hostId, table.status),
     index("terminal_sessions_daemon_session_idx").on(table.daemonSessionId),
+    index("terminal_sessions_exited_prune_idx")
+      .on(table.updatedAt, table.id)
+      .where(sql`${table.status} = 'exited'`),
   ],
 );
 

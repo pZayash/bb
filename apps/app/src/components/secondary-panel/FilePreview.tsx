@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { FilePreviewScrollPositionContext } from "./filePreviewScrollPositionContext";
+import { FilePreviewRenderPreviewContext } from "./filePreviewRenderPreviewContext";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Button } from "@bb/shared-ui/button";
 import {
@@ -561,26 +562,40 @@ export function FilePreview({
     );
   }, [filePreviewLineRange, path, toggleKind]);
 
-  const usesIframeLayout = state.kind === "html" && viewMode === "preview";
+  const renderPreview = useContext(FilePreviewRenderPreviewContext);
   const bodyViewMode: FilePreviewViewMode =
     toggleKind === null ? "preview" : viewMode;
+  const customPreviewFile =
+    renderPreview !== null &&
+    toggleKind !== null &&
+    rawContents !== null &&
+    download !== null &&
+    bodyViewMode === "preview"
+      ? { content: rawContents, url: toAbsolutePreviewUrl(download.url) }
+      : null;
+  const usesCustomPreviewLayout = customPreviewFile !== null;
+  const usesIframeLayout =
+    state.kind === "html" && viewMode === "preview" && !usesCustomPreviewLayout;
   const usesCodeLayout = usesCodeViewLayout(state, bodyViewMode);
   const showLineOverflowToggle = usesCodeLayout && !isDiffActive;
   const usesMarkdownPreviewLayout =
     state.kind === "ready" &&
     state.textPreviewKind === "markdown" &&
-    bodyViewMode === "preview";
+    bodyViewMode === "preview" &&
+    !usesCustomPreviewLayout;
   const usesCsvPreviewLayout =
     state.kind === "ready" &&
     state.textPreviewKind === "csv" &&
-    bodyViewMode === "preview";
+    bodyViewMode === "preview" &&
+    !usesCustomPreviewLayout;
   const usesFullHeightLayout =
     usesIframeLayout ||
     usesCsvPreviewLayout ||
     usesCodeLayout ||
     usesMarkdownPreviewLayout ||
     // bb-fork(file-diff): the diff surface fills the body too.
-    isDiffActive;
+    isDiffActive ||
+    usesCustomPreviewLayout;
 
   return (
     <div
@@ -630,6 +645,10 @@ export function FilePreview({
       ) : null}
       {isDiffActive ? (
         fileDiff?.content
+      ) : renderPreview !== null && customPreviewFile !== null ? (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {renderPreview(customPreviewFile)}
+        </div>
       ) : (
         <FilePreviewBody
           iframePreview={iframePreview}

@@ -118,6 +118,7 @@ import type {
   NormalizedPluginMachineProvider,
   NormalizedPluginProviderDeclaration,
 } from "@get-bb/plugin-sdk/internal/host-policy";
+import { createRetiredEnvironmentMembers } from "@bb/sdk";
 import type {
   BbSdk,
   ThreadForkArgs,
@@ -351,18 +352,12 @@ function withPluginThreadAttribution<
   return { ...args, ...attribution };
 }
 
-function wrapSdkForPlugin(
-  sdk: BbSdk,
-  pluginId: string,
-  rpcCallerSdk: BbSdk,
-): PluginBbSdk {
+function wrapSdkForPlugin(sdk: BbSdk, pluginId: string): PluginBbSdk {
   return {
     ...sdk,
-    plugins: {
-      ...sdk.plugins,
-      callRpc(args) {
-        return rpcCallerSdk.plugins.callRpc(args);
-      },
+    environments: {
+      ...sdk.environments,
+      ...createRetiredEnvironmentMembers(sdk.plugins.callRpc),
     },
     threads: {
       ...sdk.threads,
@@ -619,6 +614,7 @@ export function createPluginApi(options: {
   const threadEventHandlers: PluginThreadEventHandlers = {
     "experimental_thread.events": [],
     "experimental_thread.parentChanged": [],
+    "experimental_thread.read": [],
     "experimental_terminal.input": [],
     "experimental_host.deleted": [],
     "experimental_environment.removed": [],
@@ -761,6 +757,7 @@ export function createPluginApi(options: {
       const dir = join(dataDir, "plugins", pluginId);
       mkdirSync(dir, { recursive: true });
       const database = new Database(join(dir, "data.db"));
+      database.pragma("auto_vacuum = INCREMENTAL");
       database.pragma("journal_mode = WAL");
       database.pragma("busy_timeout = 5000");
       databaseHandle = database;
@@ -1446,21 +1443,19 @@ export function createPluginApi(options: {
     experimental_aiServices,
     get sdk(): PluginBbSdk {
       assertLive();
-      const sdk = getSdk();
       const loopbackBaseUrl = getLoopbackBaseUrl();
-      if (!sdk || loopbackBaseUrl === undefined) {
+      if (!getSdk() || loopbackBaseUrl === undefined) {
         throw new Error(
           "bb.sdk is not available until the server is listening — " +
             "use it inside handlers, services, or timers, not at factory load time",
         );
       }
       wrappedSdk ??= wrapSdkForPlugin(
-        sdk,
-        pluginId,
         createPluginRpcCallerSdk({
           baseUrl: loopbackBaseUrl,
           token: rpcCaller.token,
         }),
+        pluginId,
       );
       return wrappedSdk;
     },

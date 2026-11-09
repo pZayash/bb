@@ -49,6 +49,7 @@ export type HostDiscoveredRepo = z.infer<typeof hostDiscoveredRepoSchema>;
 export const hostDiscoveredReposResponseSchema = z.object({
   repos: z.array(hostDiscoveredRepoSchema),
   truncated: z.boolean(),
+  unreadableCount: z.number().int().nonnegative(),
 });
 export type HostDiscoveredReposResponse = z.infer<
   typeof hostDiscoveredReposResponseSchema
@@ -154,6 +155,13 @@ export const hostPickFolderRequestSchema = z
 export type HostPickFolderRequest = z.infer<typeof hostPickFolderRequestSchema>;
 
 export type HostPickFolderResponse = PickFolderResponse;
+
+export const hostProviderCliStatusQuerySchema = z.object({
+  refresh: z.enum(["true", "false"]).optional(),
+});
+export type HostProviderCliStatusQuery = z.input<
+  typeof hostProviderCliStatusQuerySchema
+>;
 
 export type HostProviderCliStatusResponse = ProviderCliStatusResponse;
 
