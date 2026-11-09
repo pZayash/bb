@@ -220,3 +220,11 @@ now binds to Ctrl+Alt+Enter instead of Enter. Submit button titles and the
 editor `aria-keyshortcuts` advertise the new chord. The flip switches are
 `FORK_ENTER_SUBMITS` in `plugins/composer/src/submit-key-chords.fork.ts` and
 `apps/app/src/components/promptbox/primary-submit-shortcut.fork.ts`.
+
+## better-sqlite3 version pin
+
+`packages/bb-app` is pinned to `better-sqlite3@12.11.1` (upstream uses 13.x).
+13.x's implicit `node-gyp rebuild` requires a ClangCL toolset that is not
+present on Windows dev machines, while the bundled `prebuilds/win32-x64.node`
+is what actually loads at runtime — so the build is pure failure risk here.
+12.x installs through `prebuild-install` without a toolchain.
