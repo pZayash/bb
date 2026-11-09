@@ -594,8 +594,10 @@ describe("plugin app runtime shim", () => {
 
     expect(await readFile(server.jsPath, "utf8")).toContain("invalidates");
     expect(server.migrationWarnings).toEqual([
+      // bb-fork(windows): metafile inputs are relative to the plugin root, so
+      // the entry has no directory prefix.
       expect.stringMatching(
-        /\/tags\.ts: invalidates on RPC contract methods is retired .*bb\.rpc\.experimental_invalidate\(tags\)/u,
+        /(^|\/)tags\.ts: invalidates on RPC contract methods is retired .*bb\.rpc\.experimental_invalidate\(tags\)/u,
       ),
     ]);
   });

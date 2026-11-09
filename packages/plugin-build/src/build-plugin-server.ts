@@ -361,12 +361,15 @@ export async function buildPluginServer(
     });
     migrationWarnings = await retiredSdkMemberWarningsForInputs(
       bundle.metafile,
-      process.cwd(),
+      // bb-fork(windows): absWorkingDir is the plugin root.
+      rootDir,
       sourceRoot,
     );
     inputs = Object.keys(bundle.metafile.inputs)
       .filter((input) => !input.startsWith("(") && !/^[\w-]{2,}:/u.test(input))
-      .map((input) => resolve(process.cwd(), input));
+      // bb-fork(windows): absWorkingDir is the plugin root, so metafile inputs
+      // resolve against it rather than the process cwd.
+      .map((input) => resolve(rootDir, input));
     await writeFile(
       stagedMetaPath,
       JSON.stringify(

@@ -287,14 +287,17 @@ describe("replay through the current bridge", () => {
       conformanceNames.has(cell.cell),
   );
 
-  it.each(["claude-code", "codex"])(
-    "%s has recorded conformance cells",
-    (provider) => {
-      expect(
-        conformanceCells.filter((cell) => cell.provider === provider).length,
-      ).toBeGreaterThan(0);
-    },
-  );
+  // bb-fork(windows): claude-code cells are filtered out of the replay matrix
+  // on Windows, so they cannot assert a non-empty recording there.
+  it.each(
+    ["claude-code", "codex"].filter(
+      (provider) => process.platform !== "win32" || provider !== "claude-code",
+    ),
+  )("%s has recorded conformance cells", (provider) => {
+    expect(
+      conformanceCells.filter((cell) => cell.provider === provider).length,
+    ).toBeGreaterThan(0);
+  });
 
   it("has every recorded pi conformance cell", () => {
     expect(
@@ -302,14 +305,20 @@ describe("replay through the current bridge", () => {
         .filter((cell) => cell.provider === "pi")
         .map((cell) => cell.cell)
         .sort(),
-    ).toEqual([
-      "fork",
-      "resume",
-      "steer",
-      "stop-interrupt",
-      "turn-tools",
-      "user-question",
-    ]);
+    ).toEqual(
+      [
+        "fork",
+        "resume",
+        "steer",
+        "stop-interrupt",
+        "turn-tools",
+        "user-question",
+      ].filter(
+        // bb-fork(windows): skipped lanes cannot assert a recording either.
+        (cell) =>
+          process.platform !== "win32" || !windowsSkippedCells.has(`pi/${cell}`),
+      ),
+    );
   });
 
   it.concurrent.each(replayable.map((cell) => [cellKey(cell), cell] as const))(

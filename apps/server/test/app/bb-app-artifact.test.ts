@@ -22,6 +22,12 @@ import {
 } from "../../src/services/install/bb-app-artifact.js";
 
 const execFileAsync = promisify(execFile);
+// bb-fork(windows): bsdtar reads "C:\..." as host:path and tries rsh without it.
+const tar = (args: string[]) =>
+  execFileAsync(
+    "tar",
+    process.platform === "win32" ? ["--force-local", ...args] : args,
+  );
 const ARTIFACT_LIFECYCLE_TIMEOUT_MS = 15_000;
 const MODES = ["repo-src", "repo-dist", "packaged"] as const;
 const packageJson = {
@@ -143,7 +149,7 @@ describe("bb-app artifact service (desktop packaging)", () => {
       await expect(service.getVersion()).resolves.toBe("1.2.3-test");
       const artifact = await service.getArtifact();
       const listing = (
-        await execFileAsync("tar", ["-tzf", artifact.path])
+        await tar(["-tzf", artifact.path])
       ).stdout.split(/\r?\n/u);
       expect(listing).toEqual(
         expect.arrayContaining([
@@ -188,7 +194,7 @@ describe("bb-app artifact service (desktop packaging)", () => {
 
       expect(artifact.size).toBeGreaterThan(0);
       expect(
-        (await execFileAsync("tar", ["-tzf", artifact.path])).stdout.split(
+        (await tar(["-tzf", artifact.path])).stdout.split(
           /\r?\n/u,
         ),
       ).toContain("package/host-daemon/dist/daemon-bundle.mjs");
@@ -220,7 +226,7 @@ describe("bb-app artifact service (desktop packaging)", () => {
 
       expect(artifact.size).toBeGreaterThan(0);
       expect(
-        (await execFileAsync("tar", ["-tzf", artifact.path])).stdout.split(
+        (await tar(["-tzf", artifact.path])).stdout.split(
           /\r?\n/u,
         ),
       ).toContain("package/host-daemon/dist/bb-chunks/nested/deep.js");
@@ -307,7 +313,7 @@ describe.concurrent.each(MODES)("bb-app artifact service (%s)", (mode) => {
       const artifact = await service.getArtifact();
       await expect(service.getVersion()).resolves.toBe("1.2.3-test");
       const listing = (
-        await execFileAsync("tar", ["-tzf", artifact.path])
+        await tar(["-tzf", artifact.path])
       ).stdout.split(/\r?\n/u);
       expect(listing).toContain("package/package.json");
       expect(listing).toContain("package/dist/bb-app.js");
@@ -323,7 +329,7 @@ describe.concurrent.each(MODES)("bb-app artifact service (%s)", (mode) => {
       );
       const packedPackageJson = JSON.parse(
         (
-          await execFileAsync("tar", [
+          await tar([
             "-xOzf",
             artifact.path,
             "package/package.json",
@@ -390,7 +396,7 @@ describe.concurrent.each(MODES)("bb-app artifact service (%s)", (mode) => {
       expect(second.digest).not.toBe(first.digest);
       expect(
         (
-          await execFileAsync("tar", [
+          await tar([
             "-xOzf",
             second.path,
             "package/README.md",
@@ -460,7 +466,7 @@ describe.concurrent.each(MODES)("bb-app artifact service (%s)", (mode) => {
       const service = createBbAppArtifactService(options);
       await expect(service.getArtifact()).rejects.toThrow("npm pack exploded");
       expect(
-        (await execFileAsync("tar", ["-xOzf", first.path, "package/README.md"]))
+        (await tar(["-xOzf", first.path, "package/README.md"]))
           .stdout,
       ).toBe("fixture\n");
 
@@ -469,7 +475,7 @@ describe.concurrent.each(MODES)("bb-app artifact service (%s)", (mode) => {
       expect(second.path).not.toBe(first.path);
       expect(
         (
-          await execFileAsync("tar", [
+          await tar([
             "-xOzf",
             second.path,
             "package/README.md",

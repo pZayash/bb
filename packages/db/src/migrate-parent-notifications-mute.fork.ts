@@ -1,19 +1,24 @@
-// bb-fork(parent-mute): keep the consolidated 0143 fork columns replay-safe for legacy databases
+// bb-fork(parent-mute): keep the consolidated fork columns replay-safe for legacy databases
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { DbConnection } from "./connection.js";
 
-const MIGRATION_TAG = "0150_opposite_juggernaut";
+const MIGRATION_TAG = "0155_tired_red_ghost";
 const LEGACY_MUTED_AT_MIGRATION_WHEN = 1790254777753;
 const LEGACY_START_REF_MIGRATION_WHEN = 1790682398124;
+// bb-fork(parent-mute): the pre-renumber consolidated fork migration journaled
+// this timestamp; upstream's 0150 sits before it, so legacy databases skip it.
+const LEGACY_CONSOLIDATED_MIGRATION_WHEN = 1793689513289;
 const ENVIRONMENT_RETENTION_MIGRATION_TAG =
   "0131_environment_retention_indexes";
 const REMOVE_THREAD_DRAFTS_MIGRATION_TAG = "0133_remove_thread_drafts";
+const THREAD_STATUS_CHANGED_AT_MIGRATION_TAG =
+  "0150_thread_status_changed_at";
 const JOURNAL_PATH = "meta/_journal.json";
 
 // bb-fork(parent-mute): legacy databases already carry these columns from
-// pre-merge fork migrations that the consolidated 0143 re-adds.
+// pre-merge fork migrations that the consolidated migration re-adds.
 const STAGED_LEGACY_COLUMNS = [
   {
     table: "threads",
@@ -124,6 +129,10 @@ const LEGACY_SKIP_REPAIRS = [
   {
     markerWhen: LEGACY_START_REF_MIGRATION_WHEN,
     tag: REMOVE_THREAD_DRAFTS_MIGRATION_TAG,
+  },
+  {
+    markerWhen: LEGACY_CONSOLIDATED_MIGRATION_WHEN,
+    tag: THREAD_STATUS_CHANGED_AT_MIGRATION_TAG,
   },
 ] as const;
 

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   prepareRuntimeShellEnv,
   resolvePowerShellExecutionPolicyDefault,
+  resolveBbExecutablePathInDirectory,
   resolveLocalBbExecutablePath,
   type SpawnUserShellEnv,
   type SpawnUserShellEnvArgs,
@@ -227,7 +228,7 @@ describe("prepareRuntimeShellEnv", () => {
       }),
     ).toEqual({
       PATH: `/tmp/bb-bin${delimiter}/usr/bin`,
-      BB_CLI: path.resolve("/tmp/bb-bin", "bb"),
+      BB_CLI: resolveBbExecutablePathInDirectory("/tmp/bb-bin"), // bb-fork(windows): bb.cmd on Windows hosts
       BB_SERVER_URL: "http://127.0.0.1:3334",
       BB_HOST_DAEMON_PORT: "3002",
     });
@@ -279,7 +280,7 @@ describe("prepareRuntimeShellEnv", () => {
       }),
     ).toEqual({
       PATH: `/tmp/bb-bin${delimiter}/usr/local/bin:/usr/bin`,
-      BB_CLI: path.resolve("/tmp/bb-bin", "bb"),
+      BB_CLI: resolveBbExecutablePathInDirectory("/tmp/bb-bin"), // bb-fork(windows): bb.cmd on Windows hosts
       BB_SERVER_URL: "http://127.0.0.1:3334",
       BB_HOST_DAEMON_PORT: "3002",
     });
@@ -294,7 +295,7 @@ describe("prepareRuntimeShellEnv", () => {
       }),
     ).toEqual({
       PATH: `/tmp/bb-bin${delimiter}/usr/bin`,
-      BB_CLI: path.resolve("/tmp/bb-bin", "bb"),
+      BB_CLI: resolveBbExecutablePathInDirectory("/tmp/bb-bin"), // bb-fork(windows): bb.cmd on Windows hosts
       BB_SERVER_URL: "http://127.0.0.1:3334",
     });
   });

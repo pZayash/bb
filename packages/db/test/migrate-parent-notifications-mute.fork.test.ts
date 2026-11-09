@@ -8,6 +8,7 @@ import {
   dropPluginEnabledFollowsDefaultColumn,
   dropQueuedMessageEditHeldUntilColumn,
   dropThreadParentNotificationsColumn,
+  dropThreadStatusChangedAtColumn,
   rewindThreadPruningWork,
 } from "./helpers/rewind.js";
 
@@ -15,7 +16,9 @@ const LEGACY_MUTED_AT_MIGRATION_WHEN = 1790254777753;
 const LEGACY_START_REF_MIGRATION_WHEN = 1790682398124;
 const ENVIRONMENT_RETENTION_MIGRATION_WHEN = 1790230932025;
 const REMOVE_THREAD_DRAFTS_MIGRATION_WHEN = 1790613729994;
-const CONSOLIDATED_MIGRATION_WHEN = 1793689513289;
+const CONSOLIDATED_MIGRATION_WHEN = 1794224009392;
+const LEGACY_CONSOLIDATED_MIGRATION_WHEN = 1793689513289;
+const THREAD_STATUS_CHANGED_AT_MIGRATION_WHEN = 1793664307128;
 
 function closeConnection(db: DbConnection): void {
   db.$client.close();
@@ -87,6 +90,7 @@ it("reconciles the pre-merge 0131 muted-at migration with upstream's renumbered 
     dropQueuedMessageEditHeldUntilColumn(db);
     dropEnvironmentStartRefColumn(db);
     dropThreadParentNotificationsColumn(db);
+    dropThreadStatusChangedAtColumn(db);
     dropMarketplaceSourceGitSubdirectoryColumn(db);
     rewindThreadPruningWork(db);
     db.$client
@@ -123,7 +127,7 @@ it("reconciles the pre-merge 0131 muted-at migration with upstream's renumbered 
   }
 });
 
-it("replays 0143 when a legacy database already carries start_ref", () => {
+it("replays the consolidated migration when a legacy database already carries start_ref", () => {
   const db = createConnection(":memory:");
   try {
     migrate(db);
@@ -207,6 +211,30 @@ it("applies migrations skipped under legacy fork timestamps", () => {
     expect(tableColumns(db, "threads")).not.toContain("draft");
     expect(appliedCreatedAts(db)).toContain(
       REMOVE_THREAD_DRAFTS_MIGRATION_WHEN,
+    );
+
+    expect(() => migrate(db)).not.toThrow();
+  } finally {
+    closeConnection(db);
+  }
+});
+
+it("applies 0150 skipped under the legacy consolidated timestamp", () => {
+  const db = createConnection(":memory:");
+  try {
+    migrate(db);
+    db.$client.exec(`
+      DELETE FROM __drizzle_migrations WHERE created_at = ${THREAD_STATUS_CHANGED_AT_MIGRATION_WHEN};
+      INSERT INTO __drizzle_migrations (hash, created_at)
+      VALUES ('legacy-opposite-juggernaut', ${LEGACY_CONSOLIDATED_MIGRATION_WHEN});
+    `);
+    dropThreadStatusChangedAtColumn(db);
+
+    expect(() => migrate(db)).not.toThrow();
+
+    expect(tableColumns(db, "threads")).toContain("status_changed_at");
+    expect(appliedCreatedAts(db)).toContain(
+      THREAD_STATUS_CHANGED_AT_MIGRATION_WHEN,
     );
 
     expect(() => migrate(db)).not.toThrow();

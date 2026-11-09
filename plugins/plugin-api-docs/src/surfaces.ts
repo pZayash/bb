@@ -896,12 +896,8 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
         bullets: [
           "Declare text, number, toggle, choice, or project fields as data",
           "Get validation and autosave without extra code",
-          "Validate each proposed value with a synchronous, non-transforming Standard Schema through `experimental_schema`; Zod schemas qualify",
-          "Render multi-line text with `experimental_multiline`",
-          "Pick a model from a provider's catalog with `experimental_model`",
-          "Have each field found by Settings search through its label, key, or description",
-
-          "Keep secret values on the server, never sent to the browser",
+          "Validate with a Standard Schema, render multi-line text, or pick provider models",
+          "Have each field found by Settings search; keep secret values on the server",
         ],
         apiSymbols: [
           "PluginSettings",

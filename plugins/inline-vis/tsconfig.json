@@ -20,6 +20,7 @@
     "server.ts",
     "server.test.ts",
     "app.tsx",
+    "app-export.fork.tsx",
     "app.test.tsx",
     "frame.ts",
     "frame.test.ts",
