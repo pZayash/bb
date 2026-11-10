@@ -10,6 +10,7 @@ import {
 } from "./migration-history.js";
 // bb-fork(parent-mute): keep the consolidated 0143 fork columns replay-safe
 import {
+  excludeConsolidatedMigrationRowsFromWatermark,
   repairLegacySkippedMigrations,
   restoreStagedConsolidatedMigrationColumns,
   stageExistingConsolidatedMigrationColumns,
@@ -1459,6 +1460,10 @@ export function migrate(db: DbConnection, options: MigrateOptions = {}): void {
     );
     const stagedThreadStorageDeletedAt =
       stageExistingThreadStorageDeletedAtColumn(db, migrationsFolder);
+    // bb-fork(parent-mute): drop the regenerated consolidated fork row when
+    // its watermark crowds out a missing upstream migration so staging sees
+    // the fork migration as unapplied and drizzle replays the gap
+    excludeConsolidatedMigrationRowsFromWatermark(db, migrationsFolder);
     // bb-fork(parent-mute): keep the consolidated 0143 fork columns replay-safe
     const stagedConsolidatedColumns = stageExistingConsolidatedMigrationColumns(
       db,

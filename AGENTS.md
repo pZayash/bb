@@ -110,8 +110,9 @@ the fork delta small and merges cheap with these rules.
 
 ### Protocol version
 
-- The fork carries a wire delta (`hostPlatformSchema` gains `windows`), so
-  `HOST_DAEMON_PROTOCOL_VERSION` is upstream's value + 1 after every merge.
+- The fork carries three wire additions — the `host.list_terminal_shells` and
+  `workspace.commits` RPCs and the `terminal.open` payload field `shellId` — so
+  `HOST_DAEMON_PROTOCOL_VERSION` is upstream's value + 2 after every merge.
   Update the constant and the assertion in
   `packages/host-daemon-contract/test/contract.test.ts` together.
 
@@ -122,7 +123,14 @@ the fork delta small and merges cheap with these rules.
 - Run `pwsh -NoProfile -File scripts/windows/merge-upstream.ps1` (or
   `pnpm run merge:upstream`). It fetches, merges, resolves `pnpm-lock.yaml`
   from upstream and regenerates it, keeps `plugins/bb-official.json` pristine,
-  and sets the protocol version to upstream + 1.
+  and sets the protocol version to upstream + 2.
+- The script also regenerates `turbo.json` from
+  `scripts/windows/turbo.fork.json` and the fork audit block in
+  `docs/api_to_audit.md` from its `bb-fork:begin`/`bb-fork:end` markers. Edit
+  those fork-owned inputs, not the generated output; run
+  `pnpm run check:generated` before committing to catch hand edits. See
+  [docs/fork-decisions.md](docs/fork-decisions.md) for the product decisions
+  behind the current fork surface.
 - Keep `git config rerere.enabled true` enabled so repeated conflict
   resolutions are replayed automatically.
 - After resolving conflicts: `pnpm exec turbo run typecheck`, run the affected

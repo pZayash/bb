@@ -47,7 +47,6 @@ import {
   resolvePluginBuildToolchain,
   type PluginBuildToolchain,
 } from "@bb/plugin-build";
-// bb-fork(windows): npm is npm.cmd; execFile spawns node + npm-cli.js instead.
 import { runPluginCliCommand } from "../plugin-cli-proxy.js";
 import { resolveBbCliVersion } from "../version.js";
 

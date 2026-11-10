@@ -124,23 +124,8 @@ function resolveSecondaryPanelFilePreviewState({
     return { kind: "loading" };
   }
 
-  if (isHtmlFilePreviewPath(activePath) && filePreview.kind !== "text") {
-    if (htmlPreviewUrl === null) {
-      return {
-        kind: "error",
-        message: `Preview not available for ${filePreview.mimeType}.`,
-      };
-    }
-    return {
-      kind: "iframe",
-      sandbox: GENERIC_HTML_IFRAME_SANDBOX,
-      title: activePath,
-      url: htmlPreviewUrl,
-    };
-  }
-
+  // bb-fork(html-preview): render small HTML from its contents (srcdoc) when the server cannot serve a preview URL.
   if (
-    htmlPreviewUrl !== null &&
     isHtmlFilePreviewPath(activePath) &&
     filePreview.kind === "text" &&
     new TextEncoder().encode(filePreview.content).byteLength <=
@@ -156,6 +141,26 @@ function resolveSecondaryPanelFilePreviewState({
         ...(htmlPreviewUrl === null ? { srcdoc: filePreview.content } : {}),
       },
       lineRange,
+    };
+  }
+
+  // bb-fork(windows): binary HTML still opens in a sandboxed iframe when the server can serve it; too-large HTML keeps the Download fallback.
+  if (
+    isHtmlFilePreviewPath(activePath) &&
+    filePreview.kind === "unsupported" &&
+    filePreview.reason === "binary"
+  ) {
+    if (htmlPreviewUrl === null) {
+      return {
+        kind: "error",
+        message: `Preview not available for ${filePreview.mimeType}.`,
+      };
+    }
+    return {
+      kind: "iframe",
+      sandbox: GENERIC_HTML_IFRAME_SANDBOX,
+      title: activePath,
+      url: htmlPreviewUrl,
     };
   }
 

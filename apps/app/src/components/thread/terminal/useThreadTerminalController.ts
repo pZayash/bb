@@ -9,7 +9,6 @@ import {
   useRenameTerminal,
   useTerminals,
 } from "@/hooks/queries/thread-terminal-queries";
-// bb-fork(windows): start payload for the shell picked beside Start terminal.
 import {
   applyTerminalSessionClose,
   applyTerminalSessionUpsert,

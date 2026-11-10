@@ -36,9 +36,11 @@ On native Windows bb runs a `.ps1` hook with:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .bb-env-setup.ps1
 ```
 
-A `.bb-env-setup.sh` file is ignored on native Windows and produces a
-`setup-script-ignored` progress note; a `.ps1` hook is ignored on macOS, Linux,
-and WSL2. Commit the hook that matches the host platform. The environment,
+A `.bb-env-setup.sh` file also runs on native Windows through the bash that Git
+for Windows installs, but only when the matching `.ps1` hook is absent; without
+Git for Windows the hook fails with a message naming it. A `.ps1` hook is
+ignored on macOS, Linux, and WSL2. Commit the hook that matches the host
+platform. The environment,
 timeout, working directory, and failure contracts are otherwise the same as the
 upstream [worktree hook contract](worktrees.md).
 
@@ -209,11 +211,11 @@ are POSIX-first.
 This fork changes the prompt box submit keys so a missed keystroke cannot send
 a half-written message:
 
-| Key | Action |
-| --- | --- |
-| Enter, Shift+Enter | Insert a newline |
-| Ctrl+Alt+Enter | Primary submit — send, steer, or queue the draft, whichever the `enter` action does upstream |
-| Ctrl+Enter | Modifier action (steer/queue), unchanged |
+| Key                | Action                                                                                       |
+| ------------------ | -------------------------------------------------------------------------------------------- |
+| Enter, Shift+Enter | Insert a newline                                                                             |
+| Ctrl+Alt+Enter     | Primary submit — send, steer, or queue the draft, whichever the `enter` action does upstream |
+| Ctrl+Enter         | Modifier action (steer/queue), unchanged                                                     |
 
 The `steerActiveThreadOnEnter` setting still picks which action is primary; it
 now binds to Ctrl+Alt+Enter instead of Enter. Submit button titles and the

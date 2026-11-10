@@ -148,7 +148,7 @@ export const experimental_SourceCode = runtimeComponent(
   "experimental_SourceCode",
 );
 export const experimental_Diff = runtimeComponent("experimental_Diff");
-// The diff change map and its toggle (experimental — see docs/api_to_audit.md).
+// bb-fork(file-diff): the diff change map and its toggle (experimental — see docs/api_to_audit.md).
 export const experimental_DiffChangeRail = runtimeComponent(
   "experimental_DiffChangeRail",
 );
@@ -194,7 +194,6 @@ export const experimental_useRpcMutation = runtimeFunction(
 export const experimental_useRpcRefresh = runtimeFunction(
   "experimental_useRpcRefresh",
 );
-
 
 export const useRpc = runtimeFunction("useRpc");
 export const useRealtime = runtimeFunction("useRealtime");

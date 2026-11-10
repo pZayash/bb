@@ -1,0 +1,25 @@
+{
+  "tasks": {
+    "//#test:windows:lifecycle": {
+      "cache": false,
+      "dependsOn": [
+        "//#ensure-native-modules",
+        "@bb/server#build",
+        "@bb/host-daemon#build",
+        "@bb/app#build"
+      ],
+      "outputs": []
+    }
+  },
+  "inputAdditions": {
+    "@bb/bundled-plugins#build": [
+      "$TURBO_ROOT$/apps/server/src/services/plugins/builtin-registry.fork.ts",
+      "$TURBO_ROOT$/plugins/bb-fork.json"
+    ],
+    "@bb/server#generate:bb-official-marketplace": [
+      "scripts/fork-catalog-fields.ts",
+      "src/services/plugins/builtin-registry.fork.ts",
+      "$TURBO_ROOT$/plugins/bb-fork.json"
+    ]
+  }
+}

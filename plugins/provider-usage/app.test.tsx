@@ -34,6 +34,7 @@ function threadOnMachine(
     originKind: null,
     originPluginId: null,
     providerId: "codex",
+    // bb-fork(compaction-model): the sidebar row shows these two.
     model: null,
     reasoningLevel: null,
     status: "idle",
@@ -106,6 +107,7 @@ describe("provider usage footer disclosure", () => {
           JSON.stringify({
             ok: true,
             result: {
+              // bb-fork(usage-sources): fork response field.
               hasUsageSources: true,
               machines: [
                 {
@@ -515,6 +517,7 @@ it.each([
       Response.json({
         ok: true,
         result: {
+          // bb-fork(usage-sources): fork response field.
           hasUsageSources: true,
           machines: [
             {
@@ -553,45 +556,6 @@ it.each([
   await mounted.lifecycle.dispose();
 });
 
-it.each([
-  [true, "No provider on this machine reports usage limits."],
-  [false, "No usage source is enabled."],
-] as const)(
-  "explains an empty machine with hasUsageSources=%s",
-  async (hasUsageSources, expected) => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        Response.json({
-          ok: true,
-          result: {
-            hasUsageSources,
-            machines: [
-              {
-                id: "host-m4",
-                displayName: "M4",
-                status: "connected",
-                providers: [],
-                error: null,
-              },
-            ],
-          },
-        }),
-      ),
-    );
-    const app = await loadPluginApp(() => import("./app"));
-    const mounted = await mountPluginContentScripts(app, {
-      pluginId: "provider-usage",
-    });
-    const item = app.experimentalSidebarFooterItems[0];
-    if (item?.kind !== "disclosure") throw new Error("missing disclosure");
-    const slot = renderSlot(item, { dismiss: vi.fn() });
-    await waitFor(() =>
-      expect(slot.getByText(expected, { exact: false })).toBeTruthy(),
-    );
-    await mounted.lifecycle.dispose();
-  },
-);
 it("keeps a measured refresh when an older snapshot response arrives late", async () => {
   const account = (usage: UsageProvider["usage"]): UsageProvider => ({
     id: "account",

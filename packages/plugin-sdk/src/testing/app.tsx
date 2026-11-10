@@ -159,6 +159,7 @@ import {
   type PluginMachineProviderInputsRegistration,
   type ThreadChatProps,
   type DiffProps,
+  // bb-fork(file-diff): diff change control contracts.
   type DiffChangeControlsProps,
   type DiffChangeRailToggleProps,
   type SourceCodeProps,
@@ -1461,7 +1462,10 @@ function TestVoiceInputTextarea({
  * the target path, with the plugin's Preview body drawn from the file the
  * `filePreview` option returns for the target (nothing when it returns null).
  */
-function TestFilePreview({ target, renderPreview }: ExperimentalFilePreviewProps) {
+function TestFilePreview({
+  target,
+  renderPreview,
+}: ExperimentalFilePreviewProps) {
   const file = useSlotEnv("experimental_FilePreview").filePreview(target);
   return (
     <div data-testid="bb-file-preview" data-path={target.path}>
@@ -1510,6 +1514,7 @@ function TestDiff({
   overflow = "scroll",
   showLineNumbers = true,
   experimental_fullFileContents,
+  // bb-fork(file-diff): render both complete sides rather than only the hunks.
   experimental_expandUnchanged = false,
   className,
 }: DiffProps) {
@@ -1531,6 +1536,7 @@ function TestDiff({
   );
 }
 
+// bb-fork(file-diff): stand-ins for the host-owned change rail, stepper, and toggle.
 /**
  * Stand-in for the host-owned change map: renders the scrolling element's
  * presence so a plugin can assert it wired the rail to the right container.
@@ -1919,6 +1925,7 @@ const testPluginSdkApp = {
   experimental_SourceCode: TestSourceCode,
   experimental_FilePreview: TestFilePreview,
   experimental_Diff: TestDiff,
+  // bb-fork(file-diff): host-owned diff change controls.
   experimental_DiffChangeRail: TestDiffChangeRail,
   experimental_DiffChangeRailToggle: TestDiffChangeRailToggle,
   experimental_DiffChangeNav: TestDiffChangeNav,

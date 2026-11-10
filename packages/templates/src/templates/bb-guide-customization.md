@@ -396,218 +396,83 @@ Both skip a default set of dependency and cache directories such as
 or exact root-relative paths using `/` separators. Use
 `--json` for metadata and machine-readable results.
 
-`bb file remove --recursive` and `sdk.files.remove({ recursive: true, ... })`
-stop processes whose working directories are inside the directory before
-deleting it, including processes in nested checkouts. This uses the same
-SIGTERM grace period and SIGKILL fallback as worktree removal on macOS and
-Linux; Windows does not enumerate process working directories.
+`bb file remove` needs `--yes` without a terminal. `bb file remove --recursive`
+and `sdk.files.remove({ recursive: true, ... })` first stop processes whose
+working directory is inside the directory, including dev servers in nested
+checkouts (macOS and Linux only).
 
-Server-backed sidebar preferences
+<!-- bb-fork(windows): on Windows the daemon does not enumerate process working
+directories, so recursive removal deletes without stopping processes. -->
 
-Sidebar layout lives on the server in a keyed, revisioned registry so every
-window, device, and the CLI share it: organization mode, chronological sort,
-section orders, collapsed rows and sections, navigation entry order and
-visibility, hidden thread-list groups, and the navigation and thread-list
-provider pickers. The same registry stores which thread Info panel sections
-are collapsed (`infoPanel.collapsedSections`). The sidebar waits for them alongside the project list, and
-an upgrade uploads the old browser-stored layout once.
+Voice transcription uses the Voice input service chosen with
+`bb settings ai-services set voice <automatic|off|service-id>`. bb accepts
+recordings up to 25 MB, and each service may set a lower limit; Codex takes up
+to 20 MB. These limits apply to the app, SDK, and CLI. The app's microphone
+choice is per browser and has no `bb` command. Right-click the composer
+microphone, press Shift+F10, or click the Microphone control in Settings →
+Voice Input to open preferences in a desktop popover or mobile drawer.
+Opening starts a local waveform preview; closing releases it. Recording
+controls contain cancel, stop, and send; preferences are available while idle.
 
-  bb settings ui list [--json]
-  bb settings ui get <key> [--json]
-  bb settings ui set <key> <value> [--json]
-  bb settings ui reset <key> [--json]
+Missing or unreadable inputs fall back to the system default, then other
+available inputs. Permission denials do not trigger fallback. A disconnect
+switches inputs in the same recorder, preserving captured audio. A reconnected
+preferred device is used on the next recording. A missing preference alone
+shows no warning. Capture failures warn on the idle microphone; five seconds
+of near-silent audio warns in the preview or recording row without switching
+inputs or stopping capture. Preview audio is never saved or transcribed.
 
-The sidebar thread list defaults to `__automatic__`: the first installed thread list
-plugin other than the bundled Thread list plugin (`thread-list/thread-list`), or the
-bundled plugin when there is none. Installing a thread list plugin therefore switches
-to it. Legacy `__builtin__` selections resolve to the bundled plugin; other plugin
-selections are preserved.
-Use `bb settings ui reset sidebar.threadListProvider` to restore Automatic, or
-`bb settings ui set sidebar.threadListProvider <plugin-id>/<slot-id>` to select
-another plugin. The SDK exposes the same setting through `uiPreferences`.
+Telemetry
 
-`bb settings ui list` prints every key with its value, revision, and a short
-description. `set` takes plain strings for enum and provider keys and JSON for
-lists and `null`; it reads the current revision, writes with it, and retries
-once on a conflict. `reset` writes the default. The SDK offers
-`sdk.system.uiPreferences.list()`, `.set()`, and `.reset()`.
+Anonymous usage telemetry is controlled by Settings → General → Privacy &
+diagnostics, `bb settings general telemetryEnabled false`, or SDK
+`system.updateGeneralSettings` with `telemetryEnabled`. The saved preference
+takes effect immediately. `BB_TELEMETRY=false` always disables telemetry, even
+when the saved preference is enabled.
 
-New installations default to Custom (`chronological`) for `sidebar.organizationMode`.
-Migrated installations with existing projects, threads, or UI preferences fall back
-to By project (`project`). Explicit server choices take precedence over legacy
-browser choices, which take precedence over this installation fallback. Reset
-saves the installation fallback as an explicit choice.
+Mobile app downloads
 
-The built-in sidebar's Filter selects Active and Archived, defaulting to Active.
-The selection is browser-local, not a server-backed preference or SDK/CLI setting.
-Active includes threads with saved messages; there is no separate
-Drafts section or filter. Archived threads use their preserved placement and a
-restore action. Archived pages load only while selected.
-Plugin sidebar replacements own their filters.
+Settings → Mobile links the iOS TestFlight
+(https://testflight.apple.com/join/T9MayTMb) and the Android APK from the
+public `get-bb/bb` GitHub `android-testing` release (`bb-android.apk`), and
+pairs either app through Add mobile device. `bb settings mobile-app --json` or
+SDK `system.mobileAppDownloads()` returns both links. Add `--details --json`
+or call `system.mobileAppReleases()` for the Android version, build, size, and
+upload date; `android` is `null` when that metadata is unavailable, and the
+links still work. Inside the Android app, this page compares the installed
+native build number with the published APK. Older apps without build reporting
+cannot determine update status. Installed version and build are device-local;
+CLI and SDK metadata report the published APK.
 
-The palette's Filter uses Active and Archived independently of the
-sidebar, defaulting to Active. Its selection is browser-local, not configurable
-through SDK/CLI. Active includes threads with saved messages; Search threads retains
-the existing title and conversation search behavior. Archived fetches bounded recent rows only when
-selected.
+Server performance diagnostics
 
-Every thread-list header's actions menu offers New project, New section,
-Organize, Sort by, and Filter. Organize selects By project,
-By machine, or Custom and retains Groups → By environment.
-The separate `sidebar.threadGrouping.environment` preference
-decides whether sibling threads sharing one worktree collapse into a single row.
-It defaults to `auto`, which groups them
-everywhere except Custom: `bb settings ui set sidebar.threadGrouping.environment
-false` keeps every thread on its own row, and `true` groups them in every mode.
-Sort by selects a field, and selecting it again reverses its arrow/direction.
-`sidebar.sortDirection` accepts `ascending`, `descending`, or `default`.
-The default preserves each field's original order (newest first for dates,
-A–Z for titles). For example: `bb settings ui set sidebar.sortDirection ascending`.
+Start with `bb-app --perf-diagnostics` or `BB_PERF_DIAGNOSTICS=1` (restart to
+change), then run `bb settings experiment performanceDiagnostics true|false`.
+Collection needs both; it adds overhead and writes CPU profiles every 30 seconds
+to `$BB_DATA_DIR/logs/performance/` (kept 12 hours), which contain local paths.
+Open a `.cpuprofile` in Chrome DevTools.
 
-Thread-list visibility
+Desktop Settings → Server → **Show This Mac** (or **Show This Computer** off macOS)
+defaults to checked and is disabled while This Mac/Computer is selected.
+Unchecking hides the built-in server from server choices
+while another server is active and alternatives exist. It stays listed when
+active or when it is the only choice. This setting does not stop the local
+runtime or change the active server.
 
-Threads, a project, custom section, or machine's menu offers Hide from list;
-its menu inside More offers Add to list. Customize list manages visibility and
-order for the current organization. Hiding preserves the group's threads, order,
-and collapse state. Pinned threads remain in Pinned; More carries hidden activity.
+The desktop stores `showBuiltinServer: false` in `<userData>/server-target.json`;
+missing means shown, and saving the default omits the field. Other top-level
+metadata is preserved. This is a desktop-local preference, with no server
+settings CLI/SDK endpoint. Builds with tolerant readers ignore the field and
+may drop it on save; older strict readers can reject the whole file, so keep a
+backup before rolling back to a build predating the tolerant-reader fix #5286.
 
-The Thread list plugin's `hiddenGroups` preference defaults to `[]`. Its keys
-are `threads`, `project:<projectId>`, `section:<sectionId>`, and
-`machine:<hostId>` (`machine:no-machine` for the unassigned group). Each
-organization uses its own keys, while `threads` applies to every organization.
-Pinned cannot be hidden. Duplicate keys are deduplicated, and unavailable IDs
-remain saved without producing rows. New groups default visible.
+Outbound networking
 
-  bb thread-list prefs get hiddenGroups
-  bb thread-list prefs set hiddenGroups '["threads","project:proj_example","section:sec_example"]'
-  bb thread-list prefs reset hiddenGroups
-
-`set` replaces the entire list across organizations; include existing keys you
-want to keep hidden. `reset` shows all groups. The plugin's `setPreference` and
-`resetPreference` RPCs expose the same operations to its app client.
-
-Sidebar footer actions
-
-Settings → Appearance → Sidebar footer supports drag ordering and visibility.
-Right-click an action and choose Hide to move it into the More menu. Hidden
-shortcuts remain actionable; hiding an open disclosure closes it. The More menu
-appears only when hidden actions are available and links back to customization.
-`sidebar.footerOrder` and `sidebar.hiddenFooterItems` are string lists. Keys are
-`builtin:mobile`, `builtin:report-bug`, or `plugin:<encoded pluginId>/<encoded registrationId>`.
-Preferences survive plugin reloads and temporarily unavailable plugins; new items
-are visible by default. Example:
-
-  bb settings ui set sidebar.hiddenFooterItems '["plugin:bb--provider-usage/usage"]'
-  bb settings ui reset sidebar.hiddenFooterItems
-
-Client-local UI preferences
-
-Open microphone preferences by right-clicking the composer microphone, pressing
-Shift+F10 while it is focused, or clicking the Microphone control in Settings →
-Voice Input. A warning opens preferences when the microphone is clicked. Desktop uses an anchored popover; mobile uses a drawer. Opening
-preferences starts a local microphone preview with the recording waveform and
-a list of inputs. Closing preferences releases the preview. The recording controls
-contain only cancel, stop, and send; microphone preferences are available while idle.
-
-Recording tries the preferred device, then the system default, then other
-available inputs for missing or unreadable devices. Permission denials do not
-trigger fallback. A disconnect during recording switches the input into the
-same recorder, preserving audio captured before the disconnect. Reconnecting
-the preferred microphone makes it available for the next recording; it does not
-interrupt the current fallback recording.
-
-A missing preferred microphone alone does not block recording or show a warning.
-Capture failures, interrupted input, or no available inputs after access was
-granted show a decorative warning badge on the idle microphone. During capture,
-five seconds of near-silent audio produces a warning in the open preview or an
-accessible status in the recording row; the recording row has no microphone menu. Silence warnings clear when audio returns and never
-stop recording or switch microphones automatically. While idle, a warning opens
-preferences on click. Audio preview runs only while microphone preferences are
-open; it is not saved or transcribed.
-
-Some Settings values live only in the current browser/client. Sidebar width
-and open state stay local because they depend on the window size, and each tab
-or desktop window keeps its own: collapsing or resizing the sidebar in one tab
-leaves the others alone, and a newly opened tab starts from the most recent
-choice made anywhere in that browser. The Voice Input
-microphone picker stores the selected browser MediaDevices device id in
-localStorage as `bb.voiceInput.audioInputDeviceId`; it does not have a `bb`
-command and does not change the server-side transcription model. When the preferred
-microphone is disconnected, recording tries the system default and then other available inputs. The saved preference is used again when it
-reconnects. Select System default to follow system microphone changes.
-
-Anonymous usage telemetry can be disabled in Settings → General → Privacy & diagnostics → Share anonymous usage data,
-or with `bb settings general telemetryEnabled false`. The saved server-wide preference
-takes effect immediately and persists across restarts. SDK callers can use
-`system.updateGeneralSettings` with `telemetryEnabled`. `BB_TELEMETRY=false`
-always disables telemetry, even when the saved preference is enabled.
-
-
-Mobile app downloads are always available in Settings → Mobile (`/settings/mobile`).
-**Join iOS TestFlight** opens https://testflight.apple.com/join/T9MayTMb.
-**Download Android APK** downloads directly from the public `get-bb/bb` GitHub
-`android-testing` release's `bb-android.apk` asset. The APK does not pass through
-the bb server or bb connect. No experiment or Android developer tools are needed.
-Pair either app through Settings → Mobile → **Add mobile device**.
-
-Use `bb settings mobile-app --json` or SDK `system.mobileAppDownloads()` to get
-both public links. Add `--details --json` or call `system.mobileAppReleases()`
-(GET `/api/v1/system/mobile-app-releases`) for Android version/build, size, and
-upload date. The server fetches only public metadata, caches it for five minutes,
-and returns `android: null` if unavailable or inconsistent. Download links remain
-usable during metadata failures. iOS version and release date are shown in TestFlight.
-Inside the Android app, this page compares the installed native build number
-with the published APK and shows whether an update is available. Older apps
-without build-number reporting cannot determine update status. Installed version
-and build are device-local; CLI and SDK release metadata report the published APK.
-Publish updates with **Mobile Android (EAS)**, profile `preview`, **publish** on.
-
-Storage & retention is a default-disabled bundled plugin. Enable it
-with `bb plugin enable bb--storage-retention`.
-Its sidebar panel and `bb storage` commands own retention policies and machine
-cleanup. All retention settings in the panel save immediately. Enable **Delete thread storage on archive** with
-`bb storage retention --delete-storage-on-archive true --save --yes` (default:
-false). Future archives clear storage once stopped and online, keeping history
-and uploaded attachments and skipping pinned threads. Pending cleanup survives
-reloads and retries every minute; unarchiving cancels it.
-Separately, `bb storage retention --delete-dev-data-on-checkout-removal true --save --yes`
-(default: false) scans online persistent machines hourly and removes `~/.bb-dev`
-folders with missing checkouts after successful scans, including manual scans
-and existing data. It rechecks absence, stops servers in removed checkouts,
-keeps unidentified sources, and retries failures on later scans.
-Use `bb storage clear-archived-files --machine HOST_ID --yes` to clear
-all stored files from archived, stopped, unpinned threads on that machine.
-`bb storage usage --machine HOST_ID` also reports worktree counts by project
-and, after a scan, a separate `~/.bb-dev` breakdown when that folder exists,
-including recovered source paths, checkout existence, and links to known threads.
-`bb storage remove-dev-instances --machine HOST_ID --yes` removes development
-instances whose checkout no longer exists, stopping servers still running from it;
-add `--instance NAME` to remove one entry of any kind, stopping its dev server
-first if it is running.
-See the plugin’s storage-retention skill for commands and limitations.
-
-### Opt-in server performance diagnostics
-
-Start with `pnpm start --perf-diagnostics`, `pnpm start:worktree --perf-diagnostics`,
-or `bb-app --perf-diagnostics` to permit detailed performance logs and rolling
-CPU profiles when the experiment is on. `BB_PERF_DIAGNOSTICS=1` is the equivalent startup environment
-setting (off by default; restart required). Server logs include five-second
-CPU/GC/loop/memory summaries and lower slow-operation thresholds. Profiles
-are saved every 30 seconds under `$BB_DATA_DIR/logs/performance/`, in ten
-rotating slots of at most 12 MiB each. Copy a relevant `.cpuprofile` promptly
-and open it in Chrome DevTools' JavaScript profiler. This adds overhead;
-remove the setting and restart to disable. No inspector network port is
-opened. Profile files contain local paths/function names; inspect before sharing.
-
-Diagnostics require **both** startup permission (`--perf-diagnostics` or
-`BB_PERF_DIAGNOSTICS=1`) and the **Server performance diagnostics** toggle in
-Settings → Experiments. The toggle is only shown when startup permission is present; a saved experiment value does not make it visible. The experiment defaults to off. Use
-`bb settings experiment performanceDiagnostics true` to enable it, or `false`
-to stop it; SDK clients use the existing experiments update endpoint. The
-experiment takes effect live on that server. Without startup permission it
-cannot start collection. Turning it off restores normal logging thresholds,
-stops the sampler and flushes the in-flight profile; existing files remain.
-The launch flag only grants permission and still requires a restart to change.
-
-Storage cleanup can run in the background with `bb storage cleanup --machine HOST_ID --kind orphans|development|worktrees --yes`. Inspect `maintenance` with `bb storage usage`; failures release the machine lock and can be retried. Archived storage cleanup waits through the archive undo grace and rechecks eligibility before each batch.
-
+bb's own server, daemon, and worker processes trust OS-managed certificate
+authorities and enable Node's environment proxy support by default; terminals,
+provider CLIs, and agent shells keep the user's Node networking defaults. Configure `HTTP_PROXY`,
+`HTTPS_PROXY`, and `NO_PROXY` with `bb-app env set` or in the launch environment;
+include `localhost,127.0.0.1,::1` in `NO_PROXY`. `NODE_EXTRA_CA_CERTS` adds a PEM
+bundle. `NODE_USE_SYSTEM_CA=0` and `NODE_USE_ENV_PROXY=0` opt out of the defaults.
+Restart bb after changes. Proxy support requires Node 22.21+, 24.5+, or 26;
+custom socket/agent libraries, including daemon WebSockets, can still bypass it.

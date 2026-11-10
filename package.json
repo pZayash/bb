@@ -41,6 +41,7 @@
     "storybook": "turbo run storybook --filter=@bb/app",
     "lint": "turbo run lint",
     "check:plugin-forks": "node scripts/check-plugin-forks.mjs",
+    "check:generated": "node scripts/windows/check-generated.mjs",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:integration": "turbo run test:integration",

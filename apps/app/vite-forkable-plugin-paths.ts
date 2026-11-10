@@ -25,7 +25,6 @@ function readForkablePluginPaths(): ForkablePluginPaths[] {
         resolve(root, target),
       ],
     );
-    // bb-fork(windows): Vite reports ids with forward slashes on every host.
     return { root: `${normalizePath(root)}/`, paths };
   });
 }
@@ -49,7 +48,6 @@ function mapPath(
 
 export function forkablePluginPaths(appSourceDir: string): Plugin {
   const plugins = readForkablePluginPaths();
-  // bb-fork(windows): Vite reports ids with forward slashes on every host.
   const appSourcePrefix = `${normalizePath(appSourceDir)}/`;
   return {
     name: "bb:forkable-plugin-paths",

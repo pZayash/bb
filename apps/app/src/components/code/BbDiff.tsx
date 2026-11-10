@@ -33,6 +33,7 @@ function BbDiff({
   view,
   overflow,
   showLineNumbers,
+  // bb-fork(file-diff): render both complete sides rather than only the hunks.
   expandUnchanged = false,
   className,
   onSelectionAddToChat,

@@ -305,72 +305,6 @@ and saved binding lifecycle before stabilizing the keyboard shortcut
 contract. Audit cross-platform conflicts and plugin lifecycle before
 extending the context model or default binding policy.
 
-## `bb.sdk.environments.commits` (and `startRef` on `environments.update`)
-
-**Added 2026-09-29 (fork).** The Windows fork adds a thread start-commit
-baseline: `bb.sdk.environments.commits({ environmentId })` lists the newest
-commits of an environment's checked-out branch (50 at most) through the
-`workspace.commits` host-daemon command, and
-`bb.sdk.environments.update({ environmentId, startRef })` pins or clears the
-commit a thread compares from (`Environment.startRef`, recorded once from the
-first workspace read, then user-editable). Both are reachable from plugins
-through `bb.sdk`, and from `bb environment commits` /
-`bb environment update --start-ref|--clear-start-ref`.
-
-`workspace.commits` is a fork-only wire command, so the fork carries two
-protocol deltas and `HOST_DAEMON_PROTOCOL_VERSION` is upstream + 2
-(`scripts/windows/merge-upstream.ps1` adds 2).
-
-Before this lands upstream, decide whether the baseline belongs on the
-environment or the thread (a shared environment currently anchors every thread
-bound to it at the same commit), whether `startRef` should keep the automatic
-value alongside a manual override instead of being overwritten, and whether the
-commit listing belongs on `workspace.status` rather than its own command.
-
-## Diff change controls: `experimental_DiffChangeRail` and `experimental_DiffChangeNav`
-
-**Added 2026-09-30 (fork).** A plugin embedding `experimental_Diff` can put
-bb's change map beside it — `experimental_DiffChangeRail` — put the change
-stepper in its diff toolbar — `experimental_DiffChangeNav`, previous/next
-change buttons with an `n/total` counter — and offer the shared switch with
-`experimental_DiffChangeRailToggle` (`{ className? }`). The rail and the
-stepper share one props type, `DiffChangeControlsProps`
-(`{ scrollElement, className? }`): the caller passes the element that scrolls
-the diff and owns the layout, rendering the rail as a flex-row sibling of that
-scroller. The toggle reads and writes bb's stored change map preference, so a
-plugin's toggle also hides bb's own rails. Both the rail and the stepper derive
-their positions from the passed scroller's rendered `[data-line]` rows, so they
-describe bb's renderer rather than a `experimental_diffRenderer` replacement.
-
-The stepper scrolls the diff to its first change when the rows first render, so
-an opened diff does not start above the change; `jumpToFirstChange` opts out.
-
-Before stabilizing, audit whether the preference belongs in the plugin-facing
-contract, whether these controls should take a ref instead of an element, how
-they behave under a replacement diff renderer, a virtualized scroller, or nested
-scroll containers, and whether opening on the first change is the right default
-for diffs a user asked to see from the top. The controls model one scrolling
-diff; a multi-file scroller builds its own marks (bb's Diff panel does, from the
-virtualizer's geometry).
-
-## `PluginFileOpenerProps.experimental_diffIntent`
-
-**Added 2026-09-30 (fork).** A file open can ask for the file's diff: bb's
-changed-files list opens a file straight into its diff in Split view, against
-the comparison that list used. The host passes `{ requestId, base, view }`
-(`ExperimentalFileDiffIntent`) to the plugin file opener, with a new object per
-request — including a repeat request for the same file and view — and `null`
-when the open was a plain one. An opener applies a non-null intent (activate the
-diff in `view` against `base`, absent meaning the merge base) and ignores
-`null`.
-
-Before stabilizing, audit which view wins when the user picks one in the plugin
-after a request, whether the intent should keep a per-request identity at all
-(it exists so a repeat open re-applies), and whether this belongs on the open
-request rather than on the opener props. The intent rides on the workspace file
-tab state (`diffIntent`) and is stripped from stored tabs, so a restored tab
-opens in the editor as before.
-
 ## Discoverable RPC
 
 `bb.rpc.register` accepts `experimental_discoverable` and
@@ -1126,35 +1060,6 @@ Docs: `backend-foundation.md`.
    presentation hint into a client release. Decide whether descriptor schemas
    should tolerate unknown fields so a hint degrades to the one-line input on
    an older client instead of failing the whole settings view.
-
-## `PluginSettingDescriptor.experimental_model`
-
-**Added 2026-10-10 (fork).** A `type: "string"` setting descriptor field
-(`bb.settings.define`). When present — `{ providerId: string }` — the host
-renders the setting as a searchable model picker fed by that route provider's
-model catalog (`GET /system/execution-options?providerId=…`, including its
-`selectedOnlyModels`) instead of a one-line input. The stored value stays a
-plain string: the catalog model id (`provider/model-id`, for example
-`deepseek/deepseek-flash`); an empty string means unset, and the picker
-offers a "Thread's own model" row that writes `""`. Selection saves
-immediately, like a `select` field, not on blur. The first consumer is the
-Pi provider plugin's `compactionModel` setting. The field travels in the
-settings view (`GET /plugins/:id/settings`); an older web client parses the
-descriptor but still renders the one-line input, which stays a valid editor
-for the same string value.
-
-**Audit before stabilizing.**
-
-1. **Scope.** `providerId` pins one route provider's catalog. Decide whether
-   a provider-agnostic variant (pick provider, then model) is needed or
-   whether callers should compose `experimental_ProviderModelPicker` in a
-   custom settings section instead.
-2. **Catalog routing.** The picker queries the catalog without an
-   environment or host selector, so it sees the default routing only;
-   workspace-scoped catalogs may render a different set than a thread on
-   another host.
-3. **Mobile.** The web picker is a popover with search; decide the mobile
-   rendering before stabilization.
 
 ## `bb.sdk.threads.experimental_listPluginMetadata`
 
@@ -2893,17 +2798,6 @@ loader callback.
 6. **Size and virtualization.** Neither component caps input size or
    virtualizes. Audit against a plugin that renders a very large file or patch.
 
-8. **Resolved (Sep 2026): whole-file rendering is an explicit flag, not a
-   side effect of supplying contents.** `experimental_expandUnchanged` asks BB
-   to render every unchanged region instead of collapsing it between hunks, so
-   both complete sides read as one document with the changes marked. BB
-   implements it by rebuilding the diff from `experimental_fullFileContents`
-   with full context, so it is ignored without contents and degrades to the
-   collapsed render when either side exceeds the source render budget (5,000
-   lines or 512 KB). `PluginDiffRendererProps.experimental_expandUnchanged`
-   carries the resolved value to replacements. The flag exists because the
-   collapsed render is right for the environment diff panel and the timeline,
-
 ## `experimental_FilePreview` (`@get-bb/plugin-sdk/app`)
 
 Host-owned side-panel preview of one live file target. bb loads the file and
@@ -3080,14 +2974,6 @@ Docs: `frontend-registration.md`.
    `useSidebarThreadDraft(threadId)` instead. `status` and `runtimeStatus` freeze the domain enums into the
    contract the way `indicator` does, under the same treat-unknown-as-fallback
    rule. `host` is resolved to `{ id, name }`; confirm resolution belongs here
-   <!-- bb-fork(compaction-model): the fork added reasoningLevel beside model. -->
-   **Reasoning level (Oct 2026)** added `reasoningLevel` beside `model`,
-   resolved by the same precedence, and shipped as the level id rather than its
-   label: the provider declares the labels and a plugin already reads that
-   provider. Confirm shipping an id rather than a display name is right: the
-   model catalog is per provider and workspace, so the host cannot name the
-   model without a catalog read.
-
    rather than in a separate hosts hook, and that falling back to the id for an
    unknown host is the right failure.
 2. **Indicator coupling.** `indicator` freezes bb's precedence into the
@@ -4730,3 +4616,128 @@ precedence, bounded discovery failure, and module-ABI preservation after Node
 replacement. Settle the shared process-local instance lifecycle across SDK
 bundle versions and whether `bundledNpmCli` belongs on the public surface before
 removing the prefix.
+
+<!-- bb-fork:begin -->
+
+## `bb.sdk.environments.commits` (and `startRef` on `environments.update`)
+
+**Added 2026-09-29 (fork).** The Windows fork adds a thread start-commit
+baseline: `bb.sdk.environments.commits({ environmentId })` lists the newest
+commits of an environment's checked-out branch (50 at most) through the
+`workspace.commits` host-daemon command, and
+`bb.sdk.environments.update({ environmentId, startRef })` pins or clears the
+commit a thread compares from (`Environment.startRef`, recorded once from the
+first workspace read, then user-editable). Both are reachable from plugins
+through `bb.sdk`, and from `bb environment commits` /
+`bb environment update --start-ref|--clear-start-ref`.
+
+The fork's three wire additions are the `host.list_terminal_shells` and
+`workspace.commits` RPCs and the `terminal.open` payload field `shellId`;
+`HOST_DAEMON_PROTOCOL_VERSION` is upstream + 2, a fixed offset maintained by
+`scripts/windows/merge-upstream.ps1`.
+
+Before this lands upstream, decide whether the baseline belongs on the
+environment or the thread (a shared environment currently anchors every thread
+bound to it at the same commit), whether `startRef` should keep the automatic
+value alongside a manual override instead of being overwritten, and whether the
+commit listing belongs on `workspace.status` rather than its own command.
+
+## Diff change controls: `experimental_DiffChangeRail` and `experimental_DiffChangeNav`
+
+**Added 2026-09-30 (fork).** A plugin embedding `experimental_Diff` can put
+bb's change map beside it — `experimental_DiffChangeRail` — put the change
+stepper in its diff toolbar — `experimental_DiffChangeNav`, previous/next
+change buttons with an `n/total` counter — and offer the shared switch with
+`experimental_DiffChangeRailToggle` (`{ className? }`). The rail and the
+stepper share one props type, `DiffChangeControlsProps`
+(`{ scrollElement, className? }`): the caller passes the element that scrolls
+the diff and owns the layout, rendering the rail as a flex-row sibling of that
+scroller. The toggle reads and writes bb's stored change map preference, so a
+plugin's toggle also hides bb's own rails. Both the rail and the stepper derive
+their positions from the passed scroller's rendered `[data-line]` rows, so they
+describe bb's renderer rather than a `experimental_diffRenderer` replacement.
+
+The stepper scrolls the diff to its first change when the rows first render, so
+an opened diff does not start above the change; `jumpToFirstChange` opts out.
+
+Before stabilizing, audit whether the preference belongs in the plugin-facing
+contract, whether these controls should take a ref instead of an element, how
+they behave under a replacement diff renderer, a virtualized scroller, or nested
+scroll containers, and whether opening on the first change is the right default
+for diffs a user asked to see from the top. The controls model one scrolling
+diff; a multi-file scroller builds its own marks (bb's Diff panel does, from the
+virtualizer's geometry).
+
+## `PluginFileOpenerProps.experimental_diffIntent`
+
+**Added 2026-09-30 (fork).** A file open can ask for the file's diff: bb's
+changed-files list opens a file straight into its diff in Split view, against
+the comparison that list used. The host passes `{ requestId, base, view }`
+(`ExperimentalFileDiffIntent`) to the plugin file opener, with a new object per
+request — including a repeat request for the same file and view — and `null`
+when the open was a plain one. An opener applies a non-null intent (activate the
+diff in `view` against `base`, absent meaning the merge base) and ignores
+`null`.
+
+Before stabilizing, audit which view wins when the user picks one in the plugin
+after a request, whether the intent should keep a per-request identity at all
+(it exists so a repeat open re-applies), and whether this belongs on the open
+request rather than on the opener props. The intent rides on the workspace file
+tab state (`diffIntent`) and is stripped from stored tabs, so a restored tab
+opens in the editor as before.
+
+## `PluginSettingDescriptor.experimental_model`
+
+**Added 2026-10-10 (fork).** A `type: "string"` setting descriptor field
+(`bb.settings.define`). When present — `{ providerId: string }` — the host
+renders the setting as a searchable model picker fed by that route provider's
+model catalog (`GET /system/execution-options?providerId=…`, including its
+`selectedOnlyModels`) instead of a one-line input. The stored value stays a
+plain string: the catalog model id (`provider/model-id`, for example
+`deepseek/deepseek-flash`); an empty string means unset, and the picker
+offers a "Thread's own model" row that writes `""`. Selection saves
+immediately, like a `select` field, not on blur. The first consumer is the
+Pi provider plugin's `compactionModel` setting. The field travels in the
+settings view (`GET /plugins/:id/settings`); an older web client parses the
+descriptor but still renders the one-line input, which stays a valid editor
+for the same string value.
+
+**Audit before stabilizing.**
+
+1. **Scope.** `providerId` pins one route provider's catalog. Decide whether
+   a provider-agnostic variant (pick provider, then model) is needed or
+   whether callers should compose `experimental_ProviderModelPicker` in a
+   custom settings section instead.
+2. **Catalog routing.** The picker queries the catalog without an
+   environment or host selector, so it sees the default routing only;
+   workspace-scoped catalogs may render a different set than a thread on
+   another host.
+3. **Mobile.** The web picker is a popover with search; decide the mobile
+   rendering before stabilization.
+
+## `experimental_SourceCode` / `experimental_Diff` audit addendum (fork)
+
+7. **Resolved (Sep 2026): whole-file rendering is an explicit flag, not a
+   side effect of supplying contents.** `experimental_expandUnchanged` asks BB
+   to render every unchanged region instead of collapsing it between hunks, so
+   both complete sides read as one document with the changes marked. BB
+   implements it by rebuilding the diff from `experimental_fullFileContents`
+   with full context, so it is ignored without contents and degrades to the
+   collapsed render when either side exceeds the source render budget (5,000
+   lines or 512 KB). `PluginDiffRendererProps.experimental_expandUnchanged`
+   carries the resolved value to replacements. The flag exists because the
+   collapsed render is right for the environment diff panel and the timeline,
+   so the host cannot infer intent from the presence of contents.
+
+<!-- bb-fork(compaction-model): the fork added reasoningLevel beside model. -->
+
+## `experimental_useSidebarThreads` / `experimental_useSidebarThreadActions` audit addendum (fork)
+
+**Reasoning level (Oct 2026)** added `reasoningLevel` beside `model`,
+resolved by the same precedence, and shipped as the level id rather than its
+label: the provider declares the labels and a plugin already reads that
+provider. Confirm shipping an id rather than a display name is right: the
+model catalog is per provider and workspace, so the host cannot name the
+model without a catalog read.
+
+<!-- bb-fork:end -->

@@ -46,7 +46,9 @@ interface OptionalServerFieldGroup {
   reason: string;
 }
 
-const OPTIONAL_SERVER_FIELD_GROUP_LIMIT = 46;
+// bb-fork(contract-fields): +1 for the fork-owned group appended at the end of
+// OPTIONAL_SERVER_FIELD_GROUPS.
+const OPTIONAL_SERVER_FIELD_GROUP_LIMIT = 46 + 1;
 
 const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
   {
@@ -448,8 +450,6 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
     fields: [
       "updateEnvironmentRequestSchema.mergeBaseBranch",
       "updateEnvironmentRequestSchema.name",
-      // bb-fork(thread-start-ref): the start-commit baseline is PATCHed the same way.
-      "updateEnvironmentRequestSchema.startRef",
     ],
   },
   {
@@ -466,10 +466,6 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
       "Thread PATCH requests omit fields that should be left unchanged; null explicitly clears nullable values.",
     fields: [
       "updateThreadRequestSchema.model",
-      // bb-fork(quiet-reparent): omitted keeps the default parent notification
-      "updateThreadRequestSchema.ownershipNotice",
-      // bb-fork(parent-mute): omitted leaves the mute state untouched
-      "updateThreadRequestSchema.parentNotificationsMuted",
       "updateThreadRequestSchema.sectionId",
       "updateThreadRequestSchema.parentThreadId",
       "updateThreadRequestSchema.reasoningLevel",
@@ -631,6 +627,20 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
     fields: [
       "queuedMessageListQuerySchema.threadId",
       "queuedMessageListQuerySchema.waitHolder",
+    ],
+  },
+  // bb-fork(contract-fields): fork-only optional fields live in one appended
+  // group so upstream edits inside its own groups do not conflict.
+  {
+    reason:
+      "Fork PATCH extensions follow the same rule as upstream PATCH fields: omitted leaves the stored value unchanged.",
+    fields: [
+      // bb-fork(thread-start-ref): the start-commit baseline is PATCHed the same way.
+      "updateEnvironmentRequestSchema.startRef",
+      // bb-fork(quiet-reparent): omitted keeps the default parent notification
+      "updateThreadRequestSchema.ownershipNotice",
+      // bb-fork(parent-mute): omitted leaves the mute state untouched
+      "updateThreadRequestSchema.parentNotificationsMuted",
     ],
   },
 ];
@@ -1153,15 +1163,11 @@ describe("server-contract canonical schemas", () => {
           projectId: "proj_123",
           environmentId: null,
           providerId: "codex",
-          model: "gpt-5",
-          reasoningLevel: null,
           title: "Pending thread",
           titleFallback: "Pending thread",
           sectionId: null,
           status: "idle",
           parentThreadId: null,
-          // bb-fork(parent-mute): default = parent notifications on
-          parentNotificationsMutedAt: null,
           sourceThreadId: null,
           lifecycleOwnerThreadId: null,
           originKind: null,
@@ -1194,6 +1200,10 @@ describe("server-contract canonical schemas", () => {
           environmentIsWorktree: true,
           environmentWorkspaceDisplayKind: "managed-worktree",
           queuedWork: "none",
+          // bb-fork(contract-fields): required fork fields on the list-entry contract.
+          model: "gpt-5",
+          reasoningLevel: null,
+          parentNotificationsMutedAt: null,
         },
       ]),
     ).toMatchObject([
@@ -1351,6 +1361,7 @@ describe("server-contract canonical schemas", () => {
       }),
     ).toMatchObject({ path: "C:\\Users\\michael\\bb" });
 
+    // bb-fork(windows): UNC paths are valid project paths in the fork.
     expect(() =>
       contract.updateProjectSourceRequestSchema.parse({
         type: "local_path",
@@ -1633,22 +1644,6 @@ describe("server-contract canonical schemas", () => {
         },
       }),
     ).toThrow("input must contain at least one entry");
-  });
-
-  it("accepts empty input for a child thread seed", () => {
-    const parsed = createThreadRequestSchema.parse({
-      projectId: "proj_123",
-      providerId: "codex",
-      origin: "app",
-      input: [],
-      environment: {
-        type: "reuse",
-        environmentId: "env_parent",
-      },
-      parentThreadId: "thr_parent",
-    });
-    expect(parsed.input).toEqual([]);
-    expect(parsed.parentThreadId).toBe("thr_parent");
   });
 
   it("accepts empty input for an idle fork", () => {

@@ -19,7 +19,6 @@ import { createQueryClientTestHarness } from "@/test/queryClientTestHarness";
 import { makeThreadListEntry as makeThreadListEntryFixture } from "@bb/test-helpers/domain-fixtures";
 import { GENERATED_MESSAGE_COLLAPSED_PREVIEW_CHAR_CAP } from "@bb/client-core";
 import { generatedConversationCollapsedPreview } from "./GeneratedConversationMessage";
-import { formatMessageClockTime } from "./MessageTimestamp";
 
 const MARKDOWN_BODY = [
   "# Final report",
@@ -128,13 +127,11 @@ function threadListEntry(
 function renderAgentMessage(
   text = AGENT_BODY,
   {
-    createdAt,
     senderIsPluginSideChat = false,
     senderThreadTitle = "Worker",
     onTitleAction,
     mentions: suppliedMentions,
   }: {
-    createdAt?: number;
     mentions?: readonly PromptTextMention[];
     onTitleAction?: TimelineTitleActionResolver;
     senderIsPluginSideChat?: boolean;
@@ -185,7 +182,6 @@ function renderAgentMessage(
             systemMessageKind="unlabeled"
             systemMessageSubject={null}
             attachments={null}
-            createdAt={createdAt}
             mentions={mentions}
             text={text}
             timestamp={0}
@@ -277,16 +273,6 @@ function mockContinuationSensitiveOverflow(): () => void {
 }
 
 describe("GeneratedConversationMessage markdown body", () => {
-  it("shows the message timestamp when the row carries a creation time", () => {
-    const createdAt = new Date(2026, 2, 5, 14, 32, 10).getTime();
-    const { container } = renderAgentMessage(AGENT_BODY, { createdAt });
-
-    fireEvent.click(screen.getByRole("button", { name: /Message from/u }));
-
-    expect(
-      container.querySelector("[data-message-timestamp]")?.textContent,
-    ).toBe(formatMessageClockTime(createdAt));
-  });
   it("renders the source as a thread pill with title mentions resolved to display text", () => {
     const { container } = renderAgentMessage(AGENT_BODY, {
       senderThreadTitle:

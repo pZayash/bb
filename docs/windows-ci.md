@@ -176,9 +176,39 @@ PowerShell and `cmd.exe` find `bb` on agent shells' PATH; the launcher and CLI
 re-exec run the extensionless script through Node because Windows cannot
 execute a file by its shebang.
 
+## Host lifecycle smoke
+
+<!-- bb-fork(windows): fork-owned workflow; upstream's Windows jobs live in ci.yml on its Blacksmith fleet. -->
+
+The `Windows host lifecycle (Node 22.x)` job in
+`.github/workflows/windows-lifecycle.yml` runs on GitHub-hosted
+`windows-latest`, not in `ci.yml`, so it does not use the PR selection plan or
+the dependency disk cache. On every pull request it runs
+`scripts/windows/smoke-lifecycle.ps1` through the `test:windows:lifecycle`
+Turbo task, which first builds the server, host daemon, and app and prepares
+native modules. The smoke starts an isolated server and host daemon under a
+temporary data directory, races three concurrent starts to prove
+single-instance arbitration, kills and restarts each listener to prove crash
+recovery, kills the supervising runtime to prove it comes back, then stops and
+restarts the stack. On failure the job uploads the smoke's data directory as a
+`windows-lifecycle-evidence` artifact.
+
+The job also runs `pnpm run check:generated` after installing dependencies, so a
+hand edit to the generated `turbo.json` or to content outside the
+`docs/api_to_audit.md` fork block fails before the smoke starts.
+
+Reproduce from the repository root in PowerShell:
+
+```powershell
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm exec turbo run test:windows:lifecycle --output-logs=new-only
+```
+
 ## Known gaps
 
-Native Windows is an alpha host (see [platform-support.md](platform-support.md)).
+<!-- bb-fork(windows): native Windows is a supported host in this fork. -->
+
+Native Windows is a supported host (see [platform-support.md](platform-support.md)).
 
 - Provider integration tests use controlled agent fixtures and recorded
   traffic; real installed providers are verified by hand.

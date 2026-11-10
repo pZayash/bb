@@ -48,6 +48,8 @@ Messaging:
   `createBuiltinPlanCommandTextInput(text)` from `@bb/sdk` and pass it as
   `input` to `threads.spawn` or `threads.send`.
 
+<!-- bb-fork(quiet-reparent): quiet reparent is a fork feature -->
+<!-- bb-fork(parent-mute): parent notification mute is a fork feature -->
 Ownership:
 
   bb thread update [id]                    Update thread metadata
@@ -55,16 +57,29 @@ Ownership:
     --title <title>                        Set title
     --parent-thread <id>                   Assign to a parent thread
     --clear-parent-thread                  Remove parent assignment
+    --no-ownership-notice                  Reparent without a system turn on the old or new parent
     --section <id>                         Move into a section
     --clear-section                        Remove section assignment
     --model <model>                        Set the sticky model for the next and later turns
     --reasoning-level <level>              Set the sticky reasoning level (provider-dependent)
     --visibility <visibility>              Set visible or hidden
     --parent-notifications <value>         Set auto, stuck, or off (applies to later outcomes)
+    --parent-notifications muted|on        Mute or restore this thread's notifications to its parent
 
   Clearing a parent inherits the former parent's section unless --section or
   --clear-section is also supplied. Children released by environment archiving
   also inherit their former parent's section.
+
+  <!-- bb-fork(quiet-reparent): quiet reparent is a fork feature -->
+  Every parent change runs a real system turn on the old and new parent
+  (ownership-removed / ownership-assigned). Pass --no-ownership-notice to
+  reparent quietly; the child still records an ownership_change event.
+
+  <!-- bb-fork(parent-mute): parent notification mute is a fork feature -->
+  A child notifies its parent about turn outcomes and blockers. While the
+  child is muted (--parent-notifications muted) it keeps the parent link but
+  stays silent; `--parent-notifications on` restores the notifications.
+  Muting does not hold back notifications already queued.
 
   Model and reasoning updates stay within the thread's current provider. BB
   validates them against that provider's current model catalog, applies them on

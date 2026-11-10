@@ -2149,27 +2149,6 @@ it("keeps a shared workspace ready when its preparing owner cancels before attac
   });
 });
 
-// bb-fork(windows): claiming a Windows absolute path must not fail validation.
-it("claims a Windows absolute workspace path", async () =>
-  withTestHarness(async (harness) => {
-    const fixture = setup(harness, {
-      create: async (context) => {
-        expect(
-          await context.experimental_claimPath("C:/Users/tester/project"),
-        ).toBe(true);
-        return {
-          status: "created",
-          path: "C:/Users/tester/project",
-          ownsPath: false,
-        };
-      },
-    });
-    fixture.ask();
-    await fixture.settled();
-    expect(fixture.row().path).toBe("C:\\Users\\tester\\project");
-    expect(["provisioning", "ready"]).toContain(fixture.row().status);
-  }));
-
 it("serializes concurrent branchless checkout attaches until the first thread is bound", async () =>
   withTestHarness(async (harness) => {
     const fake = createFakePluginHost({

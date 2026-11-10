@@ -136,6 +136,7 @@ Making your repo work with bb:
     --clear-merge-base-branch             Clear merge-base override
     --name <name>                         Set display name
     --clear-name                          Clear display name
+  <!-- bb-fork(windows): comparison start-ref and bb environment commits are fork features. -->
     --start-ref <sha>                     Set the comparison start commit
     --clear-start-ref                     Clear the comparison start commit
 
@@ -194,119 +195,14 @@ Making your repo work with bb:
   `diff-viewed` commands still run and print the command that replaced them.
 
 Every inspection command accepts an arbitrary environment ID and supports
-`--json`. Non-git status/diff responses are reported explicitly. `diff-file`
-prints UTF-8 content directly and labels base64 binary content; diff and patch
-truncation markers are preserved.
+`--json`.
 
-bb account (getbb.app sign-in):
-
-  The builtin "bb account" plugin signs this bb server in to your getbb.app
-  account and holds its server credential. Remote access and hosted services
-  use it; they never see the credential.
-
-  bb account status                       Show the signed-in account
-  bb account login                        Print a getbb.app link and code to approve
-    --wait                                Wait for that sign-in to finish
-    --code <code>                         Pair with a one-time dashboard code
-    --base-url <url>                      https://getbb.app or https://vibecodethis.site
-  bb account logout                       Revoke the credential and sign out
-
-  `bb account login` returns after printing the link; approve it in any
-  browser and bb finishes signing in on its own. Every command accepts
-  `--json`. `bb account status` reports a paired bb whose account hasn't
-  loaded yet as pending; it keeps retrying. `bb account logout` says so when
-  getbb.app didn't confirm revoking the server. In a source checkout,
-  `pnpm dev` points sign-in at that worktree's local Cloud origin through
-  `BB_DEV_CONNECT_BASE_URL`; an explicit `--base-url` still wins, and a
-  development build also accepts `http://bb.localhost:<port>` there.
-
-Remote access (bb connect):
-
-  Expose this bb server at <handle>.getbb.app so you can reach it from any
-  browser. Remote access starts once this bb is signed in to its bb account
-  (`bb account login`). A pairing command from the getbb.app dashboard still
-  works like `bb account login --code`, and also turns remote access back on:
-
-  bb connect --code <code> [--server https://<handle>.getbb.app]
-    --code <code>          One-time pairing code from the dashboard
-    --server <url>         Dashboard server URL; only its getbb.app or
-                           vibecodethis.site apex is used
-
-  The bb SERVER holds the tunnel itself — so it stays up as long as bb is
-  running and reconnects on restart (no foreground process). It connects with
-  the server credential bb account holds.
-  Without an installed bb, pair via npm:
-  `npx -p bb-app@latest bb connect --code <code>`.
-
-  bb connect status                       Show the server's connect status
-  bb connect off                          Turn remote access off, stay signed in
-  bb connect on                           Turn remote access back on
-  bb connect expose <port> [--host <name-or-id>]    Share a host's HTTP port
-  bb connect unexpose <port> [--host <name-or-id>]  Stop sharing on that host
-  bb connect unexpose-all [--host <id>] [--json]   Stop sharing all ports on one machine
-  bb connect shares [--host <name-or-id>]           List that host's shares
-  bb connect servers                      List every bb on this account (handle, url, live)
-  bb connect machine-code                 Mint a one-time code that pairs the bb mobile app
-
-  Port sharing works from threads on any enrolled host. In a thread,
-  `bb connect expose <port>` resolves the thread environment's host; outside a
-  thread it defaults to the server host. `--host <name-or-id>` overrides that
-  choice for expose, unexpose, and shares. Server-host URLs use
-  `https://<server-label>--<port>.getbb.app`; machine-host URLs use
-  `https://<machine-label>--<port>.getbb.app` and proxy directly through that
-  machine's daemon. Access is owner-session-gated — only viewers signed into
-  the owner's getbb.app account can open the URL; it is not a public internet
-  link. Agents should run expose from the thread that started the server, share
-  the returned URL, and unexpose from the same thread when it stops.
-  `bb connect status` shows all shares with host + URL. `shares --json` returns
-  the resolved `host` and rows with `hostId`, `hostName`, `port`, and `url`.
-
-  The bb mobile app pairs with a paired bb through bb connect.
-  Settings → Mobile → Add mobile device shows a QR code plus the code as text.
-  `bb connect machine-code` prints the same code, server URL, apex, and expiry
-  (`--json` for `{code, serverUrl, apex, expiresAt}`). The phone scans or
-  types the code and enrolls as a connect machine on the account with its own
-  revocable credential (it appears in the getbb.app dashboard machine list).
-  Codes last 10 minutes and work once; an account-machine-limit failure says
-  so and points at the dashboard to revoke an unused device.
-
-  Remote access is owned by the builtin "connect" plugin (Plugins → connect
-  shows the URL, QR code, mobile pairing, and shared ports). `bb connect off`
-  sets its `remoteAccess` setting and keeps the account signed in;
-  `bb account logout` forgets the pairing. Disabling the plugin
-  (`bb plugin disable connect`) cuts off all remote access; re-enable with
-  `bb plugin enable connect`.
-
-Core owns environment retirement and teardown. After the last live thread is archived or deleted, the provider policy sets the retirement deadline. `bb environment show <id>` reports lifecycle phase and teardown status, attempt and failure message. Failed teardown retries automatically; checkout environments do not retire.
-
-`bb environment cleanup <id> [--json]` is an explicit override for removing an
-unused provider-managed environment before its policy would do so. Normal
-retirement and cleanup retries are automatic; this command is not a routine
-end-of-task step. It overrides retention/keep policy and backoff, rejects live
-threads and unmanaged environments, and succeeds if already removed. The request
-is asynchronous; `bb environment show <id>` reports completion.
-
-Explicit environment or project deletion bypasses the retirement grace, including the never-retire policy. Provider cleanup retains the host, path and resource until removal completes; inspect progress with `bb environment show <id>`.
-
-`bb environment providers --json` includes each choice’s `description` and `icon`, as well as its label, inputs, and availability.
-
-`bb environment providers --project <id>` omits providers whose declared requirements are unmet on every persistent machine, and reports each provider's `machineAvailability` per machine in `--json`. Add `--machine <id>` to scope structural eligibility to that machine and print its availability: `available`, `setup-required`, `unavailable` with the plugin's reason, or `unknown` while the background probe has not answered. Listing never waits on a machine; probes run in the background, are cached for ten minutes per project and machine, and are checked afresh for the selected provider and machine during thread creation.
-
-BB source checkout startup
-
-  In the BB repository, `pnpm start:worktree` prepares and serves production
-  artifacts using stable checkout-specific dev data and ports (no Vite).
-  Add `--dryrun` to `pnpm start` or `pnpm start:worktree` to prepare through
-  Turbo, print resolved paths/ports, and exit. It does not launch services,
-  migrate instance data or require ports to be free. It still writes artifacts
-  and may repair native modules. Install dependencies beforehand when needed.
-  Both normal and dry-run startup preserve their runtime policy and use the same
-  dotenv settings. Preparation writes the
-  checkout's build files; warm a separate staging checkout's cache if the live
-  instance still serves those paths. Keep the serving checkout path stable to
-  preserve its data and ports. See `docs/debugging-and-qa.md` for the restart
-  sequence and source programmatic helpers. These are repository maintenance
-  commands, not environment lifecycle hooks or installed `bb` commands.
+Host commands share executable discovery across the daemon, server, desktop,
+providers, and plugins. Service launches include native `~/.local/bin` installs
+and mise/asdf shims. If a command disappears or exits 127, the next launch
+refreshes discovery. A replaced Node executable is recovered when a compatible
+runtime is available; commands with possible side effects are not retried
+automatically.
 
 ## Native Windows environment hooks
 
@@ -315,10 +211,10 @@ BB source checkout startup
 On a native Windows host the setup hook is `.bb-env-setup.ps1` and the
 teardown hook is `.bb-env-teardown.ps1`. BB runs each with
 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File <script>`. The
-`.sh` hooks described above are ignored on native Windows, and the `.ps1`
-hooks are ignored on macOS, Linux, and WSL2, so commit the hook that matches
-the host platform. When only a `.sh` hook is present on a native Windows
-host, provisioning records a `setup-script-ignored` progress note instead of
-failing. Everything else — the tracked-file requirement, cwd, sanitized
+`.sh` hooks described above also run on native Windows through the bash that
+Git for Windows installs, but only when the matching `.ps1` hook is absent;
+without Git for Windows they fail with a message naming it. The `.ps1` hooks
+are ignored on macOS, Linux, and WSL2, so commit the hook that matches the
+host platform. Everything else — the tracked-file requirement, cwd, sanitized
 environment, timeouts, failure semantics, and ownership gating — matches the
 POSIX hooks.

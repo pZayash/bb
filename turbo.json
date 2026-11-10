@@ -222,7 +222,6 @@
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/apps/server/src/services/plugins/builtin-registry.ts",
         "$TURBO_ROOT$/apps/server/src/services/plugin-catalog/bundled-marketplace-paths.ts",
-        // bb-fork(windows): fork plugin registration invalidates the bundled copy too.
         "$TURBO_ROOT$/apps/server/src/services/plugins/builtin-registry.fork.ts",
         "$TURBO_ROOT$/plugins/bb-fork.json"
       ],
@@ -514,16 +513,16 @@
       "dependsOn": [],
       "inputs": [
         "scripts/generate-bb-official-marketplace.ts",
-        "scripts/fork-catalog-fields.ts",
         "src/services/plugin-catalog/bundled-marketplace-paths.ts",
         "src/services/plugins/builtin-registry.ts",
-        "src/services/plugins/builtin-registry.fork.ts",
         "$TURBO_ROOT$/packages/domain/src/plugin-catalog-category.ts",
         "$TURBO_ROOT$/packages/domain/src/plugin-id.ts",
         "$TURBO_ROOT$/packages/domain/src/plugin-manifest.ts",
         "$TURBO_ROOT$/plugins/*/package.json",
         "$TURBO_ROOT$/plugins/*/PLUGIN_OVERVIEW.md",
         "$TURBO_ROOT$/plugins/bb-official.json",
+        "scripts/fork-catalog-fields.ts",
+        "src/services/plugins/builtin-registry.fork.ts",
         "$TURBO_ROOT$/plugins/bb-fork.json"
       ],
       "outputs": ["src/generated/bb-official-marketplace/marketplace.json"]
@@ -1064,30 +1063,6 @@
       ]
     },
     "bb-plugin-composer-customization#typecheck": {
-      "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
-    },
-    "bb-plugin-change-log#typecheck": {
-      "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
-    },
-    "bb-plugin-git-graph#typecheck": {
-      "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
-    },
-    "bb-plugin-pc-control#typecheck": {
-      "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
-    },
-    "bb-plugin-workspace-explorer#typecheck": {
-      "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
-    },
-    // bb-fork(windows): the fork-bundled Typst inline artifact plugin.
-    "bb-plugin-typst-inline#typecheck": {
-      "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
-    },
-    // bb-fork(windows): the fork-bundled Markdown-as-Typst plugin.
-    "bb-plugin-typst-md#typecheck": {
-      "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
-    },
-    // bb-fork(windows): the fork-bundled Zed typography theme plugin.
-    "bb-plugin-zed-theme#typecheck": {
       "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
     },
     "bb-plugin-plugin-api-docs#typecheck": {

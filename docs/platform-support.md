@@ -8,9 +8,8 @@
 
 - macOS persistent host
 - Linux persistent host
-- native Windows persistent host — see [docs/windows.md](windows.md)
+- native Windows x64 persistent host — see [docs/windows.md](windows.md)
 - Windows via Ubuntu on WSL2
-- Windows 11 x64 native host (alpha)
 
 Minimum runtime: Node.js 22.19, enforced by `install-machine.sh` and the root
 `engines` field. Lowering the floor needs its own test pass.
@@ -33,17 +32,24 @@ Windows has two host paths. Inside WSL2 the Linux stack runs unchanged:
   installed inside WSL2
 - local project paths use Linux-style absolute paths from inside WSL2
 
-The native Windows host is alpha. It runs from the Windows desktop installer or
+<!-- bb-fork(windows): in this fork the native Windows host is supported; upstream calls it alpha. -->
+
+The native Windows host runs from the Windows desktop installer or
 `npx bb-app` in PowerShell or CMD:
 
+<!-- bb-fork(windows): .ps1 hooks are preferred, .sh hooks fall back to Git Bash, and UNC project paths are accepted. -->
+
 - Git for Windows is required; bb uses its Git and its bash for environment
-  setup and teardown scripts
-- project paths are drive-letter paths such as `C:\Users\me\repo`; UNC paths
-  are refused
+  setup and teardown scripts, including `.sh` hooks used as a fallback
+- native Windows prefers `.bb-env-setup.ps1` / `.bb-env-teardown.ps1`, run
+  with `powershell.exe`; a `.sh` hook runs via Git Bash when no `.ps1` exists
+- project paths are drive-letter paths such as `C:\Users\me\repo` or UNC paths
+  such as `\\server\share\repo`
 - terminals run PowerShell 7 when installed, otherwise Windows PowerShell
 - a Windows machine can be added to another server from Settings → Machines
   with the PowerShell command; its daemon runs in the signed-in user's session
-- the server cannot be moved to a Windows machine
+- `bb server move`/`bb server import` do not accept a Windows machine as the
+  target; a native Windows server otherwise runs under the PowerShell supervisor
 
 ## Mobile app
 
@@ -115,9 +121,12 @@ Android APK; see [configuration.md](configuration.md)).
   `/mnt/c/...` form from inside WSL2. A machine that reported Windows refuses
   POSIX paths the same way.
 
-### Windows drive-letter paths
+### Windows paths
 
-Native Windows hosts use drive-letter paths for projects and workspaces:
+<!-- bb-fork(windows): native Windows accepts UNC project paths; WSL2 keeps rejecting them. -->
+
+Native Windows hosts use drive-letter paths for projects and workspaces, and
+also accept UNC paths for projects at the app/server boundary:
 
 - A drive-letter path such as `C:\Users\me\repo` is stored in one spelling:
   upper-case drive letter, backslash separators, and no trailing separator.
@@ -125,8 +134,8 @@ Native Windows hosts use drive-letter paths for projects and workspaces:
 - Windows paths are compared without regard to case, so `C:\src\Repo` and
   `C:\src\repo` are one project source and one environment. POSIX paths stay
   case-sensitive.
-- UNC network paths (`\\server\share\repo`) are refused; map the share to a
-  drive letter.
+- UNC paths such as `\\server\share\repo` are accepted for projects on native
+  Windows and stored unchanged; the WSL2 flow still refuses them.
 - Paths relative to a workspace stay `/`-separated in the API on every
   platform.
 
@@ -186,6 +195,9 @@ rebuild the native dependency, for example `npm rebuild better-sqlite3`.
   installs, found through `git var GIT_SHELL_PATH`, with that directory first on
   `PATH` so the script's standard tools resolve. Without Git for Windows the
   hook fails with a message naming it.
+- On native Windows the preferred hooks are `.bb-env-setup.ps1` and
+  `.bb-env-teardown.ps1`; a `.sh` hook runs only when no `.ps1` hook exists.
+  <!-- bb-fork(windows): native Windows prefers .ps1 hooks; .sh is the fallback. -->
 - No parallel `.bb-env-setup.ts` product-path mechanism is supported.
 - The `.worktreeinclude` copy step runs no shell. It works on every platform,
   including native Windows.

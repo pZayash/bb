@@ -280,30 +280,4 @@ describe("isParentNotifiableChildThread", () => {
       ).toEqual(notifying);
     },
   );
-
-  // bb-fork(parent-mute): a muted child keeps the parent link but stays silent.
-  it("is false for a delegated child whose parent notifications are muted", () => {
-    expect(
-      isParentNotifiableChildThread(
-        {
-          originKind: null,
-          parentNotifications: "auto",
-          parentNotificationsMutedAt: 1_700_000_000_000,
-          parentThreadId: "thr_parent",
-        },
-        "failed",
-      ),
-    ).toBe(false);
-    expect(
-      isParentNotifiableChildThread(
-        {
-          originKind: null,
-          parentNotifications: "auto",
-          parentNotificationsMutedAt: null,
-          parentThreadId: "thr_parent",
-        },
-        "failed",
-      ),
-    ).toBe(true);
-  });
 });

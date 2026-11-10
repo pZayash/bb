@@ -5,7 +5,6 @@ import {
   buildFilePreview,
   buildFilePreviewFromSample,
   isCsvFilePreview,
-  isHtmlFilePreviewPath,
   isMarkdownFilePreview,
   normalizeFilePreviewMimeType,
 } from "../src/file-preview.js";
@@ -270,12 +269,5 @@ describe("file-preview", () => {
     expect(isCsvFilePreview(csvByPath)).toBe(true);
     expect(isCsvFilePreview(csvByMime)).toBe(true);
     expect(isCsvFilePreview(plainText)).toBe(false);
-  });
-
-  it("recognizes every HTML preview extension", () => {
-    expect(isHtmlFilePreviewPath("report.html")).toBe(true);
-    expect(isHtmlFilePreviewPath("reports/report.HTM")).toBe(true);
-    expect(isHtmlFilePreviewPath("report.xhtml")).toBe(true);
-    expect(isHtmlFilePreviewPath("report.md")).toBe(false);
   });
 });

@@ -549,6 +549,7 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "PluginFileOpenerRegistration",
           "PluginFileOpenerProps",
           "PluginFileOpenerSource",
+          // bb-fork(file-diff): the diff-view intent on file opener props.
           "ExperimentalFileDiffIntent",
         ],
         firstParty: ["Docs", "File Editor", "PDF preview"],
@@ -896,6 +897,7 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
         bullets: [
           "Declare text, number, toggle, choice, or project fields as data",
           "Get validation and autosave without extra code",
+          // bb-fork(contract-fields): describe Standard Schema validation and provider-model pickers.
           "Validate with a Standard Schema, render multi-line text, or pick provider models",
           "Have each field found by Settings search; keep secret values on the server",
         ],
@@ -1762,6 +1764,7 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "ExperimentalImageLightboxProps",
           "experimental_Diff",
           "DiffProps",
+          // bb-fork(file-diff): host-owned diff change controls and their props.
           "experimental_DiffChangeRail",
           "DiffChangeControlsProps",
           "experimental_DiffChangeNav",

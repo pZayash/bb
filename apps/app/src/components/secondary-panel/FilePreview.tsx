@@ -47,10 +47,9 @@ import {
 import { copyToClipboardWithToast } from "@/lib/clipboard";
 import { formatByteSize } from "@bb/shared-ui/lib/format-byte-size";
 import { saveFile } from "@/lib/save-file";
-// bb-fork(file-diff): resolve the base href for a saved document preview.
-import { resolveExportBaseHref } from "@/lib/document-export";
 import { openUrlInExternalBrowser } from "@/lib/url-open-routing";
-import { FileExportMenu, type FileExportTarget } from "./FileExportMenu.js";
+import { FilePreviewForkHeaderAction } from "./FilePreviewForkHeader.fork"; // bb-fork(file-diff): the export-menu header action.
+import { useFilePreviewForkState, type FilePreviewDiffSlot, type FilePreviewForkState } from "./useFilePreviewForkState.fork"; // bb-fork(file-diff): the diff-slot seam state.
 import type {
   FilePreviewLineRange,
   UnsupportedFilePreviewReason,
@@ -90,7 +89,7 @@ interface IframeFilePreviewTarget {
   sandbox: IframePreviewSandbox;
   title: string;
   url: string;
-  srcdoc?: string;
+  srcdoc?: string; // bb-fork(file-diff): inline previews need no served URL.
 }
 
 export type FilePreviewState =
@@ -98,7 +97,7 @@ export type FilePreviewState =
   | { kind: "empty" }
   | { kind: "not-found" }
   | { kind: "error"; message?: string }
-  // bb-fork(inline-vis): a bare iframe target (src or srcdoc) for html previews.
+  // bb-fork(file-diff): a bare iframe target (src or srcdoc) for html previews.
   | ({ kind: "iframe" } & IframeFilePreviewTarget)
   | { kind: "unsupported"; file: UnsupportedFilePreviewFile }
   | { kind: "image"; url: string }
@@ -126,7 +125,7 @@ interface FilePreviewProps {
   state: FilePreviewState;
   path: string;
   copyPath?: string | null;
-  exportBaseHref?: string | null;
+  exportBaseHref?: string | null; // bb-fork(file-diff): export base href.
   headerMode?: FilePreviewHeaderMode;
   onSelectionAddToChat?: (text: string) => void;
   onOpenInEditor?: (path: string) => void;
@@ -138,12 +137,7 @@ interface FilePreviewProps {
   fileDiff?: FilePreviewDiffSlot | null;
 }
 
-// bb-fork(file-diff): kept generic so the preview stays unaware of diff data.
-export interface FilePreviewDiffSlot {
-  content: ReactNode;
-  isActive: boolean;
-  toggle: ReactNode;
-}
+export type { FilePreviewDiffSlot } from "./useFilePreviewForkState.fork"; // bb-fork(file-diff): the slot contract lives in the fork state file.
 
 interface FilePreviewBodyProps {
   iframePreview: ReactNode;
@@ -170,13 +164,11 @@ interface FilePreviewHeaderProps {
   copyPath: string | null;
   rawContents: string | null;
   externalUrl: string | null;
-  exportTarget: FileExportTarget | null;
+  fork: FilePreviewForkState; // bb-fork(file-diff): diff slot + export target.
   onOpenInEditor?: (path: string) => void;
   onRefresh?: () => void;
   isRefreshing: boolean;
   statusLabel: string | null;
-  // bb-fork(file-diff): diff toggle rendered beside the other header controls.
-  diffToggle: ReactNode | null;
   toggleKind: FilePreviewToggleKind | null;
   showLineOverflowToggle: boolean;
   lineOverflowMode: CodeOverflowMode;
@@ -266,7 +258,7 @@ const FILE_PREVIEW_VIEW_MODE_BUTTON_CLASS =
 
 function getFilePreviewExternalUrl(state: FilePreviewState): string | null {
   if (state.kind === "html") {
-    return state.iframe.url.length === 0 ? null : state.iframe.url;
+    return state.iframe.url.length === 0 ? null : state.iframe.url; // bb-fork(file-diff): empty url renders from srcdoc.
   }
   return null;
 }
@@ -475,7 +467,7 @@ export function FilePreview({
   state,
   path,
   copyPath = null,
-  exportBaseHref = null,
+  exportBaseHref = null, // bb-fork(file-diff): markdown export base href.
   headerMode = "file",
   onSelectionAddToChat,
   onOpenInEditor,
@@ -483,13 +475,13 @@ export function FilePreview({
   isRefreshing = false,
   markdownLinkRouting,
   statusLabel = null,
-  fileDiff = null,
+  fileDiff = null, // bb-fork(file-diff): the diff slot prop.
 }: FilePreviewProps) {
-  // bb-fork(file-diff): the diff replaces the file body while it is active.
-  const isDiffActive = fileDiff?.isActive === true;
+  // bb-fork(file-diff): every fork touchpoint funnels through this hook.
+  const fork = useFilePreviewForkState({ exportBaseHref, slot: fileDiff, state });
   const iframeTarget =
     state.kind === "html" ? state.iframe
-    : state.kind === "iframe" ? state
+    : state.kind === "iframe" ? state // bb-fork(file-diff): bare iframe previews.
     : null;
   const iframeKey = JSON.stringify([
     state.kind,
@@ -525,25 +517,6 @@ export function FilePreview({
   const filePreviewLineRange = getFilePreviewLineRange(state);
   const rawContents = getRawFilePreviewContents(state);
   const externalUrl = getFilePreviewExternalUrl(state);
-  const exportTarget = useMemo((): FileExportTarget | null => {
-    if (state.kind === "html") {
-      return {
-        baseHref: resolveExportBaseHref(state.iframe.url),
-        content: state.file.contents,
-        fileName: state.file.name,
-        sourceKind: "html",
-      };
-    }
-    if (state.kind === "ready" && state.textPreviewKind === "markdown") {
-      return {
-        baseHref: exportBaseHref,
-        content: state.file.contents,
-        fileName: state.file.name,
-        sourceKind: "markdown",
-      };
-    }
-    return null;
-  }, [exportBaseHref, state]);
   const [viewMode, setViewMode] = useState<FilePreviewViewMode>(
     getInitialFilePreviewViewMode({
       lineRange: filePreviewLineRange,
@@ -577,7 +550,7 @@ export function FilePreview({
   const usesIframeLayout =
     state.kind === "html" && viewMode === "preview" && !usesCustomPreviewLayout;
   const usesCodeLayout = usesCodeViewLayout(state, bodyViewMode);
-  const showLineOverflowToggle = usesCodeLayout && !isDiffActive;
+  const showLineOverflowToggle = usesCodeLayout && !fork.isDiffActive; // bb-fork(file-diff): the wrap toggle hides during the diff.
   const usesMarkdownPreviewLayout =
     state.kind === "ready" &&
     state.textPreviewKind === "markdown" &&
@@ -594,7 +567,7 @@ export function FilePreview({
     usesCodeLayout ||
     usesMarkdownPreviewLayout ||
     // bb-fork(file-diff): the diff surface fills the body too.
-    isDiffActive ||
+    fork.isDiffActive ||
     usesCustomPreviewLayout;
 
   return (
@@ -629,12 +602,11 @@ export function FilePreview({
           copyPath={copyPath}
           rawContents={rawContents}
           externalUrl={externalUrl}
-          exportTarget={exportTarget}
+          fork={fork} // bb-fork(file-diff): diff slot + export target.
           onOpenInEditor={onOpenInEditor}
           onRefresh={onRefresh}
           isRefreshing={isRefreshing}
           statusLabel={statusLabel}
-          diffToggle={fileDiff?.toggle ?? null}
           toggleKind={toggleKind}
           showLineOverflowToggle={showLineOverflowToggle}
           lineOverflowMode={lineOverflowMode}
@@ -643,8 +615,8 @@ export function FilePreview({
           onViewModeChange={setViewMode}
         />
       ) : null}
-      {isDiffActive ? (
-        fileDiff?.content
+      {fork.isDiffActive /* bb-fork(file-diff): the diff replaces the body. */ ? (
+        fork.diffContent
       ) : renderPreview !== null && customPreviewFile !== null ? (
         <div className="min-h-0 flex-1 overflow-hidden">
           {renderPreview(customPreviewFile)}
@@ -693,7 +665,7 @@ function FilePreviewBody({
   if (state.kind === "unsupported") {
     return <UnsupportedFilePreview file={state.file} />;
   }
-  if (state.kind === "iframe") {
+  if (state.kind === "iframe") { // bb-fork(file-diff): bare iframe previews.
     return iframePreview;
   }
   if (state.kind === "image") {
@@ -748,12 +720,11 @@ function FilePreviewHeader({
   copyPath,
   rawContents,
   externalUrl,
-  exportTarget,
+  fork, // bb-fork(file-diff): diff slot + export target.
   onOpenInEditor,
   onRefresh,
   isRefreshing,
   statusLabel,
-  diffToggle,
   toggleKind,
   showLineOverflowToggle,
   lineOverflowMode,
@@ -766,7 +737,7 @@ function FilePreviewHeader({
   const isCompactViewport = useIsCompactViewport();
   const isNarrow = width > 0 ? width < 560 : isCompactViewport;
   const showHeaderControls =
-    showLineOverflowToggle || toggleKind !== null || diffToggle !== null;
+    showLineOverflowToggle || toggleKind !== null || fork.diffToggle !== null; // bb-fork(file-diff): the diff toggle keeps controls visible.
   const copyFileContentsLabel = getFileContentsCopyLabel(toggleKind);
 
   return (
@@ -898,17 +869,14 @@ function FilePreviewHeader({
                   <AppCommandShortcutHint shortcut={openShortcut} />
                 </>
               ) : null}
-              {exportTarget === null ? null : (
-                <FileExportMenu
-                  className={FILE_PREVIEW_HEADER_ICON_BUTTON_CLASS}
-                  target={exportTarget}
-                />
+              {fork.exportTarget === null ? null : ( // bb-fork(file-diff): export menu.
+                <FilePreviewForkHeaderAction className={FILE_PREVIEW_HEADER_ICON_BUTTON_CLASS} target={fork.exportTarget} />
               )}
           </TooltipProvider>
         </div>
         {showHeaderControls || isNarrow ? (
           <div className="ml-auto flex shrink-0 items-center gap-1">
-            {diffToggle}
+            {fork.diffToggle /* bb-fork(file-diff): beside the view controls. */}
             <FilePreviewLineWrapButton
               showLineOverflowToggle={showLineOverflowToggle && !isNarrow}
               lineOverflowMode={lineOverflowMode}
@@ -1361,7 +1329,7 @@ function FilePreviewIcon({ loading }: { loading: boolean }) {
 
 function IframeFilePreview({
   sandbox,
-  srcdoc,
+  srcdoc, // bb-fork(file-diff): inline previews render without a served URL.
   title,
   url,
   loadState,
@@ -1385,7 +1353,7 @@ function IframeFilePreview({
     <div className="min-h-0 flex-1 overflow-hidden">
       <iframe
         title={title}
-        {...(srcdoc === undefined ? { src: url } : { srcDoc: srcdoc })}
+        {...(srcdoc === undefined ? { src: url } : { srcDoc: srcdoc })} // bb-fork(file-diff): srcdoc previews swap src for inline markup.
         sandbox={sandbox}
         style={HTML_FILE_PREVIEW_IFRAME_STYLE}
         onLoad={() => onLoadStateChange("loaded")}

@@ -95,7 +95,6 @@ function toolCallSuccess(text: string): ToolCallResponse {
   return toolCallTextResponse(true, text);
 }
 
-
 function normalizeDirectoryPath(path: string): string {
   return canonicalizeHostPath(path.trim());
 }

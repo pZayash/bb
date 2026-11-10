@@ -43,10 +43,12 @@ for environment setup scripts. You can also run bb inside
 install WSL2 first, then run the `npx` command below from your WSL2 (Linux)
 shell.
 
-<!-- bb-fork(windows): upstream now ships native Windows support as Alpha;
-this fork's own Windows notes live in docs/windows.md. -->
+<!-- bb-fork(windows): the alpha wording above describes upstream's installer;
+this fork declares native Windows x64 supported and documents its delta in
+docs/windows.md. -->
 
-This fork also documents its Windows delta in [docs/windows.md](docs/windows.md).
+This fork supports native Windows x64 and documents its delta in
+[docs/windows.md](docs/windows.md).
 
 Early adopters can install
 **[bb Nightly](https://github.com/get-bb/bb/releases/tag/desktop-nightly)**

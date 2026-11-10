@@ -34,7 +34,6 @@ import {
   saveThreadProvisionContext,
   type ThreadProvisionEnvironmentIntent,
 } from "./thread-startup-store.js";
-// bb-fork(windows): accept drive-letter and UNC host paths from providers.
 import { type ThreadProvisioningDeps } from "./thread-provisioning-environment.js";
 import {
   buildSuggestedBranchName,

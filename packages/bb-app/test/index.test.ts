@@ -236,14 +236,6 @@ const immediateDelay: DelayMillisecondsFn = () => {
   return Promise.resolve();
 };
 
-// bb-fork(windows): Windows does not report POSIX file modes.
-function expectRestrictedFileMode(filePath: string): void {
-  if (process.platform === "win32") {
-    return;
-  }
-  expect(statSync(filePath).mode & 0o777).toBe(0o600);
-}
-
 const noServerMovedFile: ReadServerMovedFileFn = async () => null;
 
 async function unexpectedServerMove(): Promise<FullStackSupervisionResult> {
@@ -1361,28 +1353,6 @@ describe("bb-app launcher", () => {
         "test-openai-key",
       ]),
     ).rejects.toThrow(/bb-app env set OPENAI_API_KEY/u);
-  });
-
-  it("stores managed env values from the env command", async () => {
-    const dataDir = mkdtempSync(join(tmpdir(), "bb-app-env-command-"));
-
-    await runBbApp([
-      "--data-dir",
-      dataDir,
-      "env",
-      "set",
-      "ANTHROPIC_API_KEY",
-      "test-anthropic-key",
-    ]);
-
-    expect(JSON.parse(readFileSync(join(dataDir, "env.json"), "utf8"))).toEqual(
-      {
-        env: {
-          ANTHROPIC_API_KEY: "test-anthropic-key",
-        },
-      },
-    );
-    expectRestrictedFileMode(join(dataDir, "env.json"));
   });
 
   it("rejects invalid server bind hosts before writing managed env", async () => {

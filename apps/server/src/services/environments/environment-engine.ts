@@ -13,7 +13,6 @@ import {
   resolveProviderOperationContext,
 } from "../threads/thread-environment-placement.js";
 import { withEnvironmentCleanupSlot } from "./cleanup-concurrency.js";
-// bb-fork(windows): cross-platform absolute-path check for path claims.
 import { ensureHostSessionReadyForWork } from "../hosts/host-lifecycle.js";
 import { foreignProjectOwnedPathRefusal } from "../threads/workspace-path-claims.js";
 import {

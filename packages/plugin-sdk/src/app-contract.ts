@@ -631,6 +631,7 @@ export interface PluginFileOpenerProps {
     startLineNumber: number;
     endLineNumber: number;
   } | null;
+  // bb-fork(file-diff): an open request can ask for the file's diff view.
   /**
    * Diff view an open request asked for (bb's changed-files list can open a
    * file straight into its diff), or null when the open was a plain one. BB
@@ -777,6 +778,7 @@ export interface DiffProps {
    * loading these contents; omit the field to render from the patch alone.
    */
   experimental_fullFileContents?: ExperimentalDiffFullFileContents;
+  // bb-fork(file-diff): render both complete sides rather than only the hunks.
   /**
    * Render every unchanged region instead of collapsing it between hunks, so
    * the whole file reads on both sides with the changes marked. Requires
@@ -790,6 +792,7 @@ export interface DiffProps {
   className?: string;
 }
 
+// bb-fork(file-diff): shared props of the host-owned diff change rail, stepper, and toggle.
 /**
  * Props of the host-owned diff change controls: the change rail
  * (`experimental_DiffChangeRail`) and the change stepper
@@ -855,6 +858,7 @@ export interface PluginDiffRendererProps {
    * verification when it mounts.
    */
   experimental_fullFileContents: ExperimentalDiffFullFileContents | null;
+  // bb-fork(file-diff): resolved whole-file rendering flag for replacements.
   /**
    * Resolved `experimental_expandUnchanged`: the caller asked for both
    * complete sides rather than only the patch's hunks.
@@ -1478,6 +1482,7 @@ export interface PluginSidebarThread {
   /** The agent provider this thread runs on; resolve it through
    * {@link PluginSdkApp.experimental_useProviders} for a name and icon. */
   providerId: string;
+  // bb-fork(thread-row-metadata): the next turn's model and reasoning level for the thread list.
   /**
    * The model the thread's next turn would run on, resolved exactly as the
    * next turn resolves it: the thread's own override, else the model of its
@@ -5463,7 +5468,9 @@ export interface BbNavigate {
    */
   openUrl(url: string): boolean;
   /** Open a live file in this surface's shared BB preview panel. */
-  experimental_openFilePreview(options: ExperimentalFilePreviewOptions): boolean;
+  experimental_openFilePreview(
+    options: ExperimentalFilePreviewOptions,
+  ): boolean;
   /** Open a live file in this client's preferred external file target. */
   experimental_openFileExternally(
     options: ExperimentalFileOpenOptions,
@@ -6192,6 +6199,7 @@ export interface PluginSdkApp {
    * docs/api_to_audit.md.
    */
   experimental_Diff: ComponentType<DiffProps>;
+  // bb-fork(file-diff): host-owned change rail, stepper, and change map toggle.
   /**
    * The host-owned diff change map (see {@link DiffChangeRailProps}). Marks the
    * changed regions of a scrolling diff and doubles as its scroll control, so a

@@ -8,7 +8,6 @@ const MOBILE_ROOT = join(HERE, "..", "..");
 const SRC_ROOT = join(MOBILE_ROOT, "src");
 const APP_ROOT = join(MOBILE_ROOT, "app");
 
-
 const ALLOWED_FILES = new Set([
   "src/ui/Icon.ios.tsx",
   "src/ui/sf-symbol-map.ts",

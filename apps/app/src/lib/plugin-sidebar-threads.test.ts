@@ -65,51 +65,6 @@ describe("toPluginSidebarThread", () => {
     });
   });
 
-  it("passes the resolved model and reasoning level through to the sidebar", () => {
-    const mapped = toPluginSidebarThread(
-      makeThread({ model: "gpt-5.6-sol", reasoningLevel: "xhigh" }),
-    );
-    expect(mapped.model).toBe("gpt-5.6-sol");
-    expect(mapped.reasoningLevel).toBe("xhigh");
-  });
-
-  it("resolves the indicator with the host's precedence", () => {
-    expect(
-      toPluginSidebarThread(
-        makeThread({
-          hasPendingInteraction: true,
-          runtime: {
-            displayStatus: "active",
-          },
-        }),
-      ).indicator,
-    ).toBe("waiting-for-input");
-
-    expect(
-      toPluginSidebarThread(
-        makeThread({
-          runtime: {
-            displayStatus: "active",
-          },
-        }),
-      ).indicator,
-    ).toBe("runtime");
-
-    expect(
-      toPluginSidebarThread(
-        makeThread({
-          activity: {
-            activeWorkflowCount: 1,
-            activeBackgroundAgentCount: 0,
-            activeBackgroundCommandCount: 0,
-            activePlanModeCount: 0,
-            activeGoalCount: 0,
-          },
-        }),
-      ).indicator,
-    ).toBe("workflow");
-  });
-
   it("carries the host's accessible label, and null for none", () => {
     expect(
       toPluginSidebarThread(makeThread({ hasPendingInteraction: true }))

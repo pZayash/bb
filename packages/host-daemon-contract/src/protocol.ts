@@ -1,5 +1,7 @@
-// bb-fork: upstream version + 2 while the fork carries wire deltas
-// (windows host platform, workspace.commits); the merge script sets it.
+// bb-fork: upstream version + 2 while the fork carries its wire additions:
+// the host.list_terminal_shells and workspace.commits RPCs and the
+// terminal.open payload field "shellId". scripts/windows/merge-upstream.ps1
+// maintains the number on every merge.
 export const HOST_DAEMON_PROTOCOL_VERSION = 266 as const;
 
 export const HOST_DAEMON_CONNECT_NEXT_PROTOCOL_VERSION = 247 as const;

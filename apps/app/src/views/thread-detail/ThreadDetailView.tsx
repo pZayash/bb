@@ -50,8 +50,6 @@ import {
   usePluginDetailTabOpener,
 } from "@/components/plugin/plugin-detail-navigation";
 import { useForkThreadFromMessage } from "@/hooks/useForkThreadFromMessage";
-// bb-fork(thread-start-ref): the start-commit picker writes through this hook.
-import { useUpdateEnvironment } from "../../hooks/mutations/environment-mutations.fork";
 import { useUpdateThread } from "../../hooks/mutations/thread-state-mutations";
 import { useEnvironment } from "../../hooks/queries/environment-queries";
 import {
@@ -116,16 +114,6 @@ import {
 } from "@/components/plugin/PluginThreadContextCard";
 import { ThreadScreen, useThreadComposerAddToChat } from "./ThreadScreen";
 import { ThreadDetailSecondaryContent } from "./ThreadDetailSecondaryContent";
-// bb-fork(thread-start-ref): pick and show the commit a thread compares from.
-import { StartCommitPicker } from "@/components/workspace/StartCommitPicker.fork";
-import { useThreadStartCommitView } from "@/lib/thread-start-view.fork";
-// bb-fork(quiet-reparent): the quiet switch lives in the Info panel.
-import { useQuietReparentPreference } from "@/components/secondary-panel/quiet-reparent.fork";
-// bb-fork(file-links): project checkout root for relative file refs outside worktrees.
-import { useFileLinkFallbackRoots } from "@/hooks/useProjectSourceRootPath.fork";
-// bb-fork(windows): shell picked beside the Start terminal action.
-import { useTerminalShellChoice } from "@/components/secondary-panel/useTerminalShellChoice";
-import { TerminalShellSelector } from "@/components/secondary-panel/TerminalShellSelector";
 import {
   useThreadSecondaryPanelDrawerVisibility,
   useThreadSecondaryPanelVisibility,
@@ -221,6 +209,12 @@ import {
 import { useRouteState } from "@/hooks/useRouteState";
 import { usePaneContext } from "./PaneContext";
 import { PaneThreadActionCommandHandler } from "./PaneThreadActionCommandHandler";
+// bb-fork(thread-detail): fork view-state lives in one hook and two controls.
+import {
+  ThreadStartCommitControl,
+  ThreadTerminalShellControl,
+} from "./ThreadDetailForkControls.fork";
+import { useThreadDetailForkState } from "./useThreadDetailForkState.fork";
 
 const EMPTY_PARENT_THREADS: readonly ThreadListEntry[] = [];
 const EMPTY_PROJECT_THREAD_SUBSET_FILTERS =
@@ -313,11 +307,10 @@ function ThreadDetailViewInternal(
     staleTime: 5_000,
   });
   const environment = environmentQuery.data;
-  // bb-fork(file-links): relative refs in messages also resolve against the project checkout.
-  const fileLinkFallbackRoots = useFileLinkFallbackRoots({
+  // bb-fork(thread-detail): every fork touchpoint funnels through this hook.
+  const forkState = useThreadDetailForkState({
     projectId: thread?.projectId ?? projectId,
-    hostId: environment?.hostId ?? null,
-    workspaceRootPath: environment?.path,
+    environment,
   });
   const hostLifecycle =
     environment === undefined || environment.hostLifecycle === "active"
@@ -339,16 +332,6 @@ function ThreadDetailViewInternal(
       ? thread.environmentId
       : null;
   const threadTabEnvironmentId = thread?.environmentId ?? null;
-  // bb-fork(windows): the shell this thread's terminals launch.
-  const terminalShellChoice = useTerminalShellChoice(
-    environment?.hostId ?? null,
-  );
-  // bb-fork(thread-start-ref): compare the thread against the commit it started from.
-  const threadStartRef = environment?.startRef ?? null;
-  // bb-fork(thread-start-view): the chosen view survives switching threads.
-  const [isSinceThreadStart, setIsSinceThreadStart] = useThreadStartCommitView(
-    environment?.id,
-  );
   const threadTabEnvironment = useMemo(
     () =>
       threadTabEnvironmentId === null ? null : { id: threadTabEnvironmentId },
@@ -565,8 +548,6 @@ function ThreadDetailViewInternal(
     threadId,
     enabled: timelineEnabled,
   });
-  // bb-fork(thread-start-ref)
-  const updateEnvironment = useUpdateEnvironment();
   const updateThread = useUpdateThread({
     errorMessage: "Failed to assign parent thread.",
   });
@@ -988,7 +969,7 @@ function ThreadDetailViewInternal(
     panelStateId: threadId,
     syncThreadId: threadId,
     // bb-fork(windows): the shell picked beside the Start terminal action.
-    shellIdForLaunch: terminalShellChoice.shellIdForLaunch,
+    shellIdForLaunch: forkState.terminalShellChoice.shellIdForLaunch,
     createTarget:
       canCreateTerminal && threadId !== undefined
         ? { kind: "thread", threadId }
@@ -1118,7 +1099,8 @@ function ThreadDetailViewInternal(
     parentThread?.title && parentThread.title.trim().length > 0
       ? parentThread.title
       : parentThreadId;
-  const [quietReparent, setQuietReparent] = useQuietReparentPreference();
+  // bb-fork(quiet-reparent): the quiet switch comes through the fork seam.
+  const { quietReparent, setQuietReparent } = forkState;
   const handleAssignParent = useCallback(
     (nextParentThreadId: string | null) => {
       if (!thread || updateThread.isPending) {
@@ -1561,23 +1543,13 @@ function ThreadDetailViewInternal(
         onOpenThreadInfo: openThreadInfo,
         permissionPolicy: "editable",
         // bb-fork(thread-start-ref): the start-commit control above the banner.
-        threadStartControl:
-          canUseGitUi && environment !== undefined ? (
-            <StartCommitPicker
-              environmentId={environment.id}
-              isActive={isSinceThreadStart}
-              isSaving={updateEnvironment.isPending}
-              onSelect={(ref) => {
-                setIsSinceThreadStart(true);
-                updateEnvironment.mutate({
-                  id: environment.id,
-                  startRef: ref,
-                });
-              }}
-              onToggle={() => setIsSinceThreadStart(!isSinceThreadStart)}
-              startRef={threadStartRef}
-            />
-          ) : null,
+        threadStartControl: (
+          <ThreadStartCommitControl
+            canUseGitUi={canUseGitUi}
+            environment={environment}
+            forkState={forkState}
+          />
+        ),
       }}
       environment={environment ?? null}
       presentation={THREAD_DETAIL_SCREEN_PRESENTATION}
@@ -1646,13 +1618,9 @@ function ThreadDetailViewInternal(
             }
             // bb-fork(windows): the shell picker beside Start terminal.
             startTerminalTrailing={
-              <TerminalShellSelector
-                defaultShell={terminalShellChoice.defaultShell}
+              <ThreadTerminalShellControl
                 disabled={terminals.isStarting}
-                isLoading={terminalShellChoice.isLoading}
-                onChange={terminalShellChoice.setSelectedShellId}
-                selectedShellId={terminalShellChoice.selectedShellId}
-                shells={terminalShellChoice.shells}
+                forkState={forkState}
               />
             }
             pluginActions={pluginPanelActions}
@@ -1760,9 +1728,10 @@ function ThreadDetailViewInternal(
         browserTabs={browserTabs}
         threadId={thread.id}
       />
+      {/* bb-fork(file-links): project checkout fallback roots for relative refs. */}
       <ThreadTimelineNavigationProvider
         environmentId={thread.environmentId}
-        fallbackRelativeRoots={fileLinkFallbackRoots}
+        fallbackRelativeRoots={forkState.fileLinkFallbackRoots}
         hostId={environment?.hostId ?? null}
         onOpenLocalFileLink={handleOpenTimelineLocalFileLink}
         resolveMentionLink={resolveMentionLink}
