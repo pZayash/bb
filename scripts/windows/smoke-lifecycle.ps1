@@ -19,6 +19,24 @@ function Wait-NewListener([int]$Port, [int]$Previous) {
     }
     throw "Port $Port did not recover."
 }
+function Get-ListenerRuntime([int]$Port) {
+    $id = Get-ListenerId $Port
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId=$id"
+    if (-not $process) { throw "Listener process $id on port $Port exited before verification." }
+    $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$($process.ParentProcessId)"
+    if (-not $parent -or $parent.CommandLine -notlike '*runtime.mjs*') { throw "Listener $id on port $Port is not a direct child of the isolated test runtime." }
+    return $id
+}
+function Wait-DaemonConnected([int]$Attempts = 240) {
+    for ($attempt = 0; $attempt -lt $Attempts; $attempt++) {
+        try {
+            $status = Invoke-RestMethod -Uri "http://127.0.0.1:$DaemonPort/status" -TimeoutSec 2
+            if ($status.connected) { return }
+        } catch { }
+        Start-Sleep -Milliseconds 500
+    }
+    throw "Host daemon did not report a server connection."
+}
 try {
     $starters = @()
     for ($index = 0; $index -lt 3; $index++) {
@@ -29,23 +47,27 @@ try {
         if (-not $starter.WaitForExit(90000) -or $starter.ExitCode -ne 0) { throw 'Concurrent startup failed.' }
         $starter.Dispose()
     }
-    $serverId = Get-ListenerId $ServerPort
-    $daemonId = Get-ListenerId $DaemonPort
-    $runtime = Get-Content -LiteralPath (Join-Path $data 'bb-app-runtime.json') -Raw | ConvertFrom-Json
-    foreach ($component in @(@{ Name = 'server'; Id = $serverId; Port = $ServerPort }, @{ Name = 'host-daemon'; Id = $daemonId; Port = $DaemonPort })) {
-        $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($component.Id)"
-        if ($process.ParentProcessId -ne $runtime.pid) { throw 'Listener is not a direct child of the isolated test runtime.' }
-        Stop-Process -Id $component.Id
-        $replacement = Wait-NewListener $component.Port $component.Id
-        Write-Output "$($component.Name) crash recovery passed ($($component.Id) -> $replacement)."
-    }
-    $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($runtime.pid)"
-    if ($process.CommandLine -notlike '*scripts/windows/runtime.mjs*') { throw 'Unexpected runtime identity.' }
-    $serverId = Get-ListenerId $ServerPort
-    $daemonId = Get-ListenerId $DaemonPort
-    Stop-Process -Id $runtime.pid
-    [void](Wait-NewListener $ServerPort $serverId)
-    [void](Wait-NewListener $DaemonPort $daemonId)
+    Wait-DaemonConnected
+    $serverId = Get-ListenerRuntime $ServerPort
+    Stop-Process -Id $serverId
+    $serverId = Wait-NewListener $ServerPort $serverId
+    [void](Get-ListenerRuntime $ServerPort)
+    Wait-DaemonConnected
+    Write-Output "server crash recovery passed ($serverId)."
+    $daemonId = Get-ListenerRuntime $DaemonPort
+    Stop-Process -Id $daemonId
+    $daemonId = Wait-NewListener $DaemonPort $daemonId
+    [void](Get-ListenerRuntime $DaemonPort)
+    Wait-DaemonConnected
+    Write-Output "host-daemon crash recovery passed ($daemonId)."
+    $runtimePid = (Get-CimInstance Win32_Process -Filter "ProcessId=$serverId").ParentProcessId
+    Stop-Process -Id $runtimePid
+    $serverId = Wait-NewListener $ServerPort $serverId
+    $daemonId = Wait-NewListener $DaemonPort $daemonId
+    [void](Get-ListenerRuntime $ServerPort)
+    [void](Get-ListenerRuntime $DaemonPort)
+    Wait-DaemonConnected
+    Write-Output "runtime crash recovery passed ($runtimePid)."
     & $launcher -Action Stop @common
     if ($LASTEXITCODE -ne 0) { throw 'Stop failed.' }
     foreach ($port in @($ServerPort, $DaemonPort)) {
@@ -53,8 +75,8 @@ try {
     }
     & $launcher -Action Start @common
     if ($LASTEXITCODE -ne 0) { throw 'Restart failed.' }
-    [void](Get-ListenerId $ServerPort)
-    [void](Get-ListenerId $DaemonPort)
+    [void](Get-ListenerRuntime $ServerPort)
+    [void](Get-ListenerRuntime $DaemonPort)
     Write-Output 'PASS: concurrent start, service crashes, runtime crash, stop, restart.'
 } finally {
     & $launcher -Action Stop @common
