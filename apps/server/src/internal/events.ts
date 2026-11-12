@@ -70,6 +70,8 @@ import {
   applyGeneratedThreadTitle,
   sanitizeGeneratedTitle,
 } from "../services/threads/title-generation.js";
+// bb-fork(windows): gate agent titles that echo injected system instructions.
+import { forkSanitizeAgentThreadTitle } from "./agent-title-echo.fork.js";
 import {
   getInactiveSessionLogFields,
   requireAuthenticatedDaemonSession,
@@ -456,7 +458,11 @@ async function applyEventEffects(
 
       if (event.type === "thread/name/updated") {
         if (event.source === "agent") {
-          const title = sanitizeGeneratedTitle(event.threadName);
+          // bb-fork(windows): drop titles that echo the injected block.
+          const title = forkSanitizeAgentThreadTitle(
+            event.threadName,
+            sanitizeGeneratedTitle,
+          );
           if (title !== null) {
             applyGeneratedThreadTitle(deps, {
               threadId: entry.threadId,

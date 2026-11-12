@@ -125,7 +125,11 @@ Three fork-owned deltas change app behavior on every platform:
   first reported title wins. The ACP bridge (`title-echo.fork.ts`) drops
   `session_info_update` titles that replay the injected block — or unwraps
   the block when real user text follows it — so bb's first-message title
-  fallback or a later honest agent title is used instead.
+  fallback or a later honest agent title is used instead. Plugin bridges
+  bundle their own copy of the bridge code from the published SDK, which
+  never carries that filter, so the server also drops or unwraps
+  agent-reported titles that start with `<system_instructions>` before
+  applying them (`apps/server/src/internal/agent-title-echo.fork.ts`).
 
 ## Terminal shells
 
