@@ -148,3 +148,40 @@ the fork delta small and merges cheap with these rules.
   fork's `virtual-store-dir-max-length` for the Windows long-path limit (see
   [docs/windows.md](docs/windows.md)). If upstream adds its own `.npmrc`, keep
   both settings instead of choosing a side.
+
+<!-- kit-section: kit-agent-loop, hash: cfef0bb59b573cc8, source: harness -->
+## Старт сессии и guard-правила (kit)
+
+В начале сессии выполни:
+
+```bash
+python harness/tools/kit-agent/kit_agent.py session-start
+```
+
+Пустой вывод — всё в порядке. Непустой — следуй подсказкам (обычно: обновить
+harness и `bash harness/scripts/bootstrap-kit.sh .`, или закоммитить bump
+gitlink).
+
+Перед bash-командами с `git`/`rm` по путям kit (`harness/`, `.cursor/`, `.pi/`,
+`.agents/`, `.claude/`) и перед `openspec init` / `rtk init` проверяй команду:
+
+```bash
+python harness/tools/kit-agent/kit_agent.py check-command "<команда>"
+```
+
+exit 1 — команда запрещена (вывод объясняет канон, например promote вместо
+blob). `WARN` — можно, но прочти предупреждение. В pi эти
+правила применяет автоматика (`.pi/extensions/kit-hooks.ts`),
+и каждое срабатывание пишется friction-сигналом в
+`memory/rule-friction/` (канон: `memory-format.md` § Разлад, разбор —
+skill `evolve`). Session-start отдельно напомнит про неразобранные сигналы.
+<!-- /kit-section: kit-agent-loop -->
+
+<!-- kit-section: kit-harness, hash: d7d1ff7ba250500c, source: harness -->
+## Harness (kit)
+
+Общие правила, skills и tools — submodule [harness/](harness/README.md).
+Диагностика: `bash harness/scripts/kit-doctor.sh .`
+Файлы kit не коммитим как обычные файлы проекта; изменения в kit — promote
+через skill `harness-promote` (коммит внутри `harness/` → bump gitlink).
+<!-- /kit-section: kit-harness -->

@@ -110,3 +110,38 @@ plans/
 .bb/merge-log/
 # bb-fork(windows): review scratch artifacts, not part of the product.
 .bb/review/
+
+# >>> kit-managed: begin (bootstrap-kit) >>>
+/.agents/skills
+/.claude/commands
+/.claude/skills
+/.cursor/commands/docs-progressive-disclosure-refactor.md
+/.cursor/rules/caveman.mdc
+/.cursor/rules/commit-hygiene.mdc
+/.cursor/rules/cursor-rules-self-improvement.mdc
+/.cursor/rules/cursor-rules.mdc
+/.cursor/rules/markdown-formatting.mdc
+/.cursor/rules/ponytail.mdc
+/.cursor/rules/project-file-links.mdc
+/.cursor/skills/architect-apply
+/.cursor/skills/caveman
+/.cursor/skills/close-chat
+/.cursor/skills/explore
+/.cursor/skills/handoff
+/.cursor/skills/harness-promote
+/.cursor/skills/orchestrated-child
+/.cursor/skills/orchestrator
+/.cursor/skills/plan-creation-rules
+/.cursor/skills/ponytail
+/.cursor/skills/retro
+/.cursor/skills/review
+/.cursor/skills/review-request
+/.pi/extensions
+/.pi/prompts
+/.pi/skills
+/tools/docs-links
+/tools/git-partial-stage.py
+/tools/sandbox
+/.kit/fallback.txt
+/.kit/lock
+# <<< kit-managed: end <<<

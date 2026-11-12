@@ -1,0 +1,5 @@
+# bb-fork(windows): consumer-owned exclusions for 1c-agent-kit overlay.
+# bb has no OpenSpec pipeline — drop openspec-* skills.
+openspec-apply-change
+openspec-archive-change
+openspec-propose
