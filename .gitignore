@@ -129,6 +129,9 @@ plans/
 /.cursor/skills/explore
 /.cursor/skills/handoff
 /.cursor/skills/harness-promote
+/.cursor/skills/openspec-apply-change
+/.cursor/skills/openspec-archive-change
+/.cursor/skills/openspec-propose
 /.cursor/skills/orchestrated-child
 /.cursor/skills/orchestrator
 /.cursor/skills/plan-creation-rules

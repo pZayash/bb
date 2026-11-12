@@ -234,3 +234,27 @@ editor `aria-keyshortcuts` advertise the new chord. The flip switches are
 present on Windows dev machines, while the bundled `prebuilds/win32-x64.node`
 is what actually loads at runtime — so the build is pure failure risk here.
 12.x installs through `prebuild-install` without a toolchain.
+
+## Agent harness (1c-agent-kit)
+
+The fork carries the `1c-agent-kit` agent harness as a git submodule at
+`harness/` (node stack; see `.kit.json`). Layout links live under `.cursor/`,
+`.agents/`, `.claude/`, `.pi/`, and `tools/` — all junctions into `harness/`
+managed by `harness/scripts/bootstrap-kit.ps1`; the link list is the
+`kit-managed` block in `.gitignore`. Re-run layout and diagnostics:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File harness/scripts/bootstrap-kit.ps1 -ConsumerRoot . -SkipDeps
+bash harness/scripts/kit-doctor.sh .   # use Git Bash, not WSL bash
+```
+
+Host dependencies beyond the pnpm toolchain are global and not pinned by the
+repo: `rtk` and `@fission-ai/openspec@1.2.0` (`npm i -g @fission-ai/openspec@1.2.0`).
+
+OpenSpec covers fork-originated changes only — upstream merges arrive
+un-specced. The `openspec/` scaffold (project.md, `changes/`, `specs/`) is
+maintained manually: never run `openspec init` here. `.claude/skills`,
+`.pi/skills`, `.pi/prompts`, and `.claude/commands` are junctions into
+`.cursor/`, so init would write through the links and drop vendor skills on
+top of kit-managed ones.

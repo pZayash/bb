@@ -1,5 +1,4 @@
 # bb-fork(windows): consumer-owned exclusions for 1c-agent-kit overlay.
-# bb has no OpenSpec pipeline — drop openspec-* skills.
-openspec-apply-change
-openspec-archive-change
-openspec-propose
+# (empty — all kit skills enabled, including openspec-*; OpenSpec CLI 1.2.x
+# is a host dep, scaffold in openspec/ is manual — never `openspec init`,
+# it writes through .claude/.pi junctions and clobbers kit-managed dirs)
