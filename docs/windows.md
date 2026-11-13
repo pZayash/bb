@@ -78,7 +78,7 @@ lookup that cannot read a `package.json` at a path of 260 characters or more
 (Windows `MAX_PATH`) and silently reports it as missing. In a deep checkout or
 worktree this breaks every tool that loads Vite 8 before doing any work:
 
-```
+```text
 TypeError [ERR_PACKAGE_IMPORT_NOT_DEFINED]: Package import specifier
 "#module-sync-enabled" is not defined imported from
 …\node_modules\.pnpm\vite@…\node_modules\vite\dist\node\chunks\node.js
@@ -215,11 +215,11 @@ are POSIX-first.
 This fork changes the prompt box submit keys so a missed keystroke cannot send
 a half-written message:
 
-| Key                | Action                                                                                       |
-| ------------------ | -------------------------------------------------------------------------------------------- |
-| Enter, Shift+Enter | Insert a newline                                                                             |
-| Ctrl+Alt+Enter     | Primary submit — send, steer, or queue the draft, whichever the `enter` action does upstream |
-| Ctrl+Enter         | Modifier action (steer/queue), unchanged                                                     |
+| Key                | Action                                          |
+| ------------------ | ----------------------------------------------- |
+| Enter, Shift+Enter | Insert a newline                                |
+| Ctrl+Alt+Enter     | Primary submit (what `enter` does upstream)     |
+| Ctrl+Enter         | Modifier action (steer/queue), unchanged        |
 
 The `steerActiveThreadOnEnter` setting still picks which action is primary; it
 now binds to Ctrl+Alt+Enter instead of Enter. Submit button titles and the
@@ -248,6 +248,16 @@ powershell -NoProfile -ExecutionPolicy Bypass `
   -File harness/scripts/bootstrap-kit.ps1 -ConsumerRoot . -SkipDeps
 bash harness/scripts/kit-doctor.sh .   # use Git Bash, not WSL bash
 ```
+
+POSIX tools on a native Windows shell are shadowed by System32 binaries:
+`bash` launches WSL (`C:\Windows\System32\bash.exe`) and `find` runs
+`FIND.exe`. Invoke Git Bash explicitly (`C:\Program Files\Git\bin\bash.exe`)
+and call Node tooling as `C:\nvm4w\nodejs\npm.cmd` / `npx.cmd` — bare
+`npm`/`npx` are not on the Git Bash PATH.
+
+When several bb threads work the same project checkout, their commits share
+one working tree. Stage files by name — a blanket `git add -A` sweeps another
+thread's in-progress edits into your commit.
 
 Host dependencies beyond the pnpm toolchain are global and not pinned by the
 repo: `rtk` and `@fission-ai/openspec@1.2.0` (`npm i -g @fission-ai/openspec@1.2.0`).

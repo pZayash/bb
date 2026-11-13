@@ -148,3 +148,6 @@ plans/
 /.kit/fallback.txt
 /.kit/lock
 # <<< kit-managed: end <<<
+
+# bb-fork(windows): operator session handoff scratch, not part of the product.
+HANDOFF.md
