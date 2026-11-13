@@ -1,9 +1,19 @@
 #requires -Version 7.0
 param(
-    [ValidateRange(1024, 65535)][int]$ServerPort = 49886,
-    [ValidateRange(1024, 65535)][int]$DaemonPort = 49887
+    [ValidateRange(0, 65535)][int]$ServerPort = 0,
+    [ValidateRange(0, 65535)][int]$DaemonPort = 0
 )
 $ErrorActionPreference = 'Stop'
+function Get-FreePort {
+    $probe = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+    $probe.Start()
+    try { return $probe.LocalEndpoint.Port } finally { $probe.Stop() }
+}
+# bb-fork(windows): OS-assigned ports avoid Hyper-V/WSL excluded port ranges
+# that intermittently cover the previous fixed 49886/49887 on CI runners.
+if ($ServerPort -eq 0) { $ServerPort = Get-FreePort }
+if ($DaemonPort -eq 0) { $DaemonPort = Get-FreePort }
+while ($DaemonPort -eq $ServerPort) { $DaemonPort = Get-FreePort }
 $launcher = Join-Path $PSScriptRoot 'bb.ps1'
 $data = Join-Path ([IO.Path]::GetTempPath()) ('bb-windows-smoke-' + [Guid]::NewGuid().ToString('N'))
 $common = @{ DataDir = $data; ServerPort = $ServerPort; DaemonPort = $DaemonPort }
