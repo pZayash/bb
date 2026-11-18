@@ -14,6 +14,8 @@ import {
 import { enrichGitDiffFileForContext } from "@bb/shared-ui/git-diff/parsing";
 // bb-fork(file-diff): whole-file rendering for the file diff view.
 import { buildFullFileDiff } from "./full-file-diff.fork";
+// bb-fork(occurrence-highlight): word/selection highlight in the diff.
+import { useWordHighlight } from "./word-highlight.fork";
 import { useResolvedCodeThemePair } from "@/lib/code-theme";
 import { usePreferredTheme } from "@/hooks/useTheme";
 import { cn } from "@bb/shared-ui/lib/utils";
@@ -78,6 +80,8 @@ function BbDiff({
       ? DEFAULT_DIFF_EXPANSION_LINE_COUNT
       : undefined;
   const containerRef = useRef<HTMLDivElement>(null);
+  // bb-fork(occurrence-highlight): word/selection highlight in the diff.
+  useWordHighlight(containerRef);
   const codeTheme = useResolvedCodeThemePair();
   const themeType = usePreferredTheme();
   const buildSelectionText = useCallback(
@@ -110,6 +114,8 @@ function BbDiff({
     () => ({
       diffStyle: view,
       overflow,
+      // bb-fork(occurrence-highlight): emit data-char token spans for matching.
+      useTokenTransformer: true,
       disableLineNumbers: !showLineNumbers,
       disableFileHeader: true,
       ...(expansionLineCount === undefined ? {} : { expansionLineCount }),

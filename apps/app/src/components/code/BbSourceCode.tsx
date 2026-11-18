@@ -37,6 +37,8 @@ import {
   type SourceCodeTruncation,
 } from "./source-code-budget";
 import type { BbSourceCodeProps } from "./code-rendering";
+// bb-fork(occurrence-highlight): word/selection highlight in the file view.
+import { useWordHighlight } from "./word-highlight.fork";
 
 interface SourceCodeWorkerPoolStats {
   managerState: "waiting" | "initializing" | "initialized";
@@ -246,6 +248,8 @@ function BbSourceCode({
   const preferredTheme = usePreferredTheme();
   const codeTheme = useResolvedCodeThemePair();
   const containerRef = useRef<HTMLDivElement>(null);
+  // bb-fork(occurrence-highlight): word/selection highlight in the file view.
+  useWordHighlight(containerRef);
   const isWorkerPoolReady = useRequirePierreWorkerPool();
   const workerPool = usePierreWorkerPool();
   const lastWorkerPoolStatsKeyRef = useRef<string | null>(null);
@@ -273,6 +277,8 @@ function BbSourceCode({
       themeType: preferredTheme,
       theme: codeTheme,
       overflow,
+      // bb-fork(occurrence-highlight): emit data-char token spans for matching.
+      useTokenTransformer: true,
       disableFileHeader: true,
       enableGutterUtility: onSelectionAddToChat !== undefined,
       enableLineSelection:
