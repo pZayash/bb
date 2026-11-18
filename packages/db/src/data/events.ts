@@ -4855,6 +4855,8 @@ interface ListStoredTaskTurnRequestEventsArgs {
   threadId: string;
 }
 
+// bb-fork(thread-row-metadata): latest stored turn request per thread — the
+// sidebar resolves each row's model/reasoning the way the next turn would.
 export function listLastStoredTurnRequestEvents(
   db: DbQueryConnection,
   args: ListLastStoredTurnRequestEventsArgs,

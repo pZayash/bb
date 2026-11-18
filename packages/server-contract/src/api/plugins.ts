@@ -384,6 +384,8 @@ export const pluginSettingDescriptorSchema = z.discriminatedUnion("type", [
       type: z.literal("string"),
       secret: z.literal(true).optional(),
       experimental_multiline: z.boolean().optional(),
+      // bb-fork(compaction-model): bind a string setting to a provider's model
+      // catalog picker.
       experimental_model: z
         .object({ providerId: z.string().min(1) })
         .strict()

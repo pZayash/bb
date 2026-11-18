@@ -4,9 +4,7 @@ import {
   listActiveBackgroundTaskCountsByThreadIds,
   listLatestClosedSessionsForHosts,
   listLatestThreadStateEventRowsByThreadIds,
-  listLastStoredTurnRequestEvents,
   listOpenTurnInputAcceptedRowsByThreadIds,
-  listProjectExecutionDefaultsByProjectIds,
   listStoredClientTurnRequestRowsByKeys,
   type DbConnection,
   type HostDaemonSessionRow,
@@ -38,7 +36,8 @@ import type { ProviderRegistryService } from "../providers/provider-registry.js"
 import { listQueuedThreadMessageCountsByThreadIds } from "@bb/db";
 import { resolveEnvironmentWorkspaceDisplayKind } from "../environments/environment-response.js";
 import { canThreadSpawnChild } from "./thread-parent.js";
-import { parseStoredTurnRequestEvent } from "./thread-events.js";
+// bb-fork(thread-row-metadata): resolve the sidebar model/reasoning per thread.
+import { buildThreadExecutionByThreadId } from "./thread-execution-resolution.fork.js";
 import { canRestoreThreadEnvironment } from "./thread-environment-restore.js";
 import {
   canThreadEditMessages,
@@ -539,61 +538,6 @@ function buildThreadQueuedWorkByThreadId(
   return result;
 }
 
-interface ThreadExecutionResolution {
-  model: string | null;
-  reasoningLevel: ReasoningLevel | null;
-}
-
-// bb-fork(windows): the sidebar shows the model and its reasoning level, so the
-// bb-fork(windows): row needs both resolved the way the next turn resolves them.
-function buildThreadExecutionByThreadId(
-  deps: ThreadRuntimeDisplayDeps,
-  threads: readonly ThreadWithPendingInteractionState[],
-): Map<string, ThreadExecutionResolution> {
-  const executionByThreadId = new Map<string, ThreadExecutionResolution>();
-  if (threads.length === 0) {
-    return executionByThreadId;
-  }
-  const defaultsByProjectId = listProjectExecutionDefaultsByProjectIds(
-    deps.db,
-    { projectIds: [...new Set(threads.map((thread) => thread.projectId))] },
-  );
-  const lastExecutionByThreadId = new Map<string, ThreadExecutionResolution>();
-  for (const row of listLastStoredTurnRequestEvents(deps.db, {
-    threadIds: threads.map((thread) => thread.id),
-  })) {
-    try {
-      const execution = parseStoredTurnRequestEvent(row).execution;
-      lastExecutionByThreadId.set(row.threadId, {
-        model: execution.model,
-        reasoningLevel: execution.reasoningLevel,
-      });
-    } catch {
-      continue;
-    }
-  }
-  for (const thread of threads) {
-    const projectDefault = defaultsByProjectId.get(thread.projectId);
-    const projectApplies = projectDefault?.providerId === thread.providerId;
-    const lastExecution = lastExecutionByThreadId.get(thread.id);
-    const model =
-      thread.modelOverride ??
-      lastExecution?.model ??
-      (projectApplies ? projectDefault?.model : undefined);
-    const reasoningLevel =
-      thread.reasoningLevelOverride ??
-      lastExecution?.reasoningLevel ??
-      (projectApplies ? projectDefault?.reasoningLevel : undefined);
-    if (model !== undefined || reasoningLevel !== undefined) {
-      executionByThreadId.set(thread.id, {
-        model: model ?? null,
-        reasoningLevel: reasoningLevel ?? null,
-      });
-    }
-  }
-  return executionByThreadId;
-}
-
 export function toThreadListEntryResponses(
   deps: ThreadPromptBannerDeps,
   args: ToThreadListEntryResponsesArgs,
@@ -626,7 +570,7 @@ export function toThreadListEntryResponses(
     args.threads,
   );
   const executionByThreadId = buildThreadExecutionByThreadId(
-    deps,
+    deps.db,
     args.threads,
   );
   return args.threads.map((thread) => {

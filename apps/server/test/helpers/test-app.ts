@@ -119,6 +119,7 @@ function createTestLogger() {
     debug(): void {},
     error(): void {},
     info(): void {},
+    // bb-fork(log-noise): the fork demotes some debug logs to trace.
     trace(): void {},
     warn(): void {},
   };

@@ -302,6 +302,7 @@ describe("getProviderStates", () => {
               supportsNativeUserQuestion: false,
               supportsFork: false,
               supportsSessionRewind: false,
+              // bb-fork(compaction-model): the fork exposes manual compaction.
               supportsManualCompaction: true,
               modelCatalogScope: "workspace",
               permissionModes: ["full"],

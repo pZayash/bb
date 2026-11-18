@@ -412,6 +412,7 @@ export function optimisticallyInsertThread(
     environmentWorkspaceDisplayKind: "other",
     runtime: thread.runtime,
     hasPendingInteraction: false,
+    // bb-fork(thread-row-metadata): list entries carry resolved model/reasoning.
     model: null,
     reasoningLevel: null,
     pinSortKey: null,

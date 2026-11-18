@@ -48,7 +48,6 @@ import type {
   BridgeToolCallContent,
   BridgeToolCallImage,
 } from "@bb/provider-bridge-protocol/bridge-kit";
-import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { promises as fs, readFileSync, statSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
@@ -141,11 +140,6 @@ import {
   forkContextUsageBlock,
   forkTrackContextUsage,
 } from "./context-usage.fork.js";
-// bb-fork(windows): filter session titles that echo injected instructions
-import {
-  forkFilterTitleEchoDeltas,
-  forkSystemInstructionsBlock,
-} from "./title-echo.fork.js";
 import type { AcpAgentCapabilities } from "../client/capabilities.js";
 import {
   createAcpSessionModel,
@@ -416,12 +410,9 @@ function emitForSession(
 ): void {
   sendThreadDeltas(
     session.bbThreadId,
-    forkFilterTitleEchoDeltas(
-      session,
-      session.translator.translateAcpEvent(
-        { jsonrpc: "2.0", method, params },
-        { threadId: session.bbThreadId },
-      ),
+    session.translator.translateAcpEvent(
+      { jsonrpc: "2.0", method, params },
+      { threadId: session.bbThreadId },
     ),
   );
 }
@@ -866,37 +857,36 @@ async function authenticateAcpAgent(args: {
 async function loadAgentModelCatalog(
   listCommand: AcpAgentCommandParam,
 ): Promise<AgentModelCatalog | null> {
+  // bb-fork(windows): route .cmd launchers and node-shebang scripts so they
+  // spawn on Windows; execPortableFile keeps the managed-process semantics.
   const launch = resolveAcpAgentLaunch(listCommand.command, listCommand.args);
-  const stdout = await new Promise<string | null>((resolveExec, rejectExec) => {
-    execFile(
-      launch.command,
-      launch.args,
-      {
-        ...(listCommand.cwd !== undefined ? { cwd: listCommand.cwd } : {}),
-        shell: launch.shell,
-        env: {
-          ...withoutBridgeRuntimeEnv(process.env),
-          ...(listCommand.envVars ?? {}),
-        },
-        timeout: MODEL_LIST_TIMEOUT_MS,
-      },
-      (error, out, stderr) => {
-        if (!error) {
-          resolveExec(out);
-          return;
-        }
-        if (isMissingExecutableError(error)) {
-          rejectExec(error);
-          return;
-        }
-        if (isAuthRequiredModelListError(error, out, stderr)) {
-          rejectExec(new AcpModelListAuthRequiredError());
-          return;
-        }
-        resolveExec(null);
-      },
-    );
-  });
+  const stdout = await execPortableFile(launch.command, launch.args, {
+    cwd: listCommand.cwd ?? process.cwd(),
+    env: {
+      ...withoutBridgeRuntimeEnv(process.env),
+      ...(listCommand.envVars ?? {}),
+    },
+    maxBuffer: 1024 * 1024,
+    timeout: MODEL_LIST_TIMEOUT_MS,
+  }).then(
+    ({ stdout }) => stdout,
+    (error: unknown) => {
+      if (isMissingExecutableError(error)) throw error;
+      const output = z
+        .object({ stdout: z.string(), stderr: z.string() })
+        .safeParse(error);
+      if (
+        isAuthRequiredModelListError(
+          error,
+          output.success ? output.data.stdout : "",
+          output.success ? output.data.stderr : "",
+        )
+      ) {
+        throw new AcpModelListAuthRequiredError();
+      }
+      return null;
+    },
+  );
   const key = JSON.stringify(listCommand);
   if (stdout === null) {
     process.stderr.write(
@@ -1831,8 +1821,7 @@ function buildPromptContentBlocks(
     session.pendingInstructions = undefined;
     blocks.push({
       type: "text",
-      // bb-fork(windows): tracked so echoed session titles can be filtered.
-      text: forkSystemInstructionsBlock(session, instructions),
+      text: `<system_instructions>\n${instructions}\n</system_instructions>`,
     });
   }
 

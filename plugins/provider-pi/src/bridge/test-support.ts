@@ -1,6 +1,6 @@
 import { ChildProcess } from "node:child_process";
 import { channel } from "node:diagnostics_channel";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,28 +31,6 @@ export const FULL_PERMISSION_OPTIONS = {
 const INITIALIZE_ID = 100;
 const FIRST_HARNESS_REQUEST_ID = 1_000_000;
 const RESPONSE_DEADLINE_MS = 60_000;
-
-async function removeWorkspaceDir(workspaceDir: string): Promise<void> {
-  const deadline = Date.now() + 2_000;
-  for (;;) {
-    try {
-      rmSync(workspaceDir, {
-        recursive: true,
-        force: true,
-        maxRetries: 10,
-        retryDelay: 100,
-      });
-      return;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EBUSY") throw error;
-    }
-    if (Date.now() >= deadline) {
-      rmSync(workspaceDir, { recursive: true, force: true });
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-}
 
 const threadDeltaParamsSchema = z.object({
   threadId: z.string(),

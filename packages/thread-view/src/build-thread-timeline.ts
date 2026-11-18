@@ -37,6 +37,7 @@ import type {
   EventProjectionUserMessage,
 } from "./event-projection-types.js";
 import { assertNever } from "./assert-never.js";
+// bb-fork(windows): relativize Windows workspace paths, not only POSIX ones.
 import { relativizeWorkspacePathFork } from "./relativize-workspace-path.fork.js";
 import {
   durationToCompactString,
