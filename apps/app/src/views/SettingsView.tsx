@@ -86,6 +86,7 @@ import {
 import { useSystemConfig } from "@/hooks/queries/system-queries";
 import { useWorkspaceOpenTargets } from "@/hooks/useWorkspaceOpenTargets";
 import { isDesktopBrowserAvailable } from "@/lib/bb-desktop";
+import { showMutationErrorToast } from "@/lib/mutation-errors";
 import {
   FAVICON_COLOR_VALUES,
   getFaviconGlyphHref,
@@ -486,6 +487,23 @@ function LocalOpenTargetPreferenceControl({
   );
 }
 
+async function requestLocalOpenTargetAccess(
+  onRequestAccess: () => Promise<boolean>,
+  setPending: (pending: boolean) => void,
+): Promise<void> {
+  setPending(true);
+  try {
+    await onRequestAccess();
+  } catch (error) {
+    showMutationErrorToast({
+      error,
+      fallbackMessage: "Failed to connect to bb on this device",
+    });
+  } finally {
+    setPending(false);
+  }
+}
+
 export function LocalOpenTargetSettingsSection({
   accessState,
   directoryTargetId,
@@ -502,14 +520,8 @@ export function LocalOpenTargetSettingsSection({
     return null;
   }
 
-  const handleRequestAccess = async () => {
-    setAccessRequestPending(true);
-    try {
-      await onRequestAccess();
-    } finally {
-      setAccessRequestPending(false);
-    }
-  };
+  const handleRequestAccess = () =>
+    requestLocalOpenTargetAccess(onRequestAccess, setAccessRequestPending);
 
   if (!hasDaemon) {
     const accessDenied = accessState === "denied";
@@ -561,7 +573,7 @@ export function LocalOpenTargetSettingsSection({
             variant="outline"
             size="sm"
             disabled={accessRequestPending || accessDenied}
-            onClick={handleRequestAccess}
+            onClick={() => void handleRequestAccess()}
           >
             {buttonLabel}
           </Button>
@@ -1119,6 +1131,11 @@ const EXPERIMENT_DEFINITIONS: Record<
   ExperimentKey,
   { label: string; description: string }
 > = {
+  agentCpuPriority: {
+    label: "Lower agent CPU priority",
+    description:
+      "Keep bb responsive when agents saturate the CPU. Agent processes, setup and teardown scripts, and the builds and tests they launch run at a lower CPU priority; on macOS the bb server and machine daemon also get app-level scheduling. Terminals keep normal priority. Turning it on or off takes effect after restarting bb, including restarts for updates.",
+  },
   compactExpiredCache: {
     label: "Compact before resuming expired sessions",
     description:
@@ -1129,10 +1146,10 @@ const EXPERIMENT_DEFINITIONS: Record<
     description:
       "When you read a thread on any device, remove its notifications from your phones and tablets and from open bb windows and tabs. Phones need an app version that supports it.",
   },
-  narrowPluginCss: {
-    label: "Faster plugin styles",
+  keyedPluginCss: {
+    label: "Faster styles inside plugins",
     description:
-      "Load each plugin's stylesheet so it only matches that plugin's own UI, which makes style updates cheaper on pages with many plugins. Plugins built with an old portal-scope helper keep the slower stylesheet. Applies after a reload.",
+      "Load each plugin's stylesheet so the browser can skip it inside other plugins' UI, such as the sidebar and composer, which makes style updates there cheaper. bb marks plugin UI that a plugin labeled the old way so its styles still apply. Applies after a reload.",
   },
   performanceDiagnostics: {
     label: "Server performance diagnostics",
@@ -1173,6 +1190,11 @@ const EXPERIMENT_DEFINITIONS: Record<
     label: "Update when idle",
     description:
       "Adds a Restart and update bb automatically switch to the Updates page. While it is on, bb checks for updates every hour and restarts into a new version once no thread is running, waiting again if a thread starts before it restarts. Skip this version keeps a version from installing until a newer one appears. bb updates app apply --when-idle waits for threads once from the CLI.",
+  },
+  walCheckpointWorker: {
+    label: "Background database checkpoints",
+    description:
+      "Copy recent writes into bb's database files on a background thread instead of during a save, so heavy writing doesn't pause the server. Applies immediately.",
   },
 };
 export function visibleExperimentKeys(
@@ -1326,7 +1348,7 @@ export function SettingsView() {
         disabled={systemConfigQuery.data === undefined}
         generalSettings={generalSettings}
         onGeneralSettingsChange={(next) =>
-          updateGeneralSettingsMutation.mutateAsync(next)
+          updateGeneralSettingsMutation.mutateAsync(next).catch(() => undefined)
         }
       />
     );
@@ -1356,7 +1378,7 @@ export function SettingsView() {
         onAppearanceThemePrefetch={appThemePreview.prefetchThemes}
         onAppearanceThemePreview={appThemePreview.previewTheme}
         onCreatePalette={() =>
-          navigate(getRootComposeRoutePath(), {
+          void navigate(getRootComposeRoutePath(), {
             state: {
               focusPrompt: true,
               initialPrompt: CREATE_CUSTOM_PALETTE_PROMPT,

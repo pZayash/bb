@@ -1,9 +1,9 @@
 import {
   archiveThread,
   getThread,
-  listEvents,
   listQueuedThreadMessages,
 } from "@bb/db";
+import { listEvents } from "@bb/db/testing";
 import { queueParentSystemMessage } from "../../src/services/threads/parent-system-messages.js";
 import { describe, expect, it } from "vitest";
 import {

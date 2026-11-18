@@ -189,6 +189,7 @@ export const hostDaemonSessionOpenRequestSchema = z
     dataDir: z.string().min(1),
     localApiPort: z.number().int().min(1).max(65_535).nullable().default(null),
     protocolVersion: z.number().int().positive(),
+    turnCommandThreadIds: z.array(z.string().min(1)).default([]),
     activeThreads: z.array(hostDaemonActiveThreadSchema),
     openThreadWork: z.array(hostDaemonOpenThreadWorkSchema),
     undeliveredEventThreadIds: z.array(z.string().min(1)).default([]),
@@ -249,6 +250,7 @@ export const hostDaemonSessionOpenResponseSchema = z
     sessionId: z.string().min(1),
     machineEnvironment: machineEnvironmentSchema,
     idleProviderSessionTimeoutMinutes: idleProviderSessionTimeoutMinutesSchema,
+    agentCpuPriority: z.boolean(),
     heartbeatIntervalMs: z.number().int().positive(),
     leaseTimeoutMs: z.number().int().positive(),
     watchSet: hostDaemonWatchSetSchema.default({
@@ -731,6 +733,7 @@ export const hostDaemonServerWsMessageSchema = z.discriminatedUnion("type", [
       type: z.literal("provider-session-policy.replace"),
       idleProviderSessionTimeoutMinutes:
         idleProviderSessionTimeoutMinutesSchema,
+      agentCpuPriority: z.boolean(),
     })
     .strict(),
   z

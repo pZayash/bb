@@ -186,12 +186,13 @@ Experiments: `bb settings experiment <key> <true|false>` toggles a default-off
 experiment (Settings → Experiments). Experiments that
 gate a feature are documented with it: `serverMove` in `bb guide machines`,
 `performanceDiagnostics` under Server performance diagnostics below.
+`agentCpuPriority` runs agent processes and setup and teardown scripts at a
+lower CPU priority (and, on macOS, the bb server and daemon with application
+scheduling) so bb stays responsive under heavy agent load; it takes full effect
+after restarting bb, and terminals keep normal priority.
 `compactExpiredCache` offers a Compact chip in the composer when an idle
 thread's prompt cache has expired and its context holds at least 100k tokens;
 see `bb guide thread-messaging` for `--compact-first`.
-`narrowPluginCss` serves each plugin a stylesheet that matches only that
-plugin's own UI, which makes style updates cheaper with many plugins; it
-applies after a reload. It defaults on for early adopters.
 `resumeThreadsAfterRestart` retries a turn that a quit, crash, update, or
 machine restart cut off, and wakes idle threads whose background work it
 stopped, a few seconds after the machine's daemon comes back; see `bb guide
@@ -199,6 +200,9 @@ thread-lifecycle`.
 `dismissReadNotifications` removes a thread's push, web, and desktop
 notifications once the thread is read on any client. It defaults on for early
 adopters.
+`keyedPluginCss` loads plugin stylesheets so that style updates inside other
+plugins' UI, such as the sidebar and composer, skip them; it applies after a
+reload and defaults on for early adopters.
 `pluginUpdates` lists plugin updates on Settings → Updates with Update and
 Update all, and counts them in the sidebar updates badge; see `bb guide plugins`.
 `skipFocusedThreadNotifications` skips the web and desktop system notification
@@ -214,9 +218,12 @@ request number. It defaults on for early adopters.
 Settings → Updates (`bb updates app auto on|off`) that has bb check for updates
 every hour and restart into a new version once no thread is running, and
 enables `bb updates app apply --when-idle`; see `bb guide machines`. It defaults on for early adopters.
+`walCheckpointWorker` copies recent writes into bb's SQLite database files on a
+background thread instead of during a commit, so heavy writing does not stall
+the server. It applies live.
 `bb settings general earlyAdopter on` (Settings → Experiments → Become an early
 adopter) turns on the experiments marked Early adopter, currently
-`compactExpiredCache`, `dismissReadNotifications`, `narrowPluginCss`,
+`compactExpiredCache`, `dismissReadNotifications`, `keyedPluginCss`,
 `pluginUpdates`, `skipFocusedThreadNotifications`, `threadRowMetadata`, and
 `updateWhenIdle`; an
 experiment you set yourself keeps your value.
@@ -450,6 +457,8 @@ Start with `bb-app --perf-diagnostics` or `BB_PERF_DIAGNOSTICS=1` (restart to
 change), then run `bb settings experiment performanceDiagnostics true|false`.
 Collection needs both; it adds overhead and writes CPU profiles every 30 seconds
 to `$BB_DATA_DIR/logs/performance/` (kept 12 hours), which contain local paths.
+It also logs `Slow SQLite query plan` warnings to the server log for queries
+whose plan walks a large table or picks a weaker index.
 Open a `.cpuprofile` in Chrome DevTools.
 
 Desktop Settings → Server → **Show This Mac** (or **Show This Computer** off macOS)
@@ -475,4 +484,5 @@ provider CLIs, and agent shells keep the user's Node networking defaults. Config
 include `localhost,127.0.0.1,::1` in `NO_PROXY`. `NODE_EXTRA_CA_CERTS` adds a PEM
 bundle. `NODE_USE_SYSTEM_CA=0` and `NODE_USE_ENV_PROXY=0` opt out of the defaults.
 Restart bb after changes. Proxy support requires Node 22.21+, 24.5+, or 26;
-custom socket/agent libraries, including daemon WebSockets, can still bypass it.
+daemon WebSockets follow it, but other custom socket/agent libraries can still
+bypass it.

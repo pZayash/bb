@@ -8,6 +8,7 @@ import {
 import { operationEnvironment } from "./operation-environment.js";
 import type { HostDaemonContributedEnvEntry } from "@bb/host-daemon-contract";
 import {
+  deprioritizeAgentWorkload,
   execPortableFile,
   isProcessGroupAlive,
   killProcessGroup,
@@ -238,6 +239,7 @@ async function runLifecycleScript(
     detached: supportsProcessGroups(),
     env: scriptEnv,
   });
+  deprioritizeAgentWorkload(child.pid);
   const gitBash =
     windowsBashPath === null
       ? null
@@ -283,7 +285,7 @@ async function runLifecycleScript(
       ...gitBash,
       processGroup: gitBashProcessGroup,
     });
-    windowsTreeStop
+    void windowsTreeStop
       .catch(() => undefined)
       .then(() => delay(WINDOWS_OUTPUT_CLOSE_GRACE_MS))
       .then(reportOutputLeftOpen, reportOutputLeftOpen);

@@ -136,6 +136,13 @@ function isPiCompactionPromptRejection(error: unknown): boolean {
     error.message.startsWith(PI_COMPACTION_PROMPT_REJECTION)
   );
 }
+
+function promptReplyMayBeHandled(reply: unknown): boolean {
+  if (typeof reply !== "object" || reply === null || !("disposition" in reply))
+    return true;
+  return reply.disposition === "handled";
+}
+
 function readinessTimeoutMs(): number {
   const configured = Number(process.env.BB_PI_BRIDGE_READINESS_TIMEOUT_MS);
   return Number.isFinite(configured) && configured > 0 ? configured : 60_000;
@@ -248,6 +255,10 @@ export class PiRpcSession {
     fields: Record<string, unknown>,
   ): void {
     this.child?.respondToExtensionUi(id, fields);
+  }
+
+  hasExited(): boolean {
+    return this.child?.exited ?? false;
   }
 
   getLiveModel(): PiRpcSessionState["model"] | undefined {
@@ -419,8 +430,11 @@ export class PiRpcSession {
     }
     this.isProcessing = true;
     const tracked = this.trackPendingInputConsumption("followUp");
+    const runsStartedBeforeDispatch = this.agentRunsStarted;
+    let pendingSettlement!: PendingRunSettlement;
     const settlement = new Promise<PiPromptRunOutcome>((resolve) => {
-      this.pendingRunSettlements.push({ resolve });
+      pendingSettlement = { resolve };
+      this.pendingRunSettlements.push(pendingSettlement);
     });
     const settled = this.dispatchPromptAfterManualCompaction(
       child,
@@ -432,12 +446,18 @@ export class PiRpcSession {
       },
       tracked.pending,
     ).then(
-      async (): Promise<PiPromptRunOutcome | null> => {
+      async (reply: unknown): Promise<PiPromptRunOutcome | null> => {
         if (tracked.pending.queuedText !== null) {
           this.dropRunSettlement();
           return null;
         }
         this.resolvePendingInputConsumption(tracked.pending);
+        if (
+          promptReplyMayBeHandled(reply) &&
+          (await this.handledWithoutRun(runsStartedBeforeDispatch))
+        ) {
+          return this.settleHandledPrompt(pendingSettlement);
+        }
         const outcome = await settlement;
         return outcome;
       },
@@ -613,7 +633,7 @@ export class PiRpcSession {
     child: PiRpcChild,
     command: Record<string, unknown>,
     pending: PendingInputConsumption,
-  ): Promise<void> {
+  ): Promise<unknown> {
     for (let attempt = 0; ; attempt += 1) {
       if (this.piManualCompactionActive) {
         this.resolvePendingInputConsumption(pending);
@@ -624,12 +644,11 @@ export class PiRpcSession {
       }
       this.isProcessing = true;
       try {
-        await this.dispatchWithTransientAuthRetry(
+        return await this.dispatchWithTransientAuthRetry(
           child,
           command,
           NO_REQUEST_TIMEOUT,
         );
-        return;
       } catch (error) {
         if (
           !isPiCompactionPromptRejection(error) ||
@@ -665,11 +684,10 @@ export class PiRpcSession {
     child: PiRpcChild,
     command: Record<string, unknown>,
     timeoutMs?: number,
-  ): Promise<void> {
+  ): Promise<unknown> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        await child.requestOk(command, timeoutMs);
-        return;
+        return await child.requestOk(command, timeoutMs);
       } catch (error) {
         if (
           !(error instanceof Error) ||
@@ -690,7 +708,7 @@ export class PiRpcSession {
     }
     const event = raw as PiRpcEvent;
     if (event.type === "agent_settled" && this.supportsSettlement) {
-      this.deliverInOrder(async () => {
+      void this.deliverInOrder(async () => {
         this.deliverSettlement(await this.takeAgentSettledLeaf());
       });
       return;
@@ -700,7 +718,7 @@ export class PiRpcSession {
     this.observeTerminalSteerSettlement(event);
     if (event.type === "agent_start" && this.supportsSettlement) {
       const runId = this.agentRunsStarted;
-      this.deliverInOrder(async () => {
+      void this.deliverInOrder(async () => {
         const report = await this.takeAgentStart();
         if (!report || report.runId !== runId) {
           this.failSettlementProtocol();
@@ -719,7 +737,7 @@ export class PiRpcSession {
       const runId = this.agentRunsStarted;
       const observedRun = this.runs.get(runId);
       if (observedRun) observedRun.end = event;
-      this.deliverInOrder(async () => {
+      void this.deliverInOrder(async () => {
         const leafId = await this.takeAgentEndLeaf();
         if (leafId !== null) this.lastKnownLeafId = leafId;
         const run = this.runs.get(runId) ?? {};
@@ -786,7 +804,7 @@ export class PiRpcSession {
       }
       return;
     }
-    this.deliverInOrder(() => {
+    void this.deliverInOrder(() => {
       this.onEvent(event);
     });
   }
@@ -895,6 +913,27 @@ export class PiRpcSession {
 
   private dropRunSettlement(): void {
     this.pendingRunSettlements.pop();
+  }
+
+  private async handledWithoutRun(
+    runsStartedBeforeDispatch: number,
+  ): Promise<boolean> {
+    if (this.agentRunsStarted !== runsStartedBeforeDispatch) return false;
+    const streaming = await this.getState(CHANNEL_REQUEST_TIMEOUT_MS).then(
+      (state) => state.isStreaming === true,
+      () => true,
+    );
+    return !streaming && this.agentRunsStarted === runsStartedBeforeDispatch;
+  }
+
+  private async settleHandledPrompt(
+    pending: PendingRunSettlement,
+  ): Promise<PiPromptRunOutcome> {
+    const index = this.pendingRunSettlements.indexOf(pending);
+    if (index !== -1) this.pendingRunSettlements.splice(index, 1);
+    this.isProcessing = false;
+    await this.deliveryChain;
+    return {};
   }
 
   private async refreshLeafId(

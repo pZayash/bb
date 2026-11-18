@@ -1,4 +1,5 @@
-import { getLatestThreadSequence, listEvents } from "@bb/db";
+import { getLatestThreadSequence } from "@bb/db";
+import { listEvents } from "@bb/db/testing";
 import { groupHostDaemonEvents } from "@bb/host-daemon-contract";
 import {
   createStandaloneBuiltinCompactCommandInput,

@@ -4,11 +4,11 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { noopNotifier } from "../../src/notifier.js";
 import type { DbNotifier } from "../../src/notifier.js";
+import { createEnvironment } from "../../src/data/environments.js";
 import {
-  createEnvironment,
   recordEnvironmentStartRefOnce,
   updateEnvironmentMetadata,
-} from "../../src/data/environments.js";
+} from "../../src/data/environment-lifecycle.js";
 import { environments } from "../../src/schema.js";
 import { createProject } from "../../src/data/projects.js";
 import { upsertHost } from "../../src/data/hosts.js";

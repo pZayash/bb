@@ -3,6 +3,7 @@ import {
   THREAD_PRUNING_SWEEP_LIMITS,
   type ThreadPruningSweepLimits,
 } from "./thread-pruning-sweep.js";
+import { discardInterruptedForkHistoryCopies } from "../threads/thread-create.js";
 import {
   PROJECT_ATTACHMENT_BACKFILL_LIMITS,
   projectAttachmentBackfillSweep,
@@ -35,7 +36,9 @@ import {
   getDatabaseFreelistStats,
   getDatabaseMaintenanceActivity,
   getEnvironment,
+  hasThreadStartTurnRequest,
   isDatabaseMaintenanceIdle,
+  isSqliteBusyError,
   releaseFinishedEnvironmentPreparationOwners,
   deleteSweepItemFailuresOfUnknownSweeps,
   listArchivedThreadsPendingTeardown,
@@ -64,7 +67,7 @@ import {
 } from "../projects/project-deletion.js";
 import {
   finalizeStoppedThread,
-  hasLiveThreadStartInFlight,
+  recoverThreadLifecyclesAfterRestart,
   requestThreadStopForCurrentState,
   requestThreadStorageDeletion,
   turnStartDeadlineSweep,
@@ -95,17 +98,21 @@ import {
   type ItemSweep,
 } from "./item-sweep.js";
 
-type DatabaseMaintenanceSweepDeps = Pick<AppDeps, "db" | "logger">;
+type DatabaseMaintenanceSweepDeps = Pick<
+  AppDeps,
+  "db" | "logger" | "walCheckpointer"
+>;
 
 interface PluginScheduleSweeper {
   dueScheduleSweep(now: number): ItemSweep;
 }
 
-type PeriodicSweepDeps = LoggedPendingInteractionWorkSessionDeps & {
-  pluginSchedules: PluginScheduleSweeper;
-  /** Liveness directory for `plugin:<id>` wait holders. */
-  plugins: QueueWaitPluginDirectory & PluginDatabaseDirectory;
-};
+type PeriodicSweepDeps = LoggedPendingInteractionWorkSessionDeps &
+  Pick<AppDeps, "walCheckpointer"> & {
+    pluginSchedules: PluginScheduleSweeper;
+    /** Liveness directory for `plugin:<id>` wait holders. */
+    plugins: QueueWaitPluginDirectory & PluginDatabaseDirectory;
+  };
 
 interface PluginDatabaseDirectory {
   listOpenPluginDatabases(): OpenPluginDatabase[];
@@ -213,7 +220,8 @@ export async function runPeriodicSweepJobs(
 
 async function runChunkedIncrementalVacuum(
   client: Database.Database,
-): Promise<ReturnType<typeof runIncrementalVacuum>> {
+  args: IncrementalVacuumLogArgs,
+): Promise<void> {
   let first: ReturnType<typeof runIncrementalVacuum> | null = null;
   let last: ReturnType<typeof runIncrementalVacuum> | null = null;
   for (
@@ -224,12 +232,34 @@ async function runChunkedIncrementalVacuum(
     if (last !== null) {
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
-    last = runIncrementalVacuum(client, {
-      maxPages: Math.min(
-        DATABASE_INCREMENTAL_VACUUM_CHUNK_PAGES,
-        DATABASE_INCREMENTAL_VACUUM_MAX_PAGES - vacuumedPages,
-      ),
-    });
+    await args.walCheckpointer.checkpoint(client);
+    try {
+      last = runIncrementalVacuum(client, {
+        maxPages: Math.min(
+          DATABASE_INCREMENTAL_VACUUM_CHUNK_PAGES,
+          DATABASE_INCREMENTAL_VACUUM_MAX_PAGES - vacuumedPages,
+        ),
+      });
+    } catch (error) {
+      if (
+        first === null ||
+        last === null ||
+        !(error instanceof Error) ||
+        !isSqliteBusyError(error)
+      ) {
+        throw error;
+      }
+      args.logger.warn(
+        {
+          ...args.logFields,
+          err: error,
+          result: { before: first.before, after: last.after },
+        },
+        "Incremental database vacuum stopped early",
+      );
+      return;
+    }
+    await args.walCheckpointer.checkpoint(client);
     first ??= last;
     if (last.after.freelistCount === 0) {
       break;
@@ -238,12 +268,16 @@ async function runChunkedIncrementalVacuum(
   if (first === null || last === null) {
     throw new Error("Incremental vacuum ran no chunks");
   }
-  return { before: first.before, after: last.after };
+  args.logger.info(
+    { ...args.logFields, result: { before: first.before, after: last.after } },
+    "Incremental database vacuum completed",
+  );
 }
 
 interface IncrementalVacuumLogArgs {
   logFields: { pluginId?: string };
   logger: AppDeps["logger"];
+  walCheckpointer: AppDeps["walCheckpointer"];
 }
 
 async function runIncrementalVacuumAboveFreelistThreshold(
@@ -264,11 +298,7 @@ async function runIncrementalVacuumAboveFreelistThreshold(
     return;
   }
   try {
-    const result = await runChunkedIncrementalVacuum(client);
-    args.logger.info(
-      { ...args.logFields, result },
-      "Incremental database vacuum completed",
-    );
+    await runChunkedIncrementalVacuum(client, args);
   } catch (error) {
     args.logger.warn(
       { ...args.logFields, err: error },
@@ -278,7 +308,9 @@ async function runIncrementalVacuumAboveFreelistThreshold(
 }
 
 export async function runPluginDatabaseMaintenanceSweep(
-  deps: Pick<AppDeps, "logger"> & { plugins: PluginDatabaseDirectory },
+  deps: Pick<AppDeps, "logger" | "walCheckpointer"> & {
+    plugins: PluginDatabaseDirectory;
+  },
 ): Promise<void> {
   for (const { database, pluginId } of deps.plugins.listOpenPluginDatabases()) {
     if (
@@ -291,6 +323,7 @@ export async function runPluginDatabaseMaintenanceSweep(
     await runIncrementalVacuumAboveFreelistThreshold(database, {
       logFields: { pluginId },
       logger: deps.logger,
+      walCheckpointer: deps.walCheckpointer,
     });
   }
 }
@@ -330,6 +363,7 @@ export async function runDatabaseMaintenanceSweep(
   await runIncrementalVacuumAboveFreelistThreshold(deps.db.$client, {
     logFields: {},
     logger: deps.logger,
+    walCheckpointer: deps.walCheckpointer,
   });
 }
 
@@ -388,7 +422,7 @@ function threadProvisioningSweep(
         .all(),
     key: (thread) => thread.id,
     process: async (thread) => {
-      if (hasLiveThreadStartInFlight(thread.id)) return;
+      if (hasThreadStartTurnRequest(deps.db, thread.id)) return;
       await advanceThreadProvisioning(deps, { threadId: thread.id });
     },
   });
@@ -410,13 +444,7 @@ function archivedThreadTeardownSweep(
         });
       }
       if (archiveUndoGraceKeepsTurnRunning(thread, now)) return;
-      requestThreadStopForCurrentState(
-        deps,
-        thread,
-        thread.environmentId
-          ? getEnvironment(deps.db, thread.environmentId)
-          : null,
-      );
+      requestThreadStopForCurrentState(deps, thread);
     },
   });
 }
@@ -453,7 +481,7 @@ function deletedThreadFinalizationSweep(
         threadId: thread.id,
       });
       if (thread.storageDeletedAt !== null) {
-        finalizeStoppedThread(deps, { threadId: thread.id });
+        finalizeStoppedThread(deps, { fence: false, threadId: thread.id });
         return;
       }
       requestThreadStorageDeletion(
@@ -491,8 +519,7 @@ async function runMachineAuthPruneSweep(
 }
 
 type CompletedEventOutputMigrationTarget =
-  | (typeof RETAINED_EVENT_OUTPUT_TARGETS)[number]
-  | "legacy-image-generation";
+  (typeof RETAINED_EVENT_OUTPUT_TARGETS)[number] | "legacy-image-generation";
 
 function completedEventOutputMigrationKey(
   target: CompletedEventOutputMigrationTarget,
@@ -627,7 +654,7 @@ export const PERIODIC_SWEEP_JOBS: readonly PeriodicSweepJob[] = [
     category: "durable-intent-retry",
     name: "environment-provider-lifecycle",
     background: false,
-    sweep: providerLifecycleSweep,
+    sweep: (deps) => providerLifecycleSweep(deps, { background: true }),
   },
   {
     cadenceMs: 0,
@@ -871,6 +898,24 @@ export async function runStartupRecoverySweep(
       deps.db,
       PERIODIC_SWEEP_JOBS.map((job) => job.name),
     );
+  });
+  await runStartupRecoveryStep(deps, "thread-lifecycles", async () => {
+    const recovered = await recoverThreadLifecyclesAfterRestart(deps);
+    if (recovered > 0) {
+      deps.logger.info(
+        { recovered },
+        "Settled thread lifecycles whose daemon answers the previous server process lost",
+      );
+    }
+  });
+  await runStartupRecoveryStep(deps, "interrupted-fork-history-copies", () => {
+    const discarded = discardInterruptedForkHistoryCopies(deps);
+    if (discarded > 0) {
+      deps.logger.info(
+        { discarded },
+        "Deleted forks whose history copy the previous server process left unfinished",
+      );
+    }
   });
   await runStartupRecoveryStep(deps, "release-queued-message-claims", () => {
     const releasedClaims = releaseOrphanedQueuedMessageDispatchClaims(

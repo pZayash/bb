@@ -31,7 +31,6 @@ import {
   useRef,
   useState,
   type ComponentType,
-  type ComponentProps,
   type RefObject,
 } from "react";
 import {
@@ -106,6 +105,15 @@ import {
   type TypeaheadConfig,
 } from "./ComposerBox";
 import {
+  ControlledComposerBox,
+  type ControlledComposerBoxProps,
+} from "@/test/fixtures/controlled-composer-box";
+import {
+  composerDraft,
+  composerDraftStore,
+} from "@/test/fixtures/composer-draft";
+import type { ComposerDraftStore } from "@/components/plugin/plugin-composer-host";
+import {
   promptMentionClipboardDataAttributes,
   serializedTextForPromptMentionResource,
 } from "@bb/client-core";
@@ -129,7 +137,7 @@ const render = (
   options?: Parameters<typeof renderWithoutProviders>[1],
 ) => renderWithoutProviders(ui, { wrapper: ComposerTestProviders, ...options });
 
-type PromptBoxProps = ComponentProps<typeof ComposerBox>;
+type PromptBoxProps = ControlledComposerBoxProps;
 
 function pluginRegistrationSet(
   composerCustomizations: NonNullable<
@@ -204,29 +212,27 @@ function buildTypeaheadConfig(
 }
 
 function PromptBoxRaceHarness({
-  onChange,
-  value,
+  draft,
+  insertKey,
 }: {
-  onChange: PromptBoxProps["onChange"];
-  value: string;
+  draft: ComposerDraftStore;
+  insertKey: number;
 }) {
   const promptBoxRef = useRef<PromptBoxHandle | null>(null);
-  const insertedForValueRef = useRef<string | null>(null);
 
   useLayoutEffect(() => {
-    if (value === "" || insertedForValueRef.current === value) return;
-
-    insertedForValueRef.current = value;
-    promptBoxRef.current?.focusEnd();
+    if (insertKey === 0) return;
     promptBoxRef.current?.voice?.deliverTranscript("reply", "insert");
-  }, [value]);
+  }, [insertKey]);
 
   return (
     <ComposerBox
-      {...createPromptBoxProps({
-        onChange,
-        value,
-      })}
+      surface="thread"
+      draft={draft}
+      onSubmit={vi.fn()}
+      mentionMenuPlacement="bottom"
+      typeahead={testTypeaheadConfig()}
+      focusEndKey={insertKey}
       promptBoxRef={promptBoxRef}
     />
   );
@@ -240,7 +246,10 @@ function PromptBoxFocusOnMountHarness() {
   }, []);
 
   return (
-    <ComposerBox {...createPromptBoxProps()} promptBoxRef={promptBoxRef} />
+    <ControlledComposerBox
+      {...createPromptBoxProps()}
+      promptBoxRef={promptBoxRef}
+    />
   );
 }
 
@@ -252,7 +261,7 @@ function PromptBoxHistoryAutoFocusHarness({
   return (
     <>
       <button type="button">Outside focus target</button>
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           history: {
             currentDraft: emptyPromptDraftState(),
@@ -279,7 +288,7 @@ function PromptBoxHistoryAutoFocusAfterLayoutStealHarness({
 
   return (
     <>
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           history: {
             currentDraft: emptyPromptDraftState(),
@@ -301,27 +310,24 @@ function PromptBoxHistoryNavigationHarness({
 }: {
   entries: PromptDraftState[];
 }) {
-  const [draft, setDraft] = useState(emptyPromptDraftState);
+  const [draft] = useState(() => composerDraftStore());
   return (
     <ComposerBox
-      {...createPromptBoxProps({
-        value: draft.text,
-        mentionRanges: draft.mentions,
-        onChange: (text, mentions) =>
-          setDraft((current) => ({ ...current, text, mentions })),
-        attachments: { items: draft.attachments },
-        history: {
-          currentDraft: draft,
-          entries,
-          onSelectEntry: (entry) =>
-            createCoreComposerActions({
-              getCurrent: () => draft,
-              setDraft,
-              focus: () => {},
-            }).restoreDraft(entry),
-          resetKey: "history",
-        },
-      })}
+      surface="thread"
+      draft={draft}
+      onSubmit={vi.fn()}
+      mentionMenuPlacement="bottom"
+      typeahead={testTypeaheadConfig()}
+      attachments={{}}
+      history={{
+        entries,
+        onSelectEntry: (entry) =>
+          createCoreComposerActions({
+            ...draft,
+            focus: () => {},
+          }).restoreDraft(entry),
+        resetKey: "history",
+      }}
     />
   );
 }
@@ -384,7 +390,7 @@ function renderPromptBox(
     );
     return (
       <PluginComposerHostProvider value={host}>
-        <ComposerBox
+        <ControlledComposerBox
           surface="thread"
           value={value}
           mentionRanges={mentionRanges}
@@ -668,7 +674,9 @@ beforeEach(async () => {
 describe("suppressPromptEditorAnchorActivation", () => {
   it("restores the editor selection when pane navigation returns focus", async () => {
     render(
-      <ComposerBox {...createPromptBoxProps({ value: "Retained draft" })} />,
+      <ControlledComposerBox
+        {...createPromptBoxProps({ value: "Retained draft" })}
+      />,
     );
     const element = getPromptEditorElement() as TiptapEditorHTMLElement;
     const editor = element.editor;
@@ -797,7 +805,9 @@ describe("ComposerBox composer popups", () => {
       const editor = (getPromptEditorElement() as TiptapEditorHTMLElement)
         .editor;
       if (!editor) throw new Error("Composer editor is missing");
-      act(() => editor.commands.setTextSelection(7));
+      act(() => {
+        editor.commands.setTextSelection(7);
+      });
       await openPopupFromMenu();
       const popup = await screen.findByRole("dialog", {
         name: "Saved prompts",
@@ -969,6 +979,10 @@ describe("ComposerBox composer popups", () => {
       ).not.toBeNull(),
     );
     expect(document.contains(search)).toBe(true);
+    await act(
+      () =>
+        new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Open popup" }));
     await waitFor(() =>
       expect(
@@ -1000,14 +1014,14 @@ describe("ComposerBox controlled value sync", () => {
       ]),
     );
     const props = createPromptBoxProps({ value: "Retained draft" });
-    const view = render(<ComposerBox {...props} />);
+    const view = render(<ControlledComposerBox {...props} />);
     const editor = getPromptEditorElement();
 
     expect(screen.getByRole("button", { name: "Plugin action" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Prompt actions" })).toBeTruthy();
 
     view.rerender(
-      <ComposerBox {...props} suppressPluginComposerCustomizations />,
+      <ControlledComposerBox {...props} suppressPluginComposerCustomizations />,
     );
 
     expect(screen.queryByRole("button", { name: "Plugin action" })).toBeNull();
@@ -1015,7 +1029,10 @@ describe("ComposerBox controlled value sync", () => {
     expect(getPromptEditorElement()).toBe(editor);
 
     view.rerender(
-      <ComposerBox {...props} suppressPluginComposerCustomizations={false} />,
+      <ControlledComposerBox
+        {...props}
+        suppressPluginComposerCustomizations={false}
+      />,
     );
 
     expect(screen.getByRole("button", { name: "Plugin action" })).toBeTruthy();
@@ -1026,7 +1043,7 @@ describe("ComposerBox controlled value sync", () => {
   it("decorates only draft text and removes the effect when cleared", async () => {
     const props = createPromptBoxProps({ value: "Keep this draft readable" });
     const view = render(
-      <ComposerBox
+      <ControlledComposerBox
         {...props}
         textEffects={[
           {
@@ -1049,7 +1066,7 @@ describe("ComposerBox controlled value sync", () => {
         ?.classList.contains("test-text-effect"),
     ).toBe(false);
 
-    view.rerender(<ComposerBox {...props} textEffects={[]} />);
+    view.rerender(<ControlledComposerBox {...props} textEffects={[]} />);
     await waitFor(() => {
       expect(view.container.querySelector(".test-text-effect")).toBeNull();
     });
@@ -1067,7 +1084,9 @@ describe("ComposerBox controlled value sync", () => {
       effect: { className: "zeta-effect" },
       order: 2,
     } as const;
-    const view = render(<ComposerBox {...props} textEffects={[alpha, zeta]} />);
+    const view = render(
+      <ControlledComposerBox {...props} textEffects={[alpha, zeta]} />,
+    );
 
     await waitFor(() => {
       expect(view.container.querySelector(".alpha-effect")?.textContent).toBe(
@@ -1077,7 +1096,7 @@ describe("ComposerBox controlled value sync", () => {
         "Overlapping effects",
       );
     });
-    view.rerender(<ComposerBox {...props} textEffects={[zeta]} />);
+    view.rerender(<ControlledComposerBox {...props} textEffects={[zeta]} />);
     await waitFor(() => {
       expect(view.container.querySelector(".alpha-effect")).toBeNull();
       expect(view.container.querySelector(".zeta-effect")?.textContent).toBe(
@@ -1085,7 +1104,7 @@ describe("ComposerBox controlled value sync", () => {
       );
     });
 
-    view.rerender(<ComposerBox {...props} textEffects={[]} />);
+    view.rerender(<ControlledComposerBox {...props} textEffects={[]} />);
     await waitFor(() => {
       expect(view.container.querySelector(".zeta-effect")).toBeNull();
     });
@@ -1126,7 +1145,7 @@ describe("ComposerBox controlled value sync", () => {
       ]),
     );
     const props = createPromptBoxProps({ value: "Decorate this draft" });
-    const view = render(<ComposerBox {...props} />);
+    const view = render(<ControlledComposerBox {...props} />);
     const editor = getPromptEditorElement();
 
     await waitFor(() => {
@@ -1173,7 +1192,7 @@ describe("ComposerBox controlled value sync", () => {
     expect(getPromptEditorElement()).toBe(editor);
 
     view.rerender(
-      <ComposerBox {...props} suppressPluginComposerCustomizations />,
+      <ControlledComposerBox {...props} suppressPluginComposerCustomizations />,
     );
     await waitFor(() => {
       expect(
@@ -1196,14 +1215,14 @@ describe("ComposerBox controlled value sync", () => {
     const props = createPromptBoxProps({ value: "" });
     const rendered = render(
       <PluginComposerHostProvider value={host("message-1")}>
-        <ComposerBox {...props} />
+        <ControlledComposerBox {...props} />
       </PluginComposerHostProvider>,
     );
     expect(getComposerEditorBridge("queued-message:message-1")).not.toBeNull();
 
     rendered.rerender(
       <PluginComposerHostProvider value={host("message-2")}>
-        <ComposerBox {...props} />
+        <ControlledComposerBox {...props} />
       </PluginComposerHostProvider>,
     );
     expect(getComposerEditorBridge("queued-message:message-1")).toBeNull();
@@ -1244,7 +1263,7 @@ describe("ComposerBox controlled value sync", () => {
     const props = createPromptBoxProps({ value: draft.text });
     const rendered = render(
       <PluginComposerHostProvider value={host("message-1")}>
-        <ComposerBox {...props} />
+        <ControlledComposerBox {...props} />
       </PluginComposerHostProvider>,
     );
 
@@ -1260,7 +1279,7 @@ describe("ComposerBox controlled value sync", () => {
 
     rendered.rerender(
       <PluginComposerHostProvider value={host("message-2")}>
-        <ComposerBox {...props} />
+        <ControlledComposerBox {...props} />
       </PluginComposerHostProvider>,
     );
 
@@ -1379,7 +1398,7 @@ describe("ComposerBox controlled value sync", () => {
   it("skips passive autofocus on coarse pointers", async () => {
     const restoreMatchMedia = mockPointerCoarse(true);
     try {
-      render(<ComposerBox {...createPromptBoxProps()} />);
+      render(<ControlledComposerBox {...createPromptBoxProps()} />);
 
       await waitFor(() =>
         expect(getPromptEditorElement()).toBeInstanceOf(HTMLElement),
@@ -1399,12 +1418,12 @@ describe("ComposerBox controlled value sync", () => {
     document.body.append(rename);
     try {
       const props = createPromptBoxProps({ autoFocus: false });
-      const view = render(<ComposerBox {...props} />);
+      const view = render(<ControlledComposerBox {...props} />);
       await waitFor(() =>
         expect(getPromptEditorElement()).toBeInstanceOf(HTMLElement),
       );
       input.focus();
-      view.rerender(<ComposerBox {...props} autoFocus />);
+      view.rerender(<ControlledComposerBox {...props} autoFocus />);
       await act(
         () =>
           new Promise<void>((resolve) =>
@@ -1422,10 +1441,10 @@ describe("ComposerBox controlled value sync", () => {
     const restoreMatchMedia = mockPointerCoarse(false);
     try {
       const baseProps = createPromptBoxProps();
-      const view = render(<ComposerBox {...baseProps} />);
+      const view = render(<ControlledComposerBox {...baseProps} />);
 
       await waitForPromptFocus();
-      view.rerender(<ComposerBox {...baseProps} autoFocus={false} />);
+      view.rerender(<ControlledComposerBox {...baseProps} autoFocus={false} />);
 
       await waitFor(() =>
         expect(document.activeElement).not.toBe(getPromptEditorElement()),
@@ -1443,14 +1462,14 @@ describe("ComposerBox controlled value sync", () => {
         focusEndKey: 0,
         promptBoxRef,
       });
-      const view = render(<ComposerBox {...baseProps} />);
+      const view = render(<ControlledComposerBox {...baseProps} />);
 
       await waitFor(() => expect(promptBoxRef.current).not.toBeNull());
       const outsideTarget = document.createElement("button");
       document.body.append(outsideTarget);
       outsideTarget.focus();
 
-      view.rerender(<ComposerBox {...baseProps} focusEndKey={1} />);
+      view.rerender(<ControlledComposerBox {...baseProps} focusEndKey={1} />);
       promptBoxRef.current?.focusEnd();
 
       expect(document.activeElement).toBe(outsideTarget);
@@ -1466,7 +1485,9 @@ describe("ComposerBox controlled value sync", () => {
       const onChange = vi.fn();
       const promptBoxRef = createRef<PromptBoxHandle>();
       render(
-        <ComposerBox {...createPromptBoxProps({ onChange, promptBoxRef })} />,
+        <ControlledComposerBox
+          {...createPromptBoxProps({ onChange, promptBoxRef })}
+        />,
       );
 
       await waitFor(() => expect(promptBoxRef.current).not.toBeNull());
@@ -1492,7 +1513,7 @@ describe("ComposerBox controlled value sync", () => {
       const start = vi.fn();
       const promptBoxRef = createRef<PromptBoxHandle>();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             promptBoxRef,
             voice: createVoiceConfig({ start }),
@@ -1641,14 +1662,15 @@ describe("ComposerBox controlled value sync", () => {
   });
 
   it("applies an added quote before focus-end insertion can edit the old document", () => {
-    const onChange = vi.fn();
-    const view = render(<PromptBoxRaceHarness onChange={onChange} value="" />);
+    const draft = composerDraftStore();
+    const view = render(<PromptBoxRaceHarness draft={draft} insertKey={0} />);
 
-    view.rerender(
-      <PromptBoxRaceHarness onChange={onChange} value={"> selected text\n"} />,
-    );
+    act(() => {
+      draft.setDraft(composerDraft("> selected text\n"));
+      view.rerender(<PromptBoxRaceHarness draft={draft} insertKey={1} />);
+    });
 
-    expect(onChange).toHaveBeenLastCalledWith("> selected text\n\nreply", []);
+    expect(draft.getCurrent().text).toBe("> selected text\n\nreply");
   });
 
   it("places focus-end insertion below an added quote", async () => {
@@ -1660,10 +1682,10 @@ describe("ComposerBox controlled value sync", () => {
       value: "",
       focusEndKey: 0,
     });
-    const view = render(<ComposerBox {...baseProps} />);
+    const view = render(<ControlledComposerBox {...baseProps} />);
 
     view.rerender(
-      <ComposerBox
+      <ControlledComposerBox
         {...baseProps}
         value={"> selected text\n"}
         focusEndKey={1}
@@ -1753,7 +1775,7 @@ describe("ComposerBox programmatic submit", () => {
     };
     render(
       <PluginComposerHostProvider value={host}>
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: text,
             onSubmit: send,
@@ -1885,7 +1907,7 @@ describe("ComposerBox submit shortcuts", () => {
   it("exposes the disabled submit reason as its label and hover tooltip", async () => {
     const reason = "Loading models from the selected machine...";
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           value: "Investigate this",
           submission: { disabled: true, disabledReason: reason },
@@ -1914,7 +1936,7 @@ describe("ComposerBox submit shortcuts", () => {
       const onChange = vi.fn();
       const onSubmit = vi.fn();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: "Run this",
             onChange,
@@ -1953,7 +1975,7 @@ describe("ComposerBox submit shortcuts", () => {
       const onChange = vi.fn();
       const onSubmit = vi.fn();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: "Run this",
             onChange,
@@ -2004,7 +2026,7 @@ describe("ComposerBox submit shortcuts", () => {
       const onChange = vi.fn();
       const onSubmit = vi.fn();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: "First line",
             onChange,
@@ -2042,7 +2064,7 @@ describe("ComposerBox submit shortcuts", () => {
       const onChange = vi.fn();
       const onSubmit = vi.fn();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: "First line",
             onChange,
@@ -2073,7 +2095,7 @@ describe("ComposerBox submit shortcuts", () => {
       const onChange = vi.fn();
       const onSubmit = vi.fn();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: "First line",
             onChange,
@@ -2108,7 +2130,7 @@ describe("ComposerBox submit shortcuts", () => {
           const onModifierSubmit = vi.fn();
           const onStop = vi.fn();
           render(
-            <ComposerBox
+            <ControlledComposerBox
               {...createPromptBoxProps({
                 value,
                 onSubmit,
@@ -2200,7 +2222,7 @@ describe("ComposerBox submit shortcuts", () => {
         };
         const renderComposer = (value: string, disabled = false) => (
           <PluginComposerHostProvider value={host}>
-            <ComposerBox
+            <ControlledComposerBox
               {...createPromptBoxProps({
                 value,
                 onSubmit,
@@ -2237,8 +2259,12 @@ describe("ComposerBox submit shortcuts", () => {
             new DOMRect(0, 0, 40, 40),
           );
           fireEvent.pointerDown(submit, touch);
-          act(() => vi.advanceTimersByTime(700));
-          act(() => vi.advanceTimersByTime(500));
+          act(() => {
+            vi.advanceTimersByTime(700);
+          });
+          act(() => {
+            vi.advanceTimersByTime(500);
+          });
           fireEvent.pointerUp(submit, touch);
           fireEvent.click(submit, { detail: 1 });
         };
@@ -2283,7 +2309,9 @@ describe("ComposerBox submit shortcuts", () => {
 
         openMenu();
         rerender(renderComposer(""));
-        act(() => vi.advanceTimersByTime(500));
+        act(() => {
+          vi.advanceTimersByTime(500);
+        });
         expect(screen.queryByRole("menuitem")).toBeNull();
         expect(
           screen
@@ -2321,7 +2349,7 @@ describe("ComposerBox submit shortcuts", () => {
       try {
         const save = vi.fn();
         render(
-          <ComposerBox
+          <ControlledComposerBox
             {...createPromptBoxProps({
               value: "Edit the queued message",
               onSubmit: save,
@@ -2345,8 +2373,12 @@ describe("ComposerBox submit shortcuts", () => {
           clientX: 20,
           clientY: 20,
         });
-        act(() => vi.advanceTimersByTime(700));
-        act(() => vi.advanceTimersByTime(500));
+        act(() => {
+          vi.advanceTimersByTime(700);
+        });
+        act(() => {
+          vi.advanceTimersByTime(500);
+        });
         expect(screen.queryByRole("menuitem")).toBeNull();
         expect(save).not.toHaveBeenCalled();
         if (!isTouch) {
@@ -2373,7 +2405,7 @@ describe("ComposerBox submit shortcuts", () => {
     const onSubmit = vi.fn();
     const onModifierSubmit = vi.fn();
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           value: "Follow up",
           onSubmit,
@@ -2405,7 +2437,7 @@ describe("ComposerBox submit shortcuts", () => {
       const onModifierSubmit = vi.fn();
       const onSubmit = vi.fn();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: "Follow up",
             onSubmit,
@@ -2439,7 +2471,7 @@ describe("ComposerBox submit shortcuts", () => {
       const onModifierSubmit = vi.fn();
       const onSubmit = vi.fn();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: "Follow up",
             onSubmit,
@@ -2473,7 +2505,7 @@ describe("ComposerBox submit shortcuts", () => {
       .mockReturnValue("MacIntel");
     try {
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: "Follow up",
             submission: { onModifierSubmit: vi.fn() },
@@ -2502,7 +2534,7 @@ describe("ComposerBox submit shortcuts", () => {
       try {
         const onSubmit = vi.fn();
         render(
-          <ComposerBox
+          <ControlledComposerBox
             {...createPromptBoxProps({
               value: "Composing",
               onSubmit,
@@ -2530,7 +2562,7 @@ describe("ComposerBox submit shortcuts", () => {
     try {
       const onSubmit = vi.fn();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: "Composed candidate",
             onSubmit,
@@ -2561,7 +2593,7 @@ describe("ComposerBox submit shortcuts", () => {
     try {
       const onSubmit = vi.fn();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: "Run this",
             onSubmit,
@@ -2591,7 +2623,7 @@ describe("ComposerBox escape", () => {
   it("blurs the editor when no host Escape action is provided", async () => {
     const promptBoxRef = createRef<PromptBoxHandle>();
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({ value: "Follow-up message" })}
         promptBoxRef={promptBoxRef}
       />,
@@ -2609,7 +2641,7 @@ describe("ComposerBox escape", () => {
     const onEscape = vi.fn();
     const promptBoxRef = createRef<PromptBoxHandle>();
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({ onEscape, value: "Edited message" })}
         promptBoxRef={promptBoxRef}
       />,
@@ -2629,7 +2661,7 @@ describe("ComposerBox escape", () => {
     const onEscape = vi.fn();
     const promptBoxRef = createRef<PromptBoxHandle>();
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           onEscape,
           value: "/re",
@@ -2677,7 +2709,7 @@ describe("ComposerBox size controls", () => {
   ] as const)(
     "caps the %s editor at its share of the visible shell height or the host's available space",
     (surface, maxHeight) => {
-      render(<ComposerBox {...createPromptBoxProps({ surface })} />);
+      render(<ControlledComposerBox {...createPromptBoxProps({ surface })} />);
 
       const editorScroll = document.querySelector<HTMLElement>(
         "[data-promptbox-editor-scroll]",
@@ -2689,7 +2721,7 @@ describe("ComposerBox size controls", () => {
   it("offers only the collapse action and releases editor focus", async () => {
     const onCollapse = vi.fn();
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           onCollapse,
         })}
@@ -2749,7 +2781,7 @@ describe("ComposerBox plugin composer actions", () => {
     );
 
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           voice: createVoiceConfig(),
         })}
@@ -2807,7 +2839,7 @@ describe("ComposerBox plugin composer actions", () => {
       const textEffects = useComposerTextEffects(host.textEffectKey);
       return (
         <PluginComposerHostProvider value={host}>
-          <ComposerBox
+          <ControlledComposerBox
             {...createPromptBoxProps({ value: "Native draft" })}
             textEffects={textEffects}
           />
@@ -2890,7 +2922,9 @@ describe("ComposerBox plugin composer actions", () => {
     };
     render(
       <PluginComposerHostProvider value={host}>
-        <ComposerBox {...createPromptBoxProps({ value: "Thread draft" })} />
+        <ControlledComposerBox
+          {...createPromptBoxProps({ value: "Thread draft" })}
+        />
       </PluginComposerHostProvider>,
     );
     const editor = getPromptEditorElement();
@@ -2978,7 +3012,7 @@ describe("ComposerBox plugin composer actions", () => {
     const props = createPromptBoxProps({ value: "Scoped draft" });
     const rendered = render(
       <PluginComposerHostProvider value={firstHost}>
-        <ComposerBox {...props} />
+        <ControlledComposerBox {...props} />
       </PluginComposerHostProvider>,
     );
     expect(mounted).toHaveBeenCalledTimes(1);
@@ -2987,7 +3021,7 @@ describe("ComposerBox plugin composer actions", () => {
 
     rendered.rerender(
       <PluginComposerHostProvider value={secondHost}>
-        <ComposerBox {...props} />
+        <ControlledComposerBox {...props} />
       </PluginComposerHostProvider>,
     );
     expect(cleaned).toHaveBeenCalledTimes(1);
@@ -3013,7 +3047,7 @@ describe("ComposerBox plugin composer actions", () => {
       ]),
     );
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           compact: { when: "always", placeholder: "Ask a follow-up" },
         })}
@@ -3056,14 +3090,14 @@ describe("ComposerBox attachment previews", () => {
     const props = createPromptBoxProps({
       attachments: { items: [photo], onUpdate: vi.fn() },
     });
-    const { rerender } = render(<ComposerBox {...props} />);
+    const { rerender } = render(<ControlledComposerBox {...props} />);
     expect(
       screen.getByRole("img", { name: "photo.png" }).getAttribute("src"),
     ).toBe("blob:local-photo");
     expect(revoked).toEqual([]);
 
     rerender(
-      <ComposerBox
+      <ControlledComposerBox
         {...props}
         attachments={{ ...props.attachments, items: [] }}
       />,
@@ -3089,13 +3123,13 @@ describe("ComposerBox compact layout", () => {
       attachments: { items, onUpdate: vi.fn() },
       compact: { when: "always", placeholder: "Ask a follow-up" },
     });
-    const { rerender } = render(<ComposerBox {...props} />);
+    const { rerender } = render(<ControlledComposerBox {...props} />);
     expect(screen.getByRole("img", { name: "2 attachments" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Remove / })).toBeNull();
     expect(
       document.querySelector("[data-promptbox-attachments] button"),
     ).toBeNull();
-    rerender(<ComposerBox {...props} compact={undefined} />);
+    rerender(<ControlledComposerBox {...props} compact={undefined} />);
     expect(
       screen.getByRole("button", { name: "Remove photo.png" }),
     ).toBeTruthy();
@@ -3103,14 +3137,14 @@ describe("ComposerBox compact layout", () => {
       screen.getByRole("button", { name: "Remove notes.txt" }),
     ).toBeTruthy();
     rerender(
-      <ComposerBox
+      <ControlledComposerBox
         {...props}
         attachments={{ ...props.attachments, items: items.slice(1) }}
       />,
     );
     expect(screen.getByRole("img", { name: "1 attachment" })).toBeTruthy();
     rerender(
-      <ComposerBox
+      <ControlledComposerBox
         {...props}
         attachments={{ ...props.attachments, items: [] }}
       />,
@@ -3122,7 +3156,7 @@ describe("ComposerBox compact layout", () => {
     const restoreMatchMedia = mockPointerCoarse(true);
     try {
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             attachments: { isAttaching: true },
             compact: {
@@ -3150,7 +3184,7 @@ describe("ComposerBox compact layout", () => {
   it("publishes the narrow compact placeholder for CSS", () => {
     const baseProps = createPromptBoxProps();
     const view = render(
-      <ComposerBox
+      <ControlledComposerBox
         {...baseProps}
         compact={{ when: "narrow", placeholder: "Reconnecting..." }}
       />,
@@ -3164,7 +3198,7 @@ describe("ComposerBox compact layout", () => {
       form.style.getPropertyValue("--promptbox-container-compact-placeholder"),
     ).toBe('"Reconnecting..."');
 
-    view.rerender(<ComposerBox {...baseProps} />);
+    view.rerender(<ControlledComposerBox {...baseProps} />);
     expect(
       form.style.getPropertyValue("--promptbox-container-compact-placeholder"),
     ).toBe("");
@@ -3190,7 +3224,7 @@ describe("ComposerBox compact layout", () => {
     async ({ before, after }) => {
       const resizes = recordResizeObservers();
       const baseProps = createPromptBoxProps();
-      const view = render(<ComposerBox {...baseProps} {...before} />);
+      const view = render(<ControlledComposerBox {...baseProps} {...before} />);
       const form = document.querySelector("[data-promptbox]");
       if (!(form instanceof HTMLFormElement)) {
         throw new Error("Prompt box form was not rendered");
@@ -3201,7 +3235,7 @@ describe("ComposerBox compact layout", () => {
         .mockReturnValue(new DOMRect(0, 0, 320, 144));
 
       act(() => resizes.notify(form));
-      view.rerender(<ComposerBox {...baseProps} {...after} />);
+      view.rerender(<ControlledComposerBox {...baseProps} {...after} />);
 
       await waitFor(() => {
         expect(form.style.transition).toContain("height 240ms");
@@ -3217,7 +3251,7 @@ describe("ComposerBox compact layout", () => {
     const resizes = recordResizeObservers();
     const baseProps = createPromptBoxProps();
     const view = render(
-      <ComposerBox
+      <ControlledComposerBox
         {...baseProps}
         compact={{ when: "narrow", placeholder: "Ask a follow-up" }}
       />,
@@ -3231,7 +3265,7 @@ describe("ComposerBox compact layout", () => {
     );
 
     act(() => resizes.notify(form));
-    view.rerender(<ComposerBox {...baseProps} compact={undefined} />);
+    view.rerender(<ControlledComposerBox {...baseProps} compact={undefined} />);
 
     expect(form.style.transition).toBe("");
     expect(form.style.height).toBe("");
@@ -3241,7 +3275,7 @@ describe("ComposerBox compact layout", () => {
     const voice = createVoiceConfig();
 
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           value:
             "A compact follow-up that is much wider than the available mobile space\nA hidden second line",
@@ -3283,7 +3317,7 @@ describe("ComposerBox compact layout", () => {
     try {
       const start = vi.fn();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             compact: {
               when: "always",
@@ -3327,7 +3361,7 @@ describe("ComposerBox compact layout", () => {
         const start = vi.fn();
         const onStop = vi.fn();
         render(
-          <ComposerBox
+          <ControlledComposerBox
             {...createPromptBoxProps({
               submission: { isRunning: true, onStop },
               compact: isCompact
@@ -3371,7 +3405,7 @@ describe("ComposerBox compact layout", () => {
         const start = vi.fn();
         const onSubmit = vi.fn();
         render(
-          <ComposerBox
+          <ControlledComposerBox
             {...createPromptBoxProps({
               value: "Please also check the mobile layout.",
               onSubmit,
@@ -3411,7 +3445,7 @@ describe("ComposerBox compact layout", () => {
       const voice = createVoiceConfig({ start });
       const onSubmit = vi.fn();
       const { rerender } = render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: "Send this",
             onSubmit,
@@ -3438,7 +3472,7 @@ describe("ComposerBox compact layout", () => {
       expect(onSubmit).toHaveBeenCalledOnce();
 
       rerender(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: "",
             onSubmit,
@@ -3475,7 +3509,7 @@ describe("ComposerBox compact layout", () => {
           submission: { isRunning, onStop },
           compact: { when: "always", placeholder: "Ask a follow-up" },
         });
-        const { rerender } = render(<ComposerBox {...props} />);
+        const { rerender } = render(<ControlledComposerBox {...props} />);
         const submit = screen.getByRole("button", { name: "Submit (Ctrl + Alt + Enter)" });
         vi.spyOn(submit, "getBoundingClientRect").mockReturnValue(
           new DOMRect(0, 0, 40, 40),
@@ -3493,7 +3527,7 @@ describe("ComposerBox compact layout", () => {
         expect(onSubmit).toHaveBeenCalledOnce();
 
         rerender(
-          <ComposerBox
+          <ControlledComposerBox
             {...props}
             value=""
             submission={{ isRunning: true, onStop }}
@@ -3520,7 +3554,7 @@ describe("ComposerBox compact layout", () => {
     (input) => {
       const onStop = vi.fn();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             submission: { isRunning: true, onStop },
           })}
@@ -3541,7 +3575,7 @@ describe("ComposerBox compact layout", () => {
     try {
       const start = vi.fn();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             compact: { when: "always", placeholder: "Ask a follow-up" },
             voice: createVoiceConfig({ start }),
@@ -3573,7 +3607,7 @@ describe("ComposerBox compact layout", () => {
     try {
       const start = vi.fn();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             compact: { when: "always", placeholder: "Ask a follow-up" },
             voice: createVoiceConfig({ start }),
@@ -3599,7 +3633,7 @@ describe("ComposerBox compact layout", () => {
     try {
       const onSubmit = vi.fn();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: "Transcript ready to send",
             onSubmit,
@@ -3633,7 +3667,7 @@ describe("ComposerBox compact layout", () => {
         expect(document.activeElement).toBe(getPromptEditorElement());
       });
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: "Send with the keyboard open",
             onSubmit,
@@ -3664,7 +3698,7 @@ describe("ComposerBox compact layout", () => {
     onTestFinished(mockPointerCoarse(true));
     const onSubmit = vi.fn();
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           value: "Send immediately",
           onSubmit,
@@ -3709,7 +3743,7 @@ describe("ComposerBox compact layout", () => {
       const [value, setValue] = useState("Send this follow-up");
       return (
         <CompactViewportOverrideProvider isCompactViewport>
-          <ComposerBox
+          <ControlledComposerBox
             {...createPromptBoxProps({
               value,
               onSubmit: () => {
@@ -3771,7 +3805,7 @@ describe("ComposerBox compact layout", () => {
     (gesture) => {
       const onSubmit = vi.fn();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({ value: "Keep this draft", onSubmit })}
         />,
       );
@@ -3804,7 +3838,7 @@ describe("ComposerBox compact layout", () => {
   it("keeps the editor focused through a pointer submit", async () => {
     const onSubmit = vi.fn();
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           value: "Send this follow-up",
           onSubmit,
@@ -3832,7 +3866,7 @@ describe("ComposerBox compact layout", () => {
 
   it("keeps DOM focus through submit when TipTap focus state is stale", async () => {
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({ value: "Send this follow-up" })}
       />,
     );
@@ -3854,7 +3888,7 @@ describe("ComposerBox compact layout", () => {
     onTestFinished(mockPointerCoarse(true));
     const onSubmit = vi.fn();
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           value: "Send this follow-up",
           onSubmit,
@@ -3892,7 +3926,7 @@ describe("ComposerBox compact layout", () => {
     const mentionStart = value.indexOf(mentionToken);
 
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           value,
           mentionRanges: [
@@ -3932,7 +3966,7 @@ describe("ComposerBox compact layout", () => {
 
   it("anchors only the primary action during a container-driven reveal", () => {
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           voice: createVoiceConfig(),
         })}
@@ -3951,7 +3985,7 @@ describe("ComposerBox compact layout", () => {
     const onChange = vi.fn();
     const voice = createVoiceConfig();
     const view = render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           value: "Keep this prompt visible while I dictate",
           onChange,
@@ -3964,7 +3998,7 @@ describe("ComposerBox compact layout", () => {
     expect(editor.textContent).toBe("Keep this prompt visible while I dictate");
 
     view.rerender(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           value: "Keep this prompt visible while I dictate",
           onChange,
@@ -3988,7 +4022,7 @@ describe("ComposerBox compact layout", () => {
     async (state) => {
       const onChange = vi.fn();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: "Keep this prompt unchanged",
             onChange,
@@ -4038,7 +4072,7 @@ describe("ComposerBox compact layout", () => {
       );
       return (
         <>
-          <ComposerBox
+          <ControlledComposerBox
             {...createPromptBoxProps({
               value,
               onChange: (next) => setValue(next),
@@ -4076,7 +4110,7 @@ describe("ComposerBox compact layout", () => {
       );
       return (
         <>
-          <ComposerBox
+          <ControlledComposerBox
             {...createPromptBoxProps({
               value,
               onChange: (next) => setValue(next),
@@ -4114,7 +4148,7 @@ describe("ComposerBox compact layout", () => {
         compact: { when: "always", placeholder: "Ask a follow-up" },
         voice: createVoiceConfig({ state }),
       });
-      const view = render(<ComposerBox {...props} />);
+      const view = render(<ControlledComposerBox {...props} />);
       const form = document.querySelector("[data-promptbox]");
       expect(form?.hasAttribute("data-promptbox-compact")).toBe(true);
       expect(
@@ -4122,12 +4156,14 @@ describe("ComposerBox compact layout", () => {
       ).toBeTruthy();
       expect(screen.queryByRole("textbox")).toBeNull();
 
-      view.rerender(<ComposerBox {...props} value="Existing draft" />);
+      view.rerender(
+        <ControlledComposerBox {...props} value="Existing draft" />,
+      );
       expect(form?.hasAttribute("data-promptbox-compact")).toBe(false);
       expect(screen.getByRole("textbox").textContent).toBe("Existing draft");
 
       view.rerender(
-        <ComposerBox
+        <ControlledComposerBox
           {...props}
           attachments={{
             items: [
@@ -4151,7 +4187,7 @@ describe("ComposerBox compact layout", () => {
     const send = vi.fn();
     const cancel = vi.fn();
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           value: "Keep this prompt visible while I dictate",
           voice: createVoiceConfig({ state: "recording", stop, send, cancel }),
@@ -4214,11 +4250,13 @@ describe("ComposerBox compact layout", () => {
     try {
       const idleVoice = createVoiceConfig();
       const view = render(
-        <ComposerBox {...createPromptBoxProps({ voice: idleVoice })} />,
+        <ControlledComposerBox
+          {...createPromptBoxProps({ voice: idleVoice })}
+        />,
       );
 
       view.rerender(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             voice: { ...idleVoice, state: "recording" },
           })}
@@ -4250,7 +4288,7 @@ describe("ComposerBox compact layout", () => {
     try {
       const promptBoxRef = createRef<PromptBoxHandle>();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             promptBoxRef,
             value: "Existing draft",
@@ -4307,14 +4345,16 @@ describe("ComposerBox compact layout", () => {
       const cancel = vi.fn();
       const recordingVoice = createVoiceConfig({ state: "recording", cancel });
       const view = render(
-        <ComposerBox {...createPromptBoxProps({ voice: recordingVoice })} />,
+        <ControlledComposerBox
+          {...createPromptBoxProps({ voice: recordingVoice })}
+        />,
       );
 
       fireEvent.click(screen.getByRole("button", { name: "Cancel recording" }));
       expect(cancel).toHaveBeenCalledOnce();
 
       view.rerender(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             voice: { ...recordingVoice, state: "idle" },
           })}
@@ -4364,7 +4404,7 @@ describe("ComposerBox compact layout", () => {
     try {
       const promptBoxRef = createRef<PromptBoxHandle>();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             promptBoxRef,
             voice: createVoiceConfig({ state: "transcribing" }),
@@ -4412,7 +4452,7 @@ describe("ComposerBox compact layout", () => {
     try {
       const promptBoxRef = createRef<PromptBoxHandle>();
       render(
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             promptBoxRef,
             voice: createVoiceConfig({ state: "transcribing" }),
@@ -4806,7 +4846,7 @@ describe("ComposerBox mention triggers", () => {
           <button type="button" onClick={() => setValue("@fix")}>
             Retype occurrence
           </button>
-          <ComposerBox
+          <ControlledComposerBox
             {...createPromptBoxProps({
               value,
               onChange: (nextValue) => setValue(nextValue),
@@ -4861,7 +4901,7 @@ describe("ComposerBox mention triggers", () => {
       <QueuedEditorTypeaheadLayoutContext.Provider
         value={(layout) => layouts.push(layout)}
       >
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value: "@fix",
             typeahead: buildTypeaheadConfig({
@@ -4905,7 +4945,7 @@ describe("ComposerBox mention triggers", () => {
           ])
         }
       >
-        <ComposerBox
+        <ControlledComposerBox
           {...createPromptBoxProps({
             value,
             mentionRanges: [
@@ -5175,18 +5215,13 @@ describe("ComposerBox mention triggers", () => {
     const changes: PromptChange[] = [];
     const promptBoxRef = createRef<PromptBoxHandle>();
 
-    function Harness({
-      mentionSuggestions,
-    }: {
-      mentionSuggestions: readonly PromptMentionSuggestion[];
-    }) {
-      setComposerSearchResults({ mentionSuggestions });
+    function Harness() {
       const [value, setValue] = useState("@atlas");
       const [mentionRanges, setMentionRanges] = useState<PromptTextMention[]>(
         [],
       );
       return (
-        <ComposerBox
+        <ControlledComposerBox
           surface="thread"
           value={value}
           mentionRanges={mentionRanges}
@@ -5204,7 +5239,8 @@ describe("ComposerBox mention triggers", () => {
     }
 
     const initialSuggestions = [threadSuggestion, sectionSuggestion];
-    const view = render(<Harness mentionSuggestions={initialSuggestions} />);
+    setComposerSearchResults({ mentionSuggestions: initialSuggestions });
+    render(<Harness />);
     await focusPromptEnd(promptBoxRef);
 
     const sectionButton = await screen.findByRole("button", {
@@ -5215,10 +5251,10 @@ describe("ComposerBox mention triggers", () => {
       expect(sectionButton.className).toContain("bg-state-active"),
     );
 
-    view.rerender(
-      <Harness
-        mentionSuggestions={[...initialSuggestions, delayedExactSuggestion]}
-      />,
+    act(() =>
+      setComposerSearchResults({
+        mentionSuggestions: [...initialSuggestions, delayedExactSuggestion],
+      }),
     );
     await screen.findByRole("button", { name: "Atlas" });
     await waitFor(() =>
@@ -5706,7 +5742,7 @@ describe("ComposerBox prompt actions", () => {
       const promptBoxRef = createRef<PromptBoxHandle>();
       const { container } = render(
         <div data-promptbox-shell="">
-          <ComposerBox
+          <ControlledComposerBox
             {...createPromptBoxProps({
               value: "Review ",
               onChange: (value, mentions) => changes.push({ value, mentions }),
@@ -5841,7 +5877,7 @@ describe("ComposerBox prompt actions", () => {
   it("opens the file picker from the prompt actions menu", async () => {
     const onAttachFiles = vi.fn();
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           attachments: { onAttachFiles },
           promptActions,
@@ -6119,7 +6155,7 @@ describe("ComposerBox command typeahead submit", () => {
         [],
       );
       return (
-        <ComposerBox
+        <ControlledComposerBox
           surface="thread"
           value={value}
           mentionRanges={mentionRanges}
@@ -6189,6 +6225,40 @@ describe("ComposerBox command typeahead submit", () => {
 
     await act(async () => {
       fireEvent.keyDown(getPromptEditorElement(), { key: "Enter" });
+    });
+    await act(async () => {});
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(latestChange(changes)?.mentions?.[0]?.resource).toMatchObject({
+      name: "review",
+      origin: "user",
+    });
+  });
+
+  it("submits when a built-in command is clicked in the menu", async () => {
+    const { changes, onSubmit, promptBoxRef } =
+      renderCommandPromptBox(compactSuggestion);
+    await openCommandMenu(promptBoxRef, "/compact", "compact");
+
+    await act(async () => {
+      fireEvent.mouseDown(screen.getByRole("button", { name: /compact/ }));
+    });
+    await act(async () => {});
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(latestChange(changes)?.mentions?.[0]?.resource).toMatchObject({
+      name: "compact",
+      origin: "builtin",
+    });
+  });
+
+  it("does not submit when a non-built-in command is clicked in the menu", async () => {
+    const { changes, onSubmit, promptBoxRef } =
+      renderCommandPromptBox(userSkillSuggestion);
+    await openCommandMenu(promptBoxRef, "/review", "review");
+
+    await act(async () => {
+      fireEvent.mouseDown(screen.getByRole("button", { name: /review/ }));
     });
     await act(async () => {});
 
@@ -6396,7 +6466,7 @@ describe("voice recording escape", () => {
   it("cancels the recording on Escape and consumes the event before the composer's dismiss", () => {
     const cancel = vi.fn();
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({ voice: voiceConfig({ cancel }) })}
       />,
     );
@@ -6417,7 +6487,7 @@ describe("voice recording escape", () => {
   it("cancels on Escape while transcribing too", () => {
     const cancel = vi.fn();
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           voice: voiceConfig({ state: "transcribing", cancel }),
         })}
@@ -6431,7 +6501,7 @@ describe("voice recording escape", () => {
   it("leaves Escape alone when not recording", () => {
     const cancel = vi.fn();
     render(
-      <ComposerBox
+      <ControlledComposerBox
         {...createPromptBoxProps({
           voice: voiceConfig({ state: "idle", cancel }),
         })}
@@ -6547,7 +6617,11 @@ describe("thread URL clipboard paste", () => {
         onSubmit: submitted,
       });
       const content = (value: string) => (
-        <ComposerBox {...props} value={value} promptBoxRef={promptBoxRef} />
+        <ControlledComposerBox
+          {...props}
+          value={value}
+          promptBoxRef={promptBoxRef}
+        />
       );
       try {
         const view = render(content(""));

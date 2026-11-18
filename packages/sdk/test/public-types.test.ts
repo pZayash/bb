@@ -271,6 +271,8 @@ type ExpectedHostsKey =
   | "experimental_discoverRepos"
   | "get"
   | "installProviderCli"
+  | "experimental_startProviderCliInstall"
+  | "experimental_providerCliInstallJobs"
   | "list"
   // bb-fork(windows): shells this host can launch from Start terminal.
   | "listTerminalShells"
@@ -399,6 +401,7 @@ type ExpectedThreadsKey =
   | "experimental_listDescendants"
   | "experimental_listCascade"
   | "experimental_listPluginMetadata"
+  | "experimental_headState"
   | "experimental_regenerateTitle"
   | "getPluginMetadata"
   | "updatePluginMetadata"

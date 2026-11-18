@@ -2,11 +2,13 @@
 import {
   hostToolchain,
   nodeNetworkArgs,
+  readAgentCpuPriority,
   spawnHostProcess as spawn,
 } from "@bb/process-utils";
 import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { relayDesktopAppUpdates } from "@bb/config/desktop-app-update";
+import { announceDesktopRuntimeReady } from "@bb/config/desktop-runtime-ready";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 // bb-fork(windows): the bb.cmd shim and CLI entry selection live in a fork module.
 import {
@@ -21,7 +23,7 @@ import {
   type StartMovedResponderArgs,
 } from "./moved-responder.js";
 import { mutateManagedJsonFile } from "@bb/config/managed-json-file";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,6 +39,7 @@ import {
 import { stopVerifiedProcess } from "@bb/config/verified-process-stop";
 import {
   findMachineServiceFile,
+  HOST_DAEMON_AUTH_REJECTED_EXIT_CODE,
   HOST_DAEMON_RESTART_EXIT_CODE,
   MACHINE_INSTALLER_ENV_NAME,
 } from "@bb/config/machine-service";
@@ -443,6 +446,7 @@ export interface ManagedFullStackProcesses {
 }
 
 interface SpawnNamedManagedProcessArgs {
+  appScheduling: boolean;
   ipc?: boolean;
   logDir: string;
   args: string[];
@@ -546,6 +550,7 @@ interface SuperviseBbAppStartArgs {
   findMachineService: () => Promise<string | null>;
   isShutdownRequested: () => boolean;
   onFullStackReady?: () => Promise<void>;
+  onRuntimeReady: () => void;
   prepareFullStack: (entry: FullStackEntry) => Promise<FullStackStarters>;
   processes: ManagedFullStackProcesses;
   readServerMoveMarkers: ReadServerMoveMarkersFn;
@@ -2871,6 +2876,7 @@ Exits with code 3 without starting when the server on this data directory moved 
 
   log(" ", dim(`logs: ${runtime.context.logDir}/`));
   const childProcess = spawnLoggedProcess({
+    appScheduling: readAgentCpuPriority(runtime.context.dataDir),
     command: process.execPath,
     args: [...nodeNetworkArgs(runtime.serverEnv), runtime.context.serverEntry],
     logDir: runtime.context.logDir,
@@ -2943,6 +2949,7 @@ async function runHostDaemonOnly(args: RunHostDaemonOnlyArgs): Promise<void> {
 
   const startDaemon = (): ChildManagedProcessRun =>
     spawnNamedManagedProcess({
+      appScheduling: readAgentCpuPriority(args.context.dataDir),
       args: [...nodeNetworkArgs(daemonEnv), args.context.daemonEntry],
       command: process.execPath,
       env: daemonEnv,
@@ -3167,6 +3174,7 @@ export async function startFullStackServerProcess(
 
   const launchId = randomUUID();
   const serverRun = spawnNamedManagedProcess({
+    appScheduling: readAgentCpuPriority(args.context.dataDir),
     args: [...nodeNetworkArgs(args.env), args.context.serverEntry],
     command: process.execPath,
     env: { ...args.env, BB_SERVER_LAUNCH_ID: launchId },
@@ -3203,6 +3211,7 @@ async function startDaemonProcess(
   args: StartDaemonProcessArgs,
 ): Promise<ManagedProcessRun> {
   const daemonRun = spawnNamedManagedProcess({
+    appScheduling: readAgentCpuPriority(args.context.dataDir),
     args: [...nodeNetworkArgs(args.env), args.context.daemonEntry],
     command: process.execPath,
     env: args.env,
@@ -3232,8 +3241,44 @@ async function startDaemonProcess(
     if (args.processes.daemonRun === daemonRun) {
       args.processes.daemonRun = null;
     }
+    if (
+      daemonRun.childProcess.exitCode === HOST_DAEMON_AUTH_REJECTED_EXIT_CODE
+    ) {
+      throw new HostDaemonAuthRejectedError();
+    }
     throw new Error("Host daemon failed to become healthy");
   }
+}
+
+export class HostDaemonAuthRejectedError extends Error {
+  constructor() {
+    super("The server rejected the host key saved in auth.json");
+    this.name = "HostDaemonAuthRejectedError";
+  }
+}
+
+export async function createOwnedServerDaemonStarter<T>(args: {
+  dataDir: string;
+  prepareEnv: () => Promise<NodeJS.ProcessEnv>;
+  start: (env: NodeJS.ProcessEnv) => Promise<T>;
+}): Promise<() => Promise<T>> {
+  let env = await args.prepareEnv();
+  return async () => {
+    try {
+      return await args.start(env);
+    } catch (error) {
+      if (!(error instanceof HostDaemonAuthRejectedError)) {
+        throw error;
+      }
+      log(
+        yellow("!"),
+        "The server rejected this computer's saved host key - enrolling it again",
+      );
+      await rm(join(args.dataDir, HOST_AUTH_FILE_NAME), { force: true });
+      env = await args.prepareEnv();
+      return args.start(env);
+    }
+  };
 }
 
 async function restartManagedProcess(
@@ -3745,6 +3790,7 @@ export async function superviseBbAppStart(
     log(" ", formatReadyOutputRow("lock", args.context.daemonLockFile));
     process.stdout.write("\n");
     log(" ", dim("Press Ctrl+C to stop"));
+    args.onRuntimeReady();
     await args.onFullStackReady?.();
 
     return superviseFullStackProcesses({
@@ -3762,6 +3808,7 @@ export async function superviseBbAppStart(
   const enterMovedMode = async (
     movedFile: ServerMovedFile,
   ): Promise<FullStackSupervisionResult> => {
+    args.onRuntimeReady();
     const movedModeResult = await runMovedMode({
       bindHost: args.serverBindHost,
       context: args.context,
@@ -4289,6 +4336,7 @@ export async function runBbApp(
         : {
             onFullStackReady: () => appUpdateController.onFullStackReady(),
           }),
+      onRuntimeReady: announceDesktopRuntimeReady,
       prepareFullStack: async (entry) => {
         const fullStackRuntime = await resolveFullStackRuntime(entry);
         const serverEnv = createServerEnv({
@@ -4311,25 +4359,27 @@ export async function runBbApp(
           env: stripThreadContextEnv(fullStackRuntime.env),
         });
         return {
-          prepareDaemon: async () => {
-            const autoJoinEnv = await maybeAddAutoJoinEnv({
+          prepareDaemon: () =>
+            createOwnedServerDaemonStarter({
               dataDir: context.dataDir,
-              env: sharedEnv,
-              serverUrl: context.serverUrl,
-            });
-            const daemonEnv = createDaemonEnv({
-              context,
-              env: autoJoinEnv,
-              serverUrl: context.serverUrl,
-            });
-            return () =>
-              startDaemonProcess({
-                context,
-                env: daemonEnv,
-                processes,
-                serverUrl: context.serverUrl,
-              });
-          },
+              prepareEnv: async () =>
+                createDaemonEnv({
+                  context,
+                  env: await maybeAddAutoJoinEnv({
+                    dataDir: context.dataDir,
+                    env: sharedEnv,
+                    serverUrl: context.serverUrl,
+                  }),
+                  serverUrl: context.serverUrl,
+                }),
+              start: (env) =>
+                startDaemonProcess({
+                  context,
+                  env,
+                  processes,
+                  serverUrl: context.serverUrl,
+                }),
+            }),
           startServer: () =>
             startFullStackServerProcess({
               ...(options.beforeServerStart === undefined

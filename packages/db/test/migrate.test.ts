@@ -11,6 +11,8 @@ import {
   dropMarketplaceSourceGitSubdirectoryColumn,
   dropThreadParentNotificationsColumn,
   dropQueuedMessageDeliveryColumns,
+  dropPluginFailureLabelColumns,
+  dropThreadRunStateTables,
   dropThreadStatusChangedAtColumn,
   restoreDiffViewedFilesTable,
   dropQueuedMessageEditHeldUntilColumn,
@@ -266,6 +268,14 @@ const threadStatusChangedAtMigrationWhen = (
     readFileSync(resolve(__dirname, "../drizzle/meta/_journal.json"), "utf-8"),
   ) as { entries: { tag: string; when: number }[] }
 ).entries.find((entry) => entry.tag === "0150_thread_status_changed_at")!.when;
+
+const projectSourcesDefaultIndexMigrationWhen = (
+  JSON.parse(
+    readFileSync(resolve(__dirname, "../drizzle/meta/_journal.json"), "utf-8"),
+  ) as { entries: { tag: string; when: number }[] }
+).entries.find(
+  (entry) => entry.tag === "0155_declare_project_sources_default_index",
+)!.when;
 
 function restoreWideExperimentsTable(db: DbConnection): void {
   const columns = db.$client
@@ -751,6 +761,8 @@ function rewindEnvironmentProvisioningMigration(db: DbConnection): void {
   dropThreadParentNotificationsColumn(db);
   dropQueuedMessageDeliveryColumns(db);
   dropThreadStatusChangedAtColumn(db);
+  dropThreadRunStateTables(db);
+  dropPluginFailureLabelColumns(db);
   db.$client.exec("DROP TRIGGER IF EXISTS threads_lifecycle_owner_insert");
   db.$client.exec("DROP TRIGGER IF EXISTS threads_lifecycle_owner_immutable");
   db.$client.exec("DROP INDEX IF EXISTS threads_lifecycle_owner_idx");
@@ -802,6 +814,8 @@ function dropQueuedMessageAttemptColumns(db: DbConnection): void {
   dropThreadParentNotificationsColumn(db);
   dropQueuedMessageDeliveryColumns(db);
   dropThreadStatusChangedAtColumn(db);
+  dropThreadRunStateTables(db);
+  dropPluginFailureLabelColumns(db);
   const columns = db.$client
     .prepare<[], TableInfoRow>("PRAGMA table_info(queued_thread_messages)")
     .all();
@@ -883,6 +897,8 @@ function rewindMachineProvidersMigration(db: DbConnection): void {
   dropThreadParentNotificationsColumn(db);
   dropQueuedMessageDeliveryColumns(db);
   dropThreadStatusChangedAtColumn(db);
+  dropThreadRunStateTables(db);
+  dropPluginFailureLabelColumns(db);
   db.$client.exec("DROP TABLE IF EXISTS ui_preference_defaults");
   const queuedDispatchOrigin = db.$client
     .prepare<[], TableInfoRow>("PRAGMA table_info(queued_thread_messages)")
@@ -2628,6 +2644,8 @@ describe("migrate", () => {
         providerId: "codex",
       });
       dropThreadStatusChangedAtColumn(db);
+      dropThreadRunStateTables(db);
+      dropPluginFailureLabelColumns(db);
       restoreDiffViewedFilesTable(db);
       db.$client
         .prepare<[number, string]>(
@@ -3463,6 +3481,8 @@ describe("migrate", () => {
       dropThreadParentNotificationsColumn(db);
       dropQueuedMessageDeliveryColumns(db);
       dropThreadStatusChangedAtColumn(db);
+      dropThreadRunStateTables(db);
+      dropPluginFailureLabelColumns(db);
       db.$client.prepare("DROP INDEX projects_deleted_idx").run();
       db.$client.prepare("ALTER TABLE projects DROP COLUMN deleted_at").run();
       db.$client.prepare("ALTER TABLE events ADD producer_event_id text").run();
@@ -3863,6 +3883,35 @@ describe("migrate", () => {
       expect(readLatestAppliedMigrationCreatedAt(db)).toBe(latestMigrationWhen);
       expect(readTableNames(db)).not.toContain("event_large_values");
       expectEventLargeValuesInline(db, values);
+    } finally {
+      closeConnection(db);
+    }
+  });
+
+  it("declares the default project source index on a database that already has it", () => {
+    const db = createConnection(":memory:");
+
+    try {
+      migrate(db);
+      db.$client
+        .prepare<DeleteMigrationParameters>(
+          `
+            DELETE FROM __drizzle_migrations
+            WHERE created_at >= ?
+          `,
+        )
+        .run(projectSourcesDefaultIndexMigrationWhen);
+      dropThreadRunStateTables(db);
+      dropPluginFailureLabelColumns(db);
+
+      expect(() => migrate(db)).not.toThrow();
+      expect(
+        db.$client
+          .prepare<[], IndexNameRow>(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'project_sources_default_project_idx'",
+          )
+          .all(),
+      ).toEqual([{ name: "project_sources_default_project_idx" }]);
     } finally {
       closeConnection(db);
     }

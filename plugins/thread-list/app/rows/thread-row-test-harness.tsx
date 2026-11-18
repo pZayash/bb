@@ -25,7 +25,7 @@ import {
 } from "@get-bb/plugin-sdk/testing/app";
 import { makeSidebarThread } from "../model/fixtures.js";
 import { sidebarShowProviderIconsAtom } from "../preferences/atoms.js";
-import { SidebarProjectsContext } from "../model/use-sidebar-data.js";
+import { SidebarProjectNamesContext } from "../model/use-sidebar-data.js";
 import type { ThreadRowOptions } from "./ThreadRow.js";
 import {
   CustomizeRowActionsContext,
@@ -105,7 +105,9 @@ export function ThreadRowHarness({
     />
   );
   const content = (
-    <SidebarProjectsContext.Provider value={projects}>
+    <SidebarProjectNamesContext.Provider
+      value={new Map(projects.map((project) => [project.id, project.name]))}
+    >
       <SidebarProvidersContext.Provider value={providers}>
         <TooltipProvider>
           <SidebarDraftPresenceSync />
@@ -148,7 +150,7 @@ export function ThreadRowHarness({
           </ThreadRowNavigationProvider>
         </TooltipProvider>
       </SidebarProvidersContext.Provider>
-    </SidebarProjectsContext.Provider>
+    </SidebarProjectNamesContext.Provider>
   );
   return isCompactViewport === undefined ? (
     content
