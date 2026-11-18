@@ -149,7 +149,7 @@ the fork delta small and merges cheap with these rules.
   [docs/windows.md](docs/windows.md)). If upstream adds its own `.npmrc`, keep
   both settings instead of choosing a side.
 
-<!-- kit-section: kit-agent-loop, hash: cfef0bb59b573cc8, source: harness -->
+<!-- kit-section: kit-agent-loop, hash: b40b3530f866e439, source: harness -->
 ## Старт сессии и guard-правила (kit)
 
 В начале сессии выполни:
@@ -163,7 +163,8 @@ harness и `bash harness/scripts/bootstrap-kit.sh .`, или закоммити�
 gitlink).
 
 Перед bash-командами с `git`/`rm` по путям kit (`harness/`, `.cursor/`, `.pi/`,
-`.agents/`, `.claude/`) и перед `openspec init` / `rtk init` проверяй команду:
+`.agents/`, `.claude/`) и перед `openspec init` / `rtk init` / любым
+`openspec <команда>` проверяй команду:
 
 ```bash
 python harness/tools/kit-agent/kit_agent.py check-command "<команда>"

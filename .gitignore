@@ -129,9 +129,6 @@ plans/
 /.cursor/skills/explore
 /.cursor/skills/handoff
 /.cursor/skills/harness-promote
-/.cursor/skills/openspec-apply-change
-/.cursor/skills/openspec-archive-change
-/.cursor/skills/openspec-propose
 /.cursor/skills/orchestrated-child
 /.cursor/skills/orchestrator
 /.cursor/skills/plan-creation-rules
@@ -139,6 +136,10 @@ plans/
 /.cursor/skills/retro
 /.cursor/skills/review
 /.cursor/skills/review-request
+/.cursor/skills/spec-apply
+/.cursor/skills/spec-archive
+/.cursor/skills/spec-propose
+/.cursor/skills/spec-sync
 /.pi/extensions
 /.pi/prompts
 /.pi/skills
@@ -151,3 +152,6 @@ plans/
 
 # bb-fork(windows): operator session handoff scratch, not part of the product.
 HANDOFF.md
+
+# kit-spec: junction shim (не трекать)
+openspec/
