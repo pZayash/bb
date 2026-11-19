@@ -1170,6 +1170,30 @@ keys. Caller: push notifications, which reads
 2. **Plugin-owned experiments.** Decide whether plugins should declare their
    own experiments in Settings → Experiments rather than only read bb's.
 
+## `bb.sdk.threads.experimental_headState`
+
+`GET /threads/:id/head-state` returns the thread's head state:
+`{ activePromptMode, contextWindowUsage, extensionStates, modelFallback,
+pendingTodos, providerCommands, sessionOptions }`. `readThreadHeadState` reads
+each field from its latest stored state events, so the cost does not grow with
+turn or thread length. The latest timeline page embeds the same result instead
+of deriving these fields from its rows. `pendingTodos` and `activePromptMode`
+are null unless the thread is active. Core callers: the timeline build, `bb
+thread show`, `bb thread commands`, `bb thread options`, and `sdk.status`.
+It replaced the timeline's `summaryOnly` query, which built the whole latest
+page and dropped its rows; the server now ignores that parameter and returns
+the full page.
+
+Docs: `backend-sdk.md`, `docs/timeline-pagination.md`.
+
+**Audit before stabilizing.**
+
+1. **Page-derived fields.** Active thinking, active workflows, and active
+   background commands still come from projecting the latest page, so reading
+   them still needs a timeline page. Decide whether they become head state.
+2. **`threads.context`.** It returns `contextWindowUsage` alone through the
+   same read. Decide whether to keep it as a narrow read or retire it.
+
 ## `bb.sdk.threads.experimental_listAncestors`
 
 `POST /threads/ancestors` with `{ threadIds }` (1–200 ids) returns
@@ -1335,9 +1359,10 @@ component receives `InternalDoNotUseSetupGuideSectionProps`:
 `{ onPhone, onSetupStarted, onSetupFailed }`. `onPhone` is true when the guide
 is open on a phone, so the row hides install links and phone pairing. The row
 calls `onSetupStarted()` when the user starts setting it up and
-`onSetupFailed(stage)` (`InternalDoNotUseSetupFailureStage`: `sign_in`,
-`pairing`, or `turn_on`) when an attempt fails, so the guide can record the
-step. Core's `PluginSetupGuideSections` renders a plugin's rows through
+`onSetupFailed(stage, detail?)` (`InternalDoNotUseSetupFailureStage`:
+`sign_in`, `pairing`, or `turn_on`; `InternalDoNotUseSetupFailureDetail`: a
+fixed error code such as `expired` or `invalid_code`, never a message) when an
+attempt fails, so the guide can record the step and why. Core's `PluginSetupGuideSections` renders a plugin's rows through
 the ordinary plugin slot boundary.
 
 Callers: the bundled `connect` plugin only. Core caller: the onboarding
@@ -1351,34 +1376,33 @@ own the row chrome instead of the plugin rendering `SetupOptionRow`.
 
 Internal to bb's bundled `connect` plugin: the `internal_DO_NOT_USE_` prefix marks members that are not part of the plugin API, are not offered to third-party plugins, and may change or disappear in any release.
 
-`internal_DO_NOT_USE_onSetupStarted` is set only when the setup guide renders a
-plugin's settings section inline (the current guide's Devices step expands the
-bb connect settings under Set up). The section calls it when the user actually
-starts setting up: bb connect calls it when getbb.app sign-in starts, a pairing
-code is submitted, or Turn on is pressed, so the current guide records
-`remote_access` `started` at the same moment as the redesigned guide's
-`onSetupStarted`. `internal_DO_NOT_USE_onSetupFailed(stage)` is its failure
-counterpart, called with the same `InternalDoNotUseSetupFailureStage` the
-redesigned guide's `onSetupFailed` receives (`sign_in` when getbb.app sign-in
+`internal_DO_NOT_USE_onSetupStarted` is meant to be set only when a setup
+guide renders a plugin's settings section inline. The section calls it when the
+user actually starts setting up: bb connect calls it when getbb.app sign-in
+starts, a pairing code is submitted, or Turn on is pressed, matching when the
+setup guide section's `onSetupStarted` fires.
+`internal_DO_NOT_USE_onSetupFailed(stage)` is its failure counterpart, called
+with the same `InternalDoNotUseSetupFailureStage` and optional
+`InternalDoNotUseSetupFailureDetail` the setup guide section's
+`onSetupFailed` receives (`sign_in` when getbb.app sign-in
 can't start or ends denied, expired, or failed; `pairing` when a pairing code
 is rejected; `turn_on` when turning remote access on fails). Core's
 `PluginSettingsSections` passes them through its `onSetupStarted` and
 `onSetupFailed` props; Settings never sets them.
 
-Callers: the bundled `connect` plugin only. Core caller: the onboarding
-Devices step (current guide), which renders `PluginSettingsSections` for
-`connect`.
+Callers: the bundled `connect` plugin only. Core caller: none. The setup
+guide's Devices step renders `PluginSetupGuideSections` instead, and Settings
+never sets these props.
 
-**Audit before stabilizing.** Decide whether the setup guide should render
-setup guide rows in both variants instead, which would make this prop
-unnecessary.
+**Audit before stabilizing.** Remove both members, `PluginSettingsSections`'
+`onSetupStarted` and `onSetupFailed` props, and connect's handling of them.
 
 ## `PluginProviderDeclaration.internal_DO_NOT_USE_guidedSignIn` and `SystemProviderState.internal_DO_NOT_USE_guidedSignIn`
 
 Internal to bb's own provider plugins: the `internal_DO_NOT_USE_` prefix marks members that are not part of the plugin API, are not offered to third-party plugins, and may change or disappear in any release.
 
 A provider declaration sets `internal_DO_NOT_USE_guidedSignIn: true` when the
-redesigned first-run setup guide should run its sign-in in the guided panel:
+first-run setup guide should run its sign-in in the guided panel:
 the guide runs the provider's login command, keeps its terminal behind Show
 terminal, reads the sign-in link and code from the output, and shows them in
 the row. Every other provider is terminal-first: the guide opens the login
@@ -1386,7 +1410,7 @@ terminal in the row. The validator fills `false` when the field is absent and
 refuses a non-boolean. The server keeps it on the provider registration and
 projects it onto every provider-states row (`GET /system/provider-states`) as
 a required boolean, so the Agent step's row and its sign-in mode come from the
-same response. It is not part of `ProviderInfo`. Today's guide ignores it.
+same response. It is not part of `ProviderInfo`.
 
 Callers: `provider-claude-code`, `provider-codex`, and `provider-acp` for its
 Cursor agent only. Core caller: the onboarding Agent step
@@ -1402,11 +1426,11 @@ Pi's terminal `/login` flow belongs in the same declaration.
 
 Internal to bb's own provider plugins: the `internal_DO_NOT_USE_` prefix marks members that are not part of the plugin API, are not offered to third-party plugins, and may change or disappear in any release.
 
-A provider bridge's health result may set `internal_DO_NOT_USE_setupGuidePlanLabel` to a plan name (for example "Plus") that only the redesigned first-run setup guide shows next to the account on a ready agent row. `planLabel` keeps its existing meaning, so today's guide and every other surface show what they showed before. The field is optional on the bridge result and passes through older daemons unchanged; the server fills `null` when it is absent, so provider-states rows always carry it.
+A provider bridge's health result may set `internal_DO_NOT_USE_setupGuidePlanLabel` to a plan name (for example "Plus") that only the first-run setup guide shows next to the account on a ready agent row. `planLabel` keeps its existing meaning, so every other surface shows what it showed before. The field is optional on the bridge result and passes through older daemons unchanged; the server fills `null` when it is absent, so provider-states rows always carry it.
 
-Callers: `provider-codex` only (its ChatGPT plan). Core caller: the new guide's Agent step (`OnboardingFlow`), which prefers it over `planLabel`.
+Callers: `provider-codex` only (its ChatGPT plan). Core caller: the setup guide's Agent step (`OnboardingFlow`), which prefers it over `planLabel`.
 
-**Audit before stabilizing.** Decide whether the plan should become part of `planLabel` everywhere (Settings, today's guide) and the field be removed.
+**Audit before stabilizing.** Decide whether the plan should become part of `planLabel` everywhere (such as Settings) and the field be removed.
 
 ## Bridge record mode (`experimental_recordProviderChildIo` and `experimental_isProviderBridgeRecording`)
 
@@ -1916,6 +1940,68 @@ Docs: `frontend-core-slots.md`.
 4. **More summary.** The More button's accessible name lists every hidden
    badge. Check that this stays usable with many badged hidden panels.
 
+## `PluginNavPanelRegistration.experimental_headerTitle`
+
+An optional component receiving `PluginNavPanelProps` (`{ subPath }`).
+`PluginPanelHeaderCenter`
+(`apps/app/src/components/plugin/PluginPanelHeader.tsx`) renders it in the
+page's shared title bar in place of the panel icon, `title` and
+`experimental_usePageTitle` text, in the routed page header (`AppLayout`) and
+in plugin-panel split panes (`SplitThreadArea`). It is wrapped in
+`PluginContext` and a `data-bb-plugin-root` element like `headerContent`, and
+contained by the same error boundary: a throw logs a warning and shows the
+default icon and title. The window title still comes from
+`experimental_usePageTitle` or the panel title. Before the plugin loads, the
+header shows the remembered default title.
+
+**Core callers.** None: core pages render `PageTitleHeader`. The motivating
+caller is the Conductor layout plugin's "new chat in this workspace" page,
+which shows the same `project › workspace` breadcrumb as its thread header
+title. Tests: `plugin-slot-mounts.test.tsx` (render with subPath, crash
+fallback) and `plugin-app-nav-sidebar.test.ts` (registration).
+
+Docs: `frontend-core-slots.md`.
+
+**Audit before stabilizing.**
+
+1. **Shared title component.** Decide whether core should expose its
+   `PageTitleHeader` so plugins can compose rather than replace it.
+2. **Split panes.** In a split pane the pane drag starts from the title area
+   except on links and buttons; confirm that is enough for rich titles.
+
+## `PluginNavPanelRegistration.experimental_hideFromNavigation`
+
+An optional boolean. When true, `createSidebarNavigationRows`
+(`apps/app/src/components/sidebar/sidebarNavigationItems.ts`) leaves the panel
+out, so it has no rail or list entry, no More entry, no place in the user's
+navigation arrangement and no badge; `buildPluginPagePaletteActions` leaves out
+its "Plugin pages" palette entry. The plugin's capability list describes it
+as a page the plugin opens itself. Its route `/plugins/<pluginId>/<path>/*`
+renders as usual, with its title bar, App panel, right panel and splits; a
+plugin opens it with `useBbNavigate().toPluginPanel(path, { subPath })`.
+
+Navigation renders from the last-known chrome cache
+(`apps/app/src/lib/plugin-nav-panel-chrome.ts`) before plugins load, so the
+cache stores `hideFromNavigation` per panel. Its version went from 1 to 2, so a
+profile's first boot after the upgrade starts with no remembered panels rather
+than showing a hidden one.
+
+**Core callers.** None. The motivating caller is the Conductor layout plugin's
+"new chat in this workspace" page, reached from its tab strip. Tests:
+`SidebarNavigationRail.test.tsx` (rail and More, remembered and live),
+`palette-plugin-page-actions.test.ts`, `plugin-nav-panel-chrome.test.ts`
+(cache), `plugin-slot-mounts.test.tsx` (route renders) and
+`plugin-app-nav-sidebar.test.ts` (registration).
+
+Docs: `frontend-core-slots.md`.
+
+**Audit before stabilizing.**
+
+1. **Discoverability.** A hidden page is reachable only from plugin UI and
+   links. Decide whether Settings or the plugin's detail page should list it.
+2. **Settings toggle.** Decide whether users can show a hidden page in
+   navigation, which would make this a default rather than a rule.
+
 ## `app.slots.experimental_sidebarNavigation` (`@get-bb/plugin-sdk/app`)
 
 **Restored 2026-10-15 (SDK 0.6.53) with `placement`.** It was removed in
@@ -2249,24 +2335,66 @@ Docs: `testing.md`.
    falls back when no closing tag matches. Decide whether a full parser is
    owed before the scan is a promise.
 
+## `experimental_trackChildProcesses`, `experimental_createProcessLifeline` and `experimental_createDescendantPipe` (`@get-bb/plugin-sdk/testing`)
+
+Test fixtures for observing processes by handle instead of by PID. A PID check
+answers for whichever process holds the number now, and Windows reuses PIDs
+quickly.
+
+- `experimental_trackChildProcesses()` records each `ChildProcess` spawned in
+  the test process through Node's `child_process` diagnostics channel. It
+  offers `children`, `running()`, `waitForExit()`, `killRunning()` and
+  `dispose()`.
+- `experimental_createProcessLifeline()` opens a local socket (a named pipe on
+  Windows). A descendant joins by running `holdSource(label)`. Each holder's
+  `exited` and `alive()` follow its connection, and `kill()` signals only while
+  that connection is open. `close()` kills the holders still connected.
+- `experimental_createDescendantPipe()` makes a POSIX named pipe for shell
+  descendants that cannot run Node. A descendant redirects into it, which
+  costs no startup time. `opened` and `closed` follow that write end.
+
+Both are wrappers over `@bb/test-helpers/child-processes`, the module core tests
+use. The repository rule `scripts/check-test-process-identity.mjs`, run in CI's
+plan job, rejects signal-0 probes, PID-argument liveness helpers and PID
+inequality assertions in test code. Forkable first-party plugins (Codex,
+Automations, Browser Automation, MCP, Personal Workspace) call these exports.
+
+Docs: `testing.md`.
+
+**Audit before stabilizing.**
+
+1. **Holder kinds.** A lifeline holder must be a Node process, because
+   `holdSource` is a JavaScript statement. A descendant pipe is POSIX-only,
+   and nothing can signal its writer. Decide whether one primitive should
+   cover both, and how Windows shell descendants are observed.
+2. **Connection lifetime versus process lifetime.** A holder that closes its
+   socket early reads as exited, and one that hands the socket to a child stays
+   alive through that child. Confirm no caller needs exact process lifetime.
+3. **Diagnostics channel coverage.** The tracker sees only `child_process`
+   spawns made in this process, not `worker_threads` or processes from native
+   addons. Confirm that matches what plugin tests need.
+
 ## `app.experimental_useProviders` (`@get-bb/plugin-sdk/app`)
 
 **Kept experimental (2026-08-22).** The hook returns `ProviderInfo`, which
 carries the unresolved `icon` / `logoUrl` pair and `maintenance`. Stabilizing
 the hook freezes that shape.
 
-Returns `{ status, providers }`, the host's `ProviderInfo[]` roster in picker
-order with shared cache and realtime invalidation.
+Returns `{ status, providers }`: every registered provider's `ProviderInfo`
+in picker order, whichever machine has it installed, read from the provider
+catalog with shared cache, last-known replay and realtime invalidation. Core's
+home Recents list reads the same directory (`useProviderDirectory`).
 
 Docs: `frontend-registration.md`,
 [provider-plugin-api.md](provider-plugin-api.md) §5.
 
 **Audit before stabilizing.**
 
-1. **Routing.** The hook reads the primary-host roster (no `environmentId` /
-   `hostId` argument), so installed-only providers of another machine are not
-   listed. Decide whether plugins need host-scoped listing before freezing the
-   signature.
+1. **Routing.** The hook lists every registered provider, including
+   installed-only providers no connected machine has installed and providers
+   the user disabled; `available` is the registry's flag, not a per-machine
+   check. Decide whether plugins also need a host-scoped roster before
+   freezing the signature.
 2. **Icons.** A provider's SVG asset arrives as `logoUrl` (drawn as a
    `currentColor` mask) and a named glyph as `icon: { glyph }`; at most one is
    set. Decide whether `icon` and `logoUrl` fold into one `{ glyph } | { url }`
@@ -3291,6 +3419,96 @@ Docs: `frontend-thread-context-card.md`, `frontend-registration.md`,
 6. **Groups.** Rows and sections reuse the Info tab's groups. Confirm the two surfaces
    should share one group vocabulary.
 
+## `app.slots.experimental_threadHeaderRow` (`@get-bb/plugin-sdk/app`)
+
+A registration is `{ id, order?, component }`. Every registered row renders
+full width, stacked by `order` ascending (unset last, then registration
+order), directly under `ThreadDetailHeader` and above the timeline, in every
+thread page and split pane. The component receives
+`ExperimentalThreadHeaderRowProps`: `{ threadId, projectId, environment }`,
+where `environment` is `{ id }` from the thread, null when it has none. A
+component that returns null takes no space; when no plugin registers a row,
+the host renders nothing.
+
+`ThreadDetailView` appends `PluginThreadHeaderRows`
+(`apps/app/src/components/plugin/PluginThreadHeaderRows.tsx`) to the
+`timelineHeader` it passes as `mainHeader` to `SecondaryPanelLayout`, inside
+the thread's `AppNavigationHostProvider`, so `experimental_useAppPanel()` and
+`experimental_usePanelTabs()` in a row act on that thread's side panel. Each
+row mounts in its own `PluginSlotMount` crash boundary (`crashFallback={null}`),
+keyed by plugin, id, generation and thread, so a crash removes only that row
+for that thread.
+
+**Core callers.** None: bb draws nothing between the thread header and the
+timeline, so there is no core path to share. The motivating caller is a
+Conductor-style tab strip of the threads that share the thread's environment.
+Contract tests: `ThreadDetailView.contract.test.tsx` (placement, order, props,
+crash containment, plugin hooks, and the panel controller contract run from a
+row).
+
+Docs: `frontend-thread-header-row.md`.
+
+**Audit before stabilizing.**
+
+1. **Callers.** Ship at least one plugin that uses the row, and decide whether
+   bb moves any of its own pane chrome (such as banners) into the slot.
+2. **Compact viewports.** Rows take vertical space above the timeline on
+   phones; decide whether bb hides or collapses them in a compact viewport.
+3. **Ordering across plugins.** `order` is a bare number shared by every
+   plugin; confirm that is enough, or add groups as the Info tab has.
+4. **Transcript and panel presentations.** Rows render only on thread
+   pages and split panes, not in threads shown inside a panel or as a
+   transcript; confirm that scope.
+
+## `app.slots.experimental_threadHeaderTitle` (`@get-bb/plugin-sdk/app`)
+
+A registration is `{ id, component }`. The component receives
+`ExperimentalThreadHeaderTitleProps`, an alias of
+`ExperimentalThreadHeaderRowProps` (`{ threadId, projectId, environment }`),
+and renders in `ThreadDetailHeader` in place of the `ThreadTitle` text, in
+every thread page and split pane. Only one title renders: the first
+registration in slot order, which is plugin id in lexical order, then
+registration order within a plugin. Later registrations are ignored.
+
+Core keeps the rest of the header: the Thread actions menu after the title,
+plugin header actions, the open-in button, pane maximize and close, the context
+card button, the right-panel toggle, the macOS drag region, and the split-pane
+drag from the title area. While the inline rename editor is open (the
+`thread.rename` command or the menu's Rename) the header shows core's editor
+instead of the plugin title. Double-click does not start a rename on a plugin
+title. The pane drag ignores pointer-downs on links, buttons, inputs, labels,
+`role="button"`/`role="link"` and content-editable elements inside the title,
+so a plugin title can be clickable. The plugin title renders in a `div`, not
+core's `p`, so block content is valid. The document title stays the thread
+title.
+
+`PluginThreadHeaderTitle`
+(`apps/app/src/components/plugin/PluginThreadHeaderTitle.tsx`) mounts the
+component through `PluginSlotMount` keyed by plugin, id, generation and thread,
+with core's `ThreadTitle` as `crashFallback`, so a crash shows the normal title
+for that thread.
+
+**Core callers.** None: core draws the thread title itself and has no
+alternative title. The motivating caller is the Conductor layout plugin, which
+shows the thread title as the active tab of an `experimental_threadHeaderRow`
+tab strip and puts a `project › workspace` breadcrumb in the header instead.
+Tests: `ThreadDetailHeader.test.tsx` (props, plugin order, crash fallback,
+rename editor, pane drag from controls) and
+`plugin-app-thread-header-title.test.ts` (registration).
+
+Docs: `frontend-thread-header-row.md`.
+
+**Audit before stabilizing.**
+
+1. **Exclusivity.** First-wins by plugin id is silent. Decide whether users
+   pick the title provider in Settings, as for the thread list and composer.
+2. **Rename affordance.** A plugin title loses double-click rename; confirm
+   the menu and shortcut are enough or let the component request a rename.
+3. **Compact viewports.** Check how a long breadcrumb truncates next to the
+   header actions on phones and in narrow split panes.
+4. **Window title.** Decide whether a plugin should be able to set the window
+   title for a thread, or whether it stays core-owned.
+
 ## `app.slots.experimental_threadRowMetadata` / `experimental_ThreadRowMetadata` (`@get-bb/plugin-sdk/app`)
 
 A registration is `{ id, order?, useData?, component }`. `useData` is a React
@@ -4282,6 +4500,51 @@ be cancelled during activation or rollback.
 Stabilization requires exercising reconnect/reload, concurrent deduplication,
 rollback delivery, missing jobs after restart, and CLI/SDK parity.
 
+## `PluginBbSdk.hosts.experimental_startProviderCliInstall` and `experimental_providerCliInstallJobs`
+
+Starts a server-owned provider CLI install or update on a machine and returns
+its job at once (`POST /hosts/:id/provider-clis/install-jobs`, 202).
+`experimental_providerCliInstallJobs.list/get` report `running`, then
+`completed` with the installer's events or `failed` with the reason the
+machine could not run it; `wait` polls `get` until the job ends and rides out
+up to two minutes of the server being unreachable. Starting the same provider
+on the same machine while a job runs returns that job. Jobs survive client
+disconnects, stay ten minutes after finishing, and live in memory only, so a
+server restart answers `provider_cli_install_job_not_found`. Installs on one
+machine run one at a time. When the machine refuses an action that is no
+longer needed and a fresh status shows the provider installed (install) or
+current (update), the job completes with one successful `completed` event
+whose `exitCode` and `signal` are null, instead of the refusal.
+`installProviderCli` keeps its events contract by starting a job and waiting
+on it. Core callers: the Updates settings section,
+the sidebar updates badge and the setup guide through
+`provider-cli-install-store`, which also follows jobs started elsewhere
+(another device or before a reload), and `bb updates apply` and
+`bb machine` through `installProviderCli`. Stabilize after reload, server
+restart and multi-device follow have been exercised on released builds, and
+once streaming installer output into the job (which needs a daemon protocol
+change) is settled.
+
+## `PluginApplyUpdateArgs.range`, `expectedVersion`, and `rangeUpgrade` on update checks
+
+`checkUpdates` and `listUpdateResults` entries carry `rangeUpgrade` when a
+newer stable release sits outside a git semver or npm range source's saved
+range: `currentRange`, the proposed `range`, `basis` (`catalog` when the
+plugin's marketplace entry still lists the same repository or package and its
+current range admits the release, `release` for installs from no marketplace
+or a removed one, which get `^<version>`; none is reported once the plugin's
+marketplace no longer lists it), the `candidate`, `breaking` (caret rule from the installed
+version), and `reasons` when the candidate fails engines on this bb.
+`applyUpdate` and `experimental_startUpdate` accept `range` to change the
+saved range in the same staged activation (refusing pinned sources, ranges
+with nothing newer, and downgrades) and `expectedVersion` to refuse a
+candidate other than the one reviewed. Core callers: the plugin details
+Review action and `UpdatePluginDialog` through `startPluginUpdate`, and
+`bb plugin update <id> --range`. Stabilize after the rollback of a range
+change, catalog-range adoption, and npm range changes have been exercised on
+released builds, and once a later decision on following non-breaking catalog
+range widenings automatically is made.
+
 ## `PluginBbSdk.system.experimental_recordTelemetryEvent`
 
 Posts one anonymous product event to `POST /api/v1/system/telemetry/events`,
@@ -4307,7 +4570,10 @@ step, whether the scan ran out of time and how many folders it could not open.
 A failed operation or `onboarding_sign_in` adds a `failure_reason` from a fixed
 set (`no_host`, `host_unavailable`, `timed_out`, `not_found`, `permission`,
 `command_failed`, `unsupported`, or `other`); a failed `remote_access` adds a
-`failure_stage` (`sign_in`, `pairing`, or `turn_on`) instead.
+`failure_stage` (`sign_in`, `pairing`, or `turn_on`) instead. Agent install
+and sign-in failures with `command_failed`, and `sign_in` or `pairing`
+remote access failures, may add `failure_detail` from a fixed set of error
+classes and an integer `exit_code`; never output or messages.
 `onboarding_left` reports the step a guide was on when the page unloaded
 before the guide finished; it passes the optional second argument
 `{ keepalive: true }`, which sends the request with `fetch`'s `keepalive` so it
@@ -4317,11 +4583,7 @@ the same fixed set.
 `unhandled_rejection`) with the guide's step, from `OnboardingErrorTelemetry`
 around the guide in `OnboardingGate`, which reports and rethrows render errors
 and listens for window errors only while the guide is open.
-`onboarding_exposed` (`entry`) marks the guide being shown; the server saves
-the assignment, adds `setup_guide_variant` and `setup_guide_source`, sets
-`setup_guide_variant` as a person property (`$set`), and sends
-`$feature_flag_called` when the variant came from the PostHog flag. Every
-setup-guide event gets `setup_guide_variant` from the server.
+`onboarding_exposed` (`entry`) marks the guide being shown.
 
 Stabilize after deciding whether third-party plugins may emit product events
 at all and, if so, how they are namespaced and rate limited.
