@@ -12,6 +12,7 @@ import {
 import { installPluginRuntime } from "@/lib/plugin-frontend";
 import { setPluginSlotRegistrations } from "@/lib/plugin-slots";
 import { makePluginRegistrationSet } from "./plugins";
+import { isNonImeKey } from "@bb/shared-ui/lib/ime-keyboard";
 
 export const MINIMAL_COMPOSER_PLUGIN_ID = "minimal-composer";
 
@@ -135,7 +136,7 @@ function MinimalComposer() {
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (renderer.dispatchAppCommandKey(event.nativeEvent)) return;
-    if (event.key !== "Enter") return;
+    if (!isNonImeKey(event, "Enter")) return;
     // bb-fork(windows): Mod+Alt+Enter runs the enter action and Mod+Enter
     // bb-fork(windows): the modifier action; plain Enter is a textarea newline.
     if (!(event.metaKey || event.ctrlKey) || event.shiftKey) return;

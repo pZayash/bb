@@ -1,3 +1,4 @@
+import { outputJson } from "../../command-result.js";
 import { Command } from "commander";
 import {
   PERSONAL_PROJECT_ID,
@@ -12,7 +13,7 @@ import {
   printBorderlessTable,
   truncateCell,
 } from "../../table.js";
-import { collectOption, outputJson } from "../helpers.js";
+import { collectOption } from "../helpers.js";
 import {
   resolveMachineHostId,
   resolveMachineTargetOption,

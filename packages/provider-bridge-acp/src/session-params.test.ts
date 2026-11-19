@@ -38,6 +38,7 @@ describe("buildAcpModelListParams", () => {
       }),
       {
         parameterizedModelPicker: false,
+        envVars: {},
       },
     );
 
@@ -78,6 +79,7 @@ describe("buildAcpModelListParams", () => {
         }),
         {
           parameterizedModelPicker: false,
+          envVars: {},
         },
       ),
     ).toEqual({
@@ -108,6 +110,7 @@ describe("buildAcpModelListParams", () => {
         }),
         {
           parameterizedModelPicker: false,
+          envVars: {},
         },
       );
 
@@ -131,6 +134,7 @@ describe("buildAcpModelListParams", () => {
         }),
         {
           parameterizedModelPicker: true,
+          envVars: {},
           primaryModels: ["default", "composer-2.5", "grok-4.6"],
         },
       ),

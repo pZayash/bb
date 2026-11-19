@@ -55,6 +55,26 @@ describe("child thread notifications", () => {
     expect(message).not.toContain("Child thread updates:");
   });
 
+  it("cuts long final output without splitting an emoji", () => {
+    const retainedLength = 4_000 - "\n\n[... output truncated ...]".length;
+    const message = renderBatchMessage({
+      items: [
+        {
+          activeWorkflowCount: 0,
+          childThread: testThread({ id: "thr_child", title: "Long report" }),
+          terminalOutput: `${"x".repeat(retainedLength - 1)}\u{1F600}${"y".repeat(100)}`,
+          turnStatus: "completed",
+        },
+      ],
+    });
+
+    expect(message).not.toMatch(/[\uD800-\uDFFF]/u);
+    // bb-fork(parent-notify-tail): the excerpt keeps head+tail, so the marker
+    // is followed by the tail slice rather than ending the output.
+    expect(message).toContain("\n\n[... output truncated ...]\n\n");
+    expect(message).toContain(`\u{1F600}${"y".repeat(100)}`);
+  });
+
   it("omits output for a single failed outcome", () => {
     const message = renderBatchMessage({
       items: [

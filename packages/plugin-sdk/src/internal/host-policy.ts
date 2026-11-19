@@ -70,6 +70,7 @@ import type {
   StandardSchemaV1Issue,
   StandardSchemaV1Result,
 } from "../rpc-contract.js";
+import { sliceUtf16Head } from "@bb/text-utils";
 
 /**
  * Shared registration policy for the real plugin host and the in-process fake.
@@ -2848,10 +2849,9 @@ export function runPluginStorageMigrations(
     database.exec("ALTER TABLE _bb_migrations ADD COLUMN statement_hash TEXT");
   }
   const rows = database
-    .prepare<
-      [],
-      { id: number; statement_hash: string | null }
-    >("SELECT id, statement_hash FROM _bb_migrations ORDER BY id")
+    .prepare<[], { id: number; statement_hash: string | null }>(
+      "SELECT id, statement_hash FROM _bb_migrations ORDER BY id",
+    )
     .all();
   const applied = new Map<number, string | null>();
   for (const row of rows) applied.set(row.id, row.statement_hash);
@@ -3636,7 +3636,10 @@ export function normalizePluginAgentConfiguration(args: {
   const instructions =
     typeof output.instructions === "string" &&
     output.instructions.trim().length > 0
-      ? output.instructions.slice(0, PLUGIN_DYNAMIC_INSTRUCTIONS_MAX_CHARS)
+      ? sliceUtf16Head(
+          output.instructions,
+          PLUGIN_DYNAMIC_INSTRUCTIONS_MAX_CHARS,
+        )
       : null;
   const toolSelections = normalizePluginAgentToolSelections({
     knownIds: args.knownToolIds,

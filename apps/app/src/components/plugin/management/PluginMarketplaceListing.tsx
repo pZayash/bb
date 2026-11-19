@@ -72,6 +72,24 @@ export function PluginMarketplaceByline({
   );
 }
 
+export function PluginMarketplaceBadges({
+  entry,
+}: {
+  entry: Pick<PluginCatalogSearchEntry, "listings">;
+}) {
+  if (entry.listings.length < 2) return null;
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {entry.listings.map((listing) => (
+        <PluginNameTag
+          key={listing.marketplace}
+          tag={{ label: listing.marketplaceDisplayName, tone: "neutral" }}
+        />
+      ))}
+    </span>
+  );
+}
+
 export function PluginDetailMetadata({ children }: { children: ReactNode }) {
   return <dl className="grid grid-cols-2 gap-x-6 gap-y-4">{children}</dl>;
 }

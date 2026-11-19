@@ -3,6 +3,7 @@ export * from "./local-state.js";
 export * from "./local.js";
 export * from "./server-move.js";
 export * from "./session.js";
+export * from "./ws-channel.js";
 // bb-fork(windows): shell enumeration for the Start terminal picker.
 export * from "./terminal-shells.js";
 

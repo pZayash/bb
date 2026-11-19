@@ -17,6 +17,7 @@ import type {
   HostDirectoryQuery,
   HostDiscoveredReposResponse,
   HostActionResponse,
+  HostRemovalResponse,
   HostPathsExistRequest,
   HostPathsExistResponse,
   HostPickFolderRequest,
@@ -137,7 +138,7 @@ export interface MachineProviderListArgs {
 }
 
 export type HostCreateJoinCodeResult = CreateHostJoinCodeResponse;
-export type HostDeleteResult = { ok: true };
+export type HostDeleteResult = HostRemovalResponse;
 export type HostDirectoryResult = HostDirectoryListing;
 export type HostDiscoverReposResult = HostDiscoveredReposResponse;
 export type HostGetResult = Host & {
@@ -155,6 +156,7 @@ export type HostPickFolderResult = HostPickFolderResponse;
 export type HostProviderCliStatusResult = HostProviderCliStatusResponse;
 export type HostRetryUpdateResult = HostRetryUpdateResponse;
 export type HostActionResult = HostActionResponse;
+export type HostRetryCleanupResult = HostRemovalResponse;
 export type HostUpdateResult = Host;
 export type MachineProviderListResult = SystemMachineProvider[];
 
@@ -199,7 +201,9 @@ export interface HostsArea {
     args: HostProviderCliStatusArgs,
   ): Promise<HostProviderCliStatusResult>;
   experimental_resume(args: HostActionArgs): Promise<Host>;
-  experimental_retryCleanup(args: HostActionArgs): Promise<HostActionResult>;
+  experimental_retryCleanup(
+    args: HostActionArgs,
+  ): Promise<HostRetryCleanupResult>;
   retryUpdate(args: HostRetryUpdateArgs): Promise<HostRetryUpdateResult>;
   experimental_suspend(args: HostActionArgs): Promise<Host>;
   experimental_reconcile(args: HostActionArgs): Promise<Host>;
@@ -312,13 +316,12 @@ export function createHostsArea(args: CreateSdkAreaArgs): HostsArea {
       );
     },
     async delete(input) {
-      await transport.readVoid(
+      return transport.readJson(
         transport.api.v1.hosts[":id"].$delete({
           param: { id: input.hostId },
           query: input.force ? { force: "true" } : {},
         }),
       );
-      return { ok: true };
     },
     async experimental_deleteOldServerCopy(input) {
       const jobs = transport.api.v1.hosts[":id"]["old-server-copy"][

@@ -601,7 +601,6 @@ export function FilePreview({
             <FilePreviewIcon
               key={path}
               loading={
-                state.kind === "loading" ||
                 isRefreshing ||
                 (usesIframeLayout && iframeLoadState === "loading")
               }

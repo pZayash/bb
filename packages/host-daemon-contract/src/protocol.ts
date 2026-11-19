@@ -2,9 +2,7 @@
 // the host.list_terminal_shells and workspace.commits RPCs and the
 // terminal.open payload field "shellId". scripts/windows/merge-upstream.ps1
 // maintains the number on every merge.
-export const HOST_DAEMON_PROTOCOL_VERSION = 269 as const;
-
-export const HOST_DAEMON_CONNECT_NEXT_PROTOCOL_VERSION = 247 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 273 as const;
 
 export const HOST_DAEMON_DESKTOP_BROKER_PROOF_PROTOCOL_VERSION = 248 as const;
 
@@ -19,12 +17,6 @@ export function isCompatibleHostDaemonProtocolVersion(
   protocolVersion: number,
 ): boolean {
   return HOST_DAEMON_COMPATIBLE_PROTOCOL_VERSIONS.includes(protocolVersion);
-}
-
-export function hostDaemonSupportsConnectNext(
-  protocolVersion: number,
-): boolean {
-  return protocolVersion >= HOST_DAEMON_CONNECT_NEXT_PROTOCOL_VERSION;
 }
 
 export function hostDaemonSupportsDesktopBrokerProof(

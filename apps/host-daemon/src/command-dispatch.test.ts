@@ -360,6 +360,7 @@ async function runSuccessfulClaudeCodeUpdateVerification(args: {
   const result = await dispatchOnlineRpcCommand(
     {
       type: "provider.installation.run",
+      contributedEnv: [],
       bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
       providerId: "claude-code",
       action: "update",
@@ -428,6 +429,7 @@ describe("dispatchCommand", () => {
       const result = await dispatchOnlineRpcCommand(
         {
           type: "provider.list_commands",
+          contributedEnv: [],
           providerId: "pi",
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
           cwd,
@@ -1934,6 +1936,7 @@ describe("dispatchCommand", () => {
     );
     const command: CommandOf<"provider.installation.run"> = {
       type: "provider.installation.run",
+      contributedEnv: [],
       bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
       providerId: "codex",
       action: "update",
@@ -2038,6 +2041,7 @@ describe("dispatchCommand", () => {
       const result = await dispatchOnlineRpcCommand(
         {
           type: "provider.installation.run",
+          contributedEnv: [],
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
           providerId: testCase.provider,
           action: testCase.action,
@@ -2100,6 +2104,7 @@ describe("dispatchCommand", () => {
     const result = await dispatchOnlineRpcCommand(
       {
         type: "provider.installation.run",
+        contributedEnv: [],
         bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
         providerId: "claude-code",
         action: "update",
@@ -2187,6 +2192,7 @@ describe("dispatchCommand", () => {
     const result = await dispatchOnlineRpcCommand(
       {
         type: "provider.installation.run",
+        contributedEnv: [],
         bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
         providerId: "claude-code",
         action: "update",
@@ -2446,6 +2452,14 @@ describe("dispatchCommand", () => {
           providerId: "pi",
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
           cwd: "/tmp/workspace",
+          contributedEnv: [
+            {
+              name: "BB_PI_BRIDGE_COMMAND",
+              value: "/opt/pi/bin/pi",
+              source: { plugin: "managed-pi" },
+              reason: "plugin ships Pi",
+            },
+          ],
         },
         options,
         new AbortController().signal,
@@ -2467,6 +2481,14 @@ describe("dispatchCommand", () => {
       providerId: "pi",
       cwd: "/tmp/workspace",
       bridgeLaunch: dispatchTestRuntimeBridgeLaunch(options.dataDir),
+      contributedEnv: [
+        {
+          name: "BB_PI_BRIDGE_COMMAND",
+          value: "/opt/pi/bin/pi",
+          source: { plugin: "managed-pi" },
+          reason: "plugin ships Pi",
+        },
+      ],
     });
     expect(providerUsage).toHaveBeenCalledWith({
       providerId: "pi",

@@ -1,5 +1,7 @@
 import {
   cleanupEnvironment,
+  readEnvironmentRecoveryOutcome,
+  readEnvironmentRemovalProgress,
   recoverEnvironmentCleanup,
   requestEnvironmentRemoval,
 } from "../services/environments/environment-engine.js";
@@ -96,7 +98,7 @@ export function registerEnvironmentRoutes(
       );
     if (query?.recover === "true") {
       await recoverEnvironmentCleanup(deps, environment.id);
-      return context.json({ ok: true } as const);
+      return context.json(readEnvironmentRecoveryOutcome(deps, environment.id));
     }
     if (!cleanupEnvironment(deps, environment.id))
       throw new ApiError(
@@ -104,7 +106,7 @@ export function registerEnvironmentRoutes(
         "invalid_request",
         "Environment is not provider-managed",
       );
-    return context.json({ ok: true } as const);
+    return context.json(readEnvironmentRemovalProgress(deps, environment.id));
   });
 
   get(routes.list, async (context, query) => {
@@ -154,7 +156,7 @@ export function registerEnvironmentRoutes(
         environmentId: environment.id,
       });
     }
-    return context.json({ ok: true } as const);
+    return context.json(readEnvironmentRemovalProgress(deps, environment.id));
   });
 
   get(routes.get, (context) =>

@@ -97,6 +97,11 @@ import type { MachineProviderPresentation } from "@/components/plugin/MachinePro
 import type { WorkspaceCheckoutDisplay } from "@bb/shared-ui/lib/workspace-checkout-display";
 import { useComposerTextEffects } from "@/lib/composer-text-effects";
 import { useLatestRef } from "@/hooks/useLatestRef";
+import {
+  getPromptDraftAccessor,
+  sendPromptDraft,
+} from "@/hooks/usePromptDraftStorage";
+import { appToast } from "@/components/ui/app-toast";
 import { useThreadCreationOptions } from "@/hooks/useThreadCreationOptions";
 import { useProjectDisplayName } from "@/hooks/queries/sidebar-navigation-query";
 import {
@@ -574,6 +579,7 @@ export function ThreadDetailPromptArea({
     commitInlineQueuedMessage,
     updateInlineQueuedMessage,
     dismissInlineQueuedMessageEditor,
+    abandonInlineQueuedMessageEdit,
     beginEditQueuedMessage,
     queuedMessageDraftSession,
   } = useInlineQueuedMessageEditing({
@@ -582,6 +588,16 @@ export function ThreadDetailPromptArea({
     onBeginEdit: () => {
       clearInlineAttachmentErrorRef.current();
       setEditFocusNonce((nonce) => nonce + 1);
+    },
+    onUnsavedEditLost: (draft) => {
+      getPromptDraftAccessor({
+        kind: "thread",
+        projectId,
+        threadId: thread.id,
+      }).restoreUnsent(draft);
+      appToast.warning("Your queued message edit is in the composer", {
+        description: "The message left the queue before the edit was saved.",
+      });
     },
   });
   const inlineDraftSession = queuedMessageDraftSession;
@@ -1119,6 +1135,7 @@ export function ThreadDetailPromptArea({
     onSaveSuccess: () => setInlineAttachmentError(null),
     inlineEditingQueuedMessage,
     dismissInlineQueuedMessageEditor,
+    abandonInlineQueuedMessageEdit,
     activeComposerDraftInput: inlineComposerDraftInput,
   });
   const isQueueMutationPending =
@@ -1327,23 +1344,18 @@ export function ThreadDetailPromptArea({
       await runWhileCreatingHandoffThread(
         isCreatingHandoffThreadRef,
         async () => {
-          const clearedSubmittedDraft =
-            promptDraft.clearIfCurrentMatches(submittedDraft);
           setBottomAttachmentError(null);
-          try {
-            const created = await createThread.mutateAsync(request);
-            navigate(
-              getThreadRoutePath({
-                projectId: created.projectId,
-                threadId: created.id,
-              }),
-            );
-          } catch (error) {
-            if (clearedSubmittedDraft) {
-              promptDraft.restoreIfEmpty(submittedDraft);
-            }
-            throw error;
-          }
+          const created = await sendPromptDraft(
+            promptDraft,
+            submittedDraft,
+            () => createThread.mutateAsync(request),
+          );
+          navigate(
+            getThreadRoutePath({
+              projectId: created.projectId,
+              threadId: created.id,
+            }),
+          );
         },
       );
       return true;
@@ -1406,7 +1418,6 @@ export function ThreadDetailPromptArea({
         throw new Error("This thread's model options are still loading.");
       }
 
-      promptDraft.clearIfCurrentMatches(submittedDraft);
       setBottomAttachmentError(null);
 
       const compactRequestFirst = compactFirst && sendAt === undefined;
@@ -1420,24 +1431,25 @@ export function ThreadDetailPromptArea({
         ? "queue_message"
         : "send_message";
       try {
-        const request = buildAutoFollowUpRequest({
-          compactFirst: compactRequestFirst,
-          threadId: thread.id,
-          input: submittedInput,
-          execution: followUpExecutionSelection,
-        });
-        if (request) {
-          await sendMessage.mutateAsync({
-            ...request,
-            ...sendAtFields,
-            ...pluginSubmissionFields,
+        await sendPromptDraft(promptDraft, submittedDraft, async () => {
+          const request = buildAutoFollowUpRequest({
+            compactFirst: compactRequestFirst,
+            threadId: thread.id,
+            input: submittedInput,
+            execution: followUpExecutionSelection,
           });
-          if (!isQueuingMessage) {
-            setFullHistoryThreadId(null);
+          if (request) {
+            await sendMessage.mutateAsync({
+              ...request,
+              ...sendAtFields,
+              ...pluginSubmissionFields,
+            });
+            if (!isQueuingMessage) {
+              setFullHistoryThreadId(null);
+            }
           }
-        }
+        });
       } catch (nextError) {
-        promptDraft.restoreIfEmpty(submittedDraft);
         throw reportMutationError({
           error: nextError,
           fallbackMessage: failureMessage,
@@ -1491,19 +1503,19 @@ export function ThreadDetailPromptArea({
         const pluginSubmissionFields =
           pluginSubmission === undefined ? {} : { pluginSubmission };
         await submitDraft(async () => {
-          promptDraft.clearIfCurrentMatches(submittedDraft);
           setBottomAttachmentError(null);
           await runWhileFollowUpShortcutSending(
             setIsFollowUpShortcutSending,
             async () => {
               try {
-                await sendMessage.mutateAsync({
-                  ...shortcutRequest.request,
-                  ...sendAtFields,
-                  ...pluginSubmissionFields,
-                });
+                await sendPromptDraft(promptDraft, submittedDraft, () =>
+                  sendMessage.mutateAsync({
+                    ...shortcutRequest.request,
+                    ...sendAtFields,
+                    ...pluginSubmissionFields,
+                  }),
+                );
               } catch (nextError) {
-                promptDraft.restoreIfEmpty(submittedDraft);
                 throw reportMutationError({
                   error: nextError,
                   fallbackMessage: "Failed to send message",

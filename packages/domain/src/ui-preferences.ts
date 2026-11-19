@@ -52,6 +52,8 @@ export const UI_PREFERENCE_KEYS = [
   "sidebar.visiblePluginPanels",
   "sidebar.navigationProvider",
   "sidebar.threadListProvider",
+  "sidebar.updates.providerCli",
+  "sidebar.updates.skipped",
   // bb-fork(windows): shell used by Start terminal when the host offers a choice.
   "terminal.shellId",
   "composer.provider",
@@ -158,6 +160,16 @@ export const uiPreferenceDefinitions = {
     ),
     "__automatic__",
     "Plugin that renders the sidebar thread list, or __automatic__ for the first installed thread list plugin other than the bundled thread-list/thread-list, falling back to it. Legacy __builtin__ resolves to thread-list/thread-list.",
+  ),
+  "sidebar.updates.providerCli": defineUiPreference(
+    z.boolean(),
+    true,
+    "Whether agent CLI updates appear in the sidebar update button. false leaves them out of its count, card, and the card's update button; Settings → Updates and bb updates still list them.",
+  ),
+  "sidebar.updates.skipped": defineUiPreference(
+    uiPreferenceStringListSchema,
+    [],
+    "Updates skipped from the sidebar update button's card. The button stays hidden while every update it would show is in this list and reappears when a new one arrives; [] shows it again. Settings → Updates and bb updates still list skipped updates.",
   ),
   // bb-fork(windows): shell id the Start terminal action launches on a host that
   // offers a choice; the sentinel keeps the host's own default.

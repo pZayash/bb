@@ -114,7 +114,7 @@ function restoreContext(
         lifecycle: {
           phase: "destroyed",
           retireAt: null,
-          teardown: { status: "removed", attempt: 1 },
+          teardown: { status: "removed", attempt: 1, needsRecovery: false },
         },
         hostLifecycle: "active",
         environmentProviderSelection: null,

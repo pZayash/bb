@@ -143,20 +143,14 @@ import {
 } from "./MessageMetadata.js";
 import { runPluginMessageAction } from "@/lib/plugin-message-actions.js";
 import { useAppNavigationHost } from "@/lib/app-navigation-host";
+import { useSurfaceMessageActionSlots } from "@/lib/message-action-surface";
 import type { AppPanelController } from "@/lib/app-fixed-tab-navigation";
 import {
   usePluginComposerHost,
   type PluginComposerHost,
 } from "@/components/plugin/plugin-composer-host";
 import { isPluginSideChatSenderThread } from "@/lib/side-chat-plugin.js";
-import {
-  buildMessageDirectiveRegistry,
-  MessageDirectiveRegistryProvider,
-} from "@/components/ui/markdown-message-directives.js";
-import {
-  buildCodeFenceRendererRegistry,
-  CodeFenceRendererRegistryProvider,
-} from "@/components/ui/markdown-code-fence-renderers.js";
+import { MessageSlotRegistriesProvider } from "@/components/ui/message-markdown-slots.js";
 import {
   TimelineWindowedItems,
   TimelineWindowingMeasurementsContext,
@@ -173,7 +167,6 @@ export interface ThreadTimelineRowsProps {
   onMessageAddToChat?: ThreadTimelineAddToChatHandler;
   onSelectionAddToChat?: ThreadTimelineAddToChatHandler;
   consumerMessageActions?: readonly ThreadTimelineConsumerMessageAction[];
-  includePluginMessageActions?: boolean;
   onTitleAction?: TimelineTitleActionResolver;
   projectId?: string;
   resolveMentionLink?: PromptMentionLinkResolver;
@@ -2358,24 +2351,12 @@ function ThreadTimelineRowsForTimelineView(props: ThreadTimelineRowsProps) {
     props.initialExpanded ?? EMPTY_ROW_ID_SET,
   );
   const projectId = props.projectId;
-  const messageDirectiveSlots = usePluginSlotKind("messageDirectives");
-  const codeFenceRendererSlots = usePluginSlotKind("codeFenceRenderers");
-  const messageActionSlots = usePluginSlotKind("messageActions");
+  const messageActionSlots = useSurfaceMessageActionSlots();
   const messageMetadataSlots = usePluginSlotKind("messageMetadata");
-  const messageDirectiveRegistry = useMemo(
-    () => buildMessageDirectiveRegistry(messageDirectiveSlots),
-    [messageDirectiveSlots],
-  );
-  const codeFenceRendererRegistry = useMemo(
-    () => buildCodeFenceRendererRegistry(codeFenceRendererSlots),
-    [codeFenceRendererSlots],
-  );
   const onSelectionAddToChat = props.onSelectionAddToChat;
   const timelineThreadId = props.threadId;
   const hasPluginSelectionActions =
-    timelineThreadId !== undefined &&
-    props.includePluginMessageActions !== false &&
-    messageActionSlots.length > 0;
+    timelineThreadId !== undefined && messageActionSlots.length > 0;
   const hasSelectionActions =
     onSelectionAddToChat !== undefined || hasPluginSelectionActions;
   const [activeSelection, setActiveSelection] = useState<{
@@ -2435,10 +2416,7 @@ function ThreadTimelineRowsForTimelineView(props: ThreadTimelineRowsProps) {
     }
     return (
       buildRowPluginMessageActions({
-        slots:
-          props.includePluginMessageActions === false
-            ? EMPTY_PLUGIN_SLOT_SNAPSHOT.messageActions
-            : messageActionSlots,
+        slots: messageActionSlots,
         timelineThreadId,
         message: activeSelection.message,
         selectedText: activeSelection.selection.text,
@@ -2450,7 +2428,6 @@ function ThreadTimelineRowsForTimelineView(props: ThreadTimelineRowsProps) {
     activeSelection,
     composerHost,
     messageActionSlots,
-    props.includePluginMessageActions,
     panel,
     timelineThreadId,
   ]);
@@ -2464,8 +2441,7 @@ function ThreadTimelineRowsForTimelineView(props: ThreadTimelineRowsProps) {
       onMessageAddToChat: props.onMessageAddToChat,
       onSelectionAddToChat: selectionAddToChatHandler,
       pluginMessageActions:
-        timelineThreadId === undefined ||
-        props.includePluginMessageActions === false
+        timelineThreadId === undefined
           ? EMPTY_PLUGIN_SLOT_SNAPSHOT.messageActions
           : messageActionSlots,
       messageMetadata: messageMetadataSlots,
@@ -2490,7 +2466,6 @@ function ThreadTimelineRowsForTimelineView(props: ThreadTimelineRowsProps) {
       selectionAddToChatHandler,
       messageActionSlots,
       messageMetadataSlots,
-      props.includePluginMessageActions,
       props.consumerMessageActions,
       reportProseSelection,
       timelineThreadId,
@@ -2517,78 +2492,76 @@ function ThreadTimelineRowsForTimelineView(props: ThreadTimelineRowsProps) {
   );
 
   return (
-    <CodeFenceRendererRegistryProvider registry={codeFenceRendererRegistry}>
+    <MessageSlotRegistriesProvider>
       <SearchMessageLocationProvider threadId={props.threadId}>
-        <MessageDirectiveRegistryProvider registry={messageDirectiveRegistry}>
-          <TimelineRendererStaticContext.Provider value={staticContextValue}>
-            <LatestActionableAssistantMessageIdContext.Provider
-              value={latestActionableAssistantMessageId}
+        <TimelineRendererStaticContext.Provider value={staticContextValue}>
+          <LatestActionableAssistantMessageIdContext.Provider
+            value={latestActionableAssistantMessageId}
+          >
+            <LatestActionableUserMessageIdContext.Provider
+              value={latestActionableUserMessageId}
             >
-              <LatestActionableUserMessageIdContext.Provider
-                value={latestActionableUserMessageId}
+              <StreamingAssistantMessageIdContext.Provider
+                value={streamingAssistantMessageId}
               >
-                <StreamingAssistantMessageIdContext.Provider
-                  value={streamingAssistantMessageId}
+                <TimelineTurnStateContext.Provider
+                  value={turnStateContextValue}
                 >
-                  <TimelineTurnStateContext.Provider
-                    value={turnStateContextValue}
+                  <TimelineWindowingMeasurementsContext.Provider
+                    value={windowingMeasurements}
                   >
-                    <TimelineWindowingMeasurementsContext.Provider
-                      value={windowingMeasurements}
-                    >
-                      <div className="relative">
-                        {/* bb-fork(windows): messages read turn timings from here. */}
-                        <TimelineTurnProcessContext.Provider
-                          value={turnProcessTimings}
-                        >
-                        <TimelineRowsList
-                          hasOlderTimelineRows={props.hasOlderTimelineRows}
-                          isLoadingOlderTimelineRows={
-                            props.isLoadingOlderTimelineRows
-                          }
-                          navigationTargetRowId={
-                            props.timelineNavigationTargetRowId
-                          }
-                          onLoadOlderRows={props.onLoadOlderRows}
-                          rows={rows}
-                          scopeActive={scopeActive}
-                          showAssistantMessageActions={true}
-                          compactActivityIntents={false}
-                          spacing="top-level"
-                          unreadDividerAutoScroll={
-                            props.unreadDividerAutoScroll ?? true
-                          }
-                          unreadDividerPlacement={
-                            props.unreadDividerPlacement ?? null
-                          }
-                        />
-                        {hasSelectionActions ? (
-                          <div
-                            ref={setSelectionMenuLayer}
-                            className="pointer-events-none absolute inset-0 z-10 [contain:layout]"
-                          />
-                        ) : null}
-                        {/* bb-fork(windows): close the turn-timing provider. */}
-                        </TimelineTurnProcessContext.Provider>
-                      </div>
-                    </TimelineWindowingMeasurementsContext.Provider>
-                    {hasSelectionActions ? (
-                      <TimelineSelectionMenu
-                        selection={activeSelection?.selection ?? null}
-                        onAddToChat={selectionAddToChatHandler}
-                        pluginActions={selectionPluginActions}
-                        onDismiss={dismissSelection}
-                        container={selectionMenuLayer}
+                    <div className="relative">
+                      {/* bb-fork(windows): messages read turn timings from here. */}
+                      <TimelineTurnProcessContext.Provider
+                        value={turnProcessTimings}
+                      >
+                      <TimelineRowsList
+                        hasOlderTimelineRows={props.hasOlderTimelineRows}
+                        isLoadingOlderTimelineRows={
+                          props.isLoadingOlderTimelineRows
+                        }
+                        navigationTargetRowId={
+                          props.timelineNavigationTargetRowId
+                        }
+                        onLoadOlderRows={props.onLoadOlderRows}
+                        rows={rows}
+                        scopeActive={scopeActive}
+                        showAssistantMessageActions={true}
+                        compactActivityIntents={false}
+                        spacing="top-level"
+                        unreadDividerAutoScroll={
+                          props.unreadDividerAutoScroll ?? true
+                        }
+                        unreadDividerPlacement={
+                          props.unreadDividerPlacement ?? null
+                        }
                       />
-                    ) : null}
-                  </TimelineTurnStateContext.Provider>
-                </StreamingAssistantMessageIdContext.Provider>
-              </LatestActionableUserMessageIdContext.Provider>
-            </LatestActionableAssistantMessageIdContext.Provider>
-          </TimelineRendererStaticContext.Provider>
-        </MessageDirectiveRegistryProvider>
+                      {hasSelectionActions ? (
+                        <div
+                          ref={setSelectionMenuLayer}
+                          className="pointer-events-none absolute inset-0 z-10 [contain:layout]"
+                        />
+                      ) : null}
+                      {/* bb-fork(windows): close the turn-timing provider. */}
+                      </TimelineTurnProcessContext.Provider>
+                    </div>
+                  </TimelineWindowingMeasurementsContext.Provider>
+                  {hasSelectionActions ? (
+                    <TimelineSelectionMenu
+                      selection={activeSelection?.selection ?? null}
+                      onAddToChat={selectionAddToChatHandler}
+                      pluginActions={selectionPluginActions}
+                      onDismiss={dismissSelection}
+                      container={selectionMenuLayer}
+                    />
+                  ) : null}
+                </TimelineTurnStateContext.Provider>
+              </StreamingAssistantMessageIdContext.Provider>
+            </LatestActionableUserMessageIdContext.Provider>
+          </LatestActionableAssistantMessageIdContext.Provider>
+        </TimelineRendererStaticContext.Provider>
       </SearchMessageLocationProvider>
-    </CodeFenceRendererRegistryProvider>
+    </MessageSlotRegistriesProvider>
   );
 }
 

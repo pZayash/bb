@@ -43,6 +43,7 @@ import { providerCommandSchema } from "./projects.js";
 import {
   timelineConversationRowSchema,
   timelineRowSchema,
+  timelineUserConversationRowSchema,
   timelineWorkflowWorkRowSchema,
 } from "../thread-timeline.js";
 import {
@@ -1263,6 +1264,7 @@ const threadTimelineWindowFieldsShape = {
   activeThinking: activeThinkingSchema.nullable(),
   activeWorkflows: z.array(timelineWorkflowWorkRowSchema),
   activeBackgroundCommands: z.array(timelineWorkflowWorkRowSchema),
+  pendingSteers: z.array(timelineUserConversationRowSchema),
   pendingTodos: threadTimelinePendingTodosSchema.nullable(),
   extensionStates: z.record(z.string(), jsonValueSchema),
   providerCommands: z
@@ -1280,6 +1282,7 @@ export const THREAD_TIMELINE_WINDOW_FIELD_KEYS = [
   "activeThinking",
   "activeWorkflows",
   "activeBackgroundCommands",
+  "pendingSteers",
   "pendingTodos",
   "extensionStates",
   "providerCommands",

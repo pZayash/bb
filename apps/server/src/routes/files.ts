@@ -1,3 +1,4 @@
+import { operationComplete } from "../services/lib/operation-response.js";
 import { randomUUID } from "node:crypto";
 import type { Hono } from "hono";
 import {
@@ -352,7 +353,7 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
 
   post(fileRoutes.mkdir, (context, payload) =>
     withHostFileRoute(payload.hostId, async (hostId) => {
-      const result = await runHostFileMutationCommand(hostId, {
+      await runHostFileMutationCommand(hostId, {
         type: "host.mkdir",
         path: payload.path,
         recursive: payload.recursive ?? false,
@@ -360,13 +361,13 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
           ? { rootPath: payload.rootPath }
           : {}),
       });
-      return context.json(result);
+      return context.json(operationComplete());
     }),
   );
 
   post(fileRoutes.move, (context, payload) =>
     withHostFileRoute(payload.hostId, async (hostId) => {
-      const result = await runHostFileMutationCommand(hostId, {
+      await runHostFileMutationCommand(hostId, {
         type: "host.move_path",
         sourcePath: payload.sourcePath,
         destinationPath: payload.destinationPath,
@@ -374,13 +375,13 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
           ? { rootPath: payload.rootPath }
           : {}),
       });
-      return context.json(result);
+      return context.json(operationComplete());
     }),
   );
 
   post(fileRoutes.remove, (context, payload) =>
     withHostFileRoute(payload.hostId, async (hostId) => {
-      const result = await runHostFileMutationCommand(hostId, {
+      await runHostFileMutationCommand(hostId, {
         type: "host.remove_path",
         path: payload.path,
         recursive: payload.recursive ?? false,
@@ -388,7 +389,7 @@ export function registerFileRoutes(app: Hono, deps: AppDeps): void {
           ? { rootPath: payload.rootPath }
           : {}),
       });
-      return context.json(result);
+      return context.json(operationComplete());
     }),
   );
 

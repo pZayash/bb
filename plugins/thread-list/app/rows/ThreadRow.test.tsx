@@ -961,7 +961,7 @@ describe("ThreadRow", () => {
   });
 
   it("draws other plugins' metadata only while Metadata is on", () => {
-    const slot = renderThreadRow({ experiments: ["threadRowMetadata"] });
+    const slot = renderThreadRow();
     expect(
       slot.container.querySelector("[data-thread-row-metadata]"),
     ).toBeNull();
@@ -972,19 +972,9 @@ describe("ThreadRow", () => {
     ).not.toBeNull();
   });
 
-  it("ignores the Metadata preference while its experiment is off", () => {
-    getDefaultStore().set(sidebarShowRowMetadataAtom, true);
-    const slot = renderThreadRow();
-    expect(
-      slot.container.querySelector("[data-thread-row-metadata]"),
-    ).toBeNull();
-  });
-
   it("routes a click on other plugins' metadata like the rest of the row", () => {
     getDefaultStore().set(sidebarShowRowMetadataAtom, true);
-    const slot = renderThreadRow({
-      experiments: ["threadRowMetadata"],
-    });
+    const slot = renderThreadRow({});
     const link = screen.getByRole("link", { name: "Open Thread" });
     const row = link.closest("[data-sidebar-rename-row]");
     const items = row?.querySelector("[data-thread-row-metadata]");

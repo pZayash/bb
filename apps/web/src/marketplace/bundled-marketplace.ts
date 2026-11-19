@@ -32,7 +32,6 @@ export const OFF_BY_DEFAULT_BUNDLED_PLUGINS: ReadonlySet<string> = new Set([
   "agent-annotations",
   "ask-user-question",
   "change-log",
-  "connect-next",
   "mcp",
 
   "monaco-editor",

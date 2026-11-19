@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { operationResponseSchema } from "./operation.js";
 import {
   hostTypeSchema,
   jsonValueSchema,
@@ -130,10 +131,13 @@ export type UpdateHostPermissionCeilingRequest = z.infer<
   typeof updateHostPermissionCeilingRequestSchema
 >;
 
-export const hostActionResponseSchema = z
-  .object({ ok: z.literal(true) })
-  .strict();
+export const hostActionResponseSchema = operationResponseSchema;
 export type HostActionResponse = z.infer<typeof hostActionResponseSchema>;
+
+export const hostRemovalResponseSchema = operationResponseSchema
+  .extend({ warnings: z.array(z.string().min(1)) })
+  .strict();
+export type HostRemovalResponse = z.infer<typeof hostRemovalResponseSchema>;
 
 export const hostRetryUpdateResponseSchema = hostActionResponseSchema;
 export type HostRetryUpdateResponse = z.infer<
