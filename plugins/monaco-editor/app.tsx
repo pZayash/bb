@@ -33,7 +33,15 @@ import {
   type FileDiffViewMode,
 } from "./components/FileDiffControls.fork.js";
 import { FileDiffBody } from "./components/FileDiffBody.fork.js";
-import { useFileDiff } from "./lib/file-diff.fork.js";
+import { useDiffCommits, useFileDiff } from "./lib/file-diff.fork.js";
+// bb-fork(file-diff): change marks + stepping on the file's changed lines.
+import { applyDiffIndicators } from "./lib/diff-indicators.fork.js";
+import {
+  diffRegionIndexAtLine,
+  diffRegionsFromPatch,
+  type DiffRegion,
+  nextDiffRegionIndex,
+} from "./lib/diff-regions.fork.js";
 // bb-fork(file-diff-base): the open request can pin the editor's diff base.
 import { THREAD_START_SELECTION } from "./lib/file-diff-selection.fork.js";
 // bb-fork(md-preview): rendered Markdown preview next to the editor.
@@ -51,6 +59,9 @@ import {
   markEditorActive,
   runEditorCommand,
 } from "./lib/editor-commands.js";
+
+// bb-fork(file-diff): shared empty list for files with no change marks.
+const EMPTY_REGIONS: readonly DiffRegion[] = [];
 
 type SaveState =
   | { kind: "clean" }
@@ -158,13 +169,50 @@ function MonacoFileOpener({
     useState<HTMLDivElement | null>(null);
   const [diffSelection, setDiffSelection] = useState<string | null>(null);
   const [diffViewMode, setDiffViewMode] = useState<FileDiffViewMode>("split");
+  // bb-fork(file-diff): refetch marks after the file on disk changed.
+  const [diffRevision, setDiffRevision] = useState(0);
   const fileDiff = useFileDiff({
-    enabled: isDiffActive,
+    // bb-fork(file-diff): the editor's change marks need the patch too, so the
+    // bb-fork(file-diff): diff read runs for every workspace file, contents only
+    // bb-fork(file-diff): when the diff view itself is open.
+    enabled: source.kind === "workspace",
+    includeContents: isDiffActive,
     path: activePath,
+    revision: diffRevision,
     rpc,
     selection: diffSelection,
     source,
   });
+  // bb-fork(file-diff-base): recent commits feed the base picker.
+  const diffCommits = useDiffCommits({
+    enabled: source.kind === "workspace",
+    rpc,
+    source,
+  });
+  // bb-fork(file-diff): the editor's change marks; a clean file borrows another
+  // bb-fork(file-diff): entry's patch, so only matching paths mark lines.
+  const changeRegions = useMemo(
+    () =>
+      fileDiff.status === "ready" && fileDiff.patchPath === activePath
+        ? diffRegionsFromPatch(fileDiff.patch)
+        : EMPTY_REGIONS,
+    [activePath, fileDiff],
+  );
+  const changeRegionsRef = useRef(changeRegions);
+  changeRegionsRef.current = changeRegions;
+  const [changeIndex, setChangeIndex] = useState(-1);
+  // bb-fork(file-diff): step the cursor through the change marks.
+  const goToChange = useCallback((direction: "next" | "previous") => {
+    const editor = editorRef.current;
+    const regions = changeRegionsRef.current;
+    if (editor === null || regions.length === 0) return;
+    const line = editor.getPosition()?.lineNumber ?? 1;
+    const region = regions[nextDiffRegionIndex(regions, line, direction)];
+    if (region === undefined) return;
+    editor.revealLineInCenter(region.startLine);
+    editor.setPosition({ column: 1, lineNumber: region.startLine });
+    editor.focus();
+  }, []);
 
   const setSaveState = useCallback((next: SaveState) => {
     saveStateRef.current = next;
@@ -180,6 +228,7 @@ function MonacoFileOpener({
   useEffect(() => {
     setIsDiffActive(false);
     setDiffSelection(null);
+    setChangeIndex(-1);
   }, [activePath]);
 
   // bb-fork(file-diff-open): apply the requested diff view; a null intent changes nothing.
@@ -216,6 +265,8 @@ function MonacoFileOpener({
         }
         sha256Ref.current = result.sha256;
         setSaveState({ kind: "clean" });
+        // bb-fork(file-diff): the disk diff changed; refresh the marks.
+        setDiffRevision((revision) => revision + 1);
       } catch (error) {
         setSaveState({
           kind: "error",
@@ -254,6 +305,8 @@ function MonacoFileOpener({
         rootPath: file.rootPath,
       });
       editor.setValue(file.content);
+      // bb-fork(file-diff): the disk diff changed; refresh the marks.
+      setDiffRevision((revision) => revision + 1);
       setSaveState(
         discardedContent === null
           ? { kind: "clean" }
@@ -426,6 +479,15 @@ function MonacoFileOpener({
           monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
           () => void saveRef.current(),
         );
+        // bb-fork(file-diff): the change-mark counter follows the cursor.
+        editor.onDidChangeCursorPosition?.((event) => {
+          setChangeIndex(
+            diffRegionIndexAtLine(
+              changeRegionsRef.current,
+              event.position.lineNumber,
+            ),
+          );
+        });
       } catch (error) {
         if (disposed) return;
         setStatus({
@@ -463,6 +525,16 @@ function MonacoFileOpener({
     editorRef.current?.updateOptions({ theme: applied.name });
     setOverflowWidgetsTheme(applied.base);
   }, [codeTheme, status]);
+
+  // bb-fork(file-diff): change marks on the editor's changed lines.
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    const editor = editorRef.current;
+    if (monaco === null || editor === null || changeRegions.length === 0)
+      return;
+    const collection = applyDiffIndicators(monaco, editor, changeRegions);
+    return () => collection.clear();
+  }, [changeRegions, status]);
 
   // bb-fork(md-preview): derive the Markdown preview state for the open file.
   const canPreview =
@@ -527,6 +599,18 @@ function MonacoFileOpener({
         diffControls={
           source.kind === "workspace" ? (
             <FileDiffControls
+              changeNav={
+                isDiffActive || changeRegions.length === 0
+                  ? null
+                  : {
+                      currentIndex: Math.max(changeIndex, 0),
+                      markCount: changeRegions.length,
+                      onNext: () => goToChange("next"),
+                      onPrevious: () => goToChange("previous"),
+                    }
+              }
+              commits={diffCommits.commits}
+              commitsLoading={diffCommits.isLoading}
               isActive={isDiffActive}
               onSelectionChange={setDiffSelection}
               onToggle={() => setIsDiffActive((active) => !active)}

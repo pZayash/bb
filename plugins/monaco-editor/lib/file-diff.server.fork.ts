@@ -6,6 +6,9 @@ import {
   ALL_SELECTION,
   COMMITTED_SELECTION,
   MERGE_BASE_SELECTION_SWITCH,
+  parseSinceSelection,
+  SINCE_COMMIT_PREFIX,
+  SINCE_COMMITTED_PREFIX,
   THREAD_START_SELECTION,
   UNCOMMITTED_SELECTION,
 } from "./file-diff-selection.fork.js";
@@ -29,6 +32,9 @@ export const fileDiffResultSchema = z.discriminatedUnion("outcome", [
     contents: fileDiffContentsSchema.nullable(),
     options: z.array(fileDiffOptionSchema),
     patch: z.string(),
+    // bb-fork(file-diff-base): the file this patch actually describes, because a
+    // bb-fork(file-diff-base): clean file borrows another entry's patch.
+    patchPath: z.string(),
     selection: z.string(),
     truncated: z.boolean(),
   }),
@@ -38,6 +44,22 @@ export const fileDiffResultSchema = z.discriminatedUnion("outcome", [
 export type FileDiffContents = z.infer<typeof fileDiffContentsSchema>;
 export type FileDiffOption = z.infer<typeof fileDiffOptionSchema>;
 export type FileDiffResult = z.infer<typeof fileDiffResultSchema>;
+
+// bb-fork(file-diff-base): recent commits for the base-commit picker.
+export const diffCommitsResultSchema = z.discriminatedUnion("outcome", [
+  z.object({
+    outcome: z.literal("available"),
+    commits: z.array(
+      z.object({
+        sha: z.string(),
+        shortSha: z.string(),
+        subject: z.string(),
+      }),
+    ),
+  }),
+  z.object({ outcome: z.literal("unavailable"), message: z.string() }),
+]);
+export type DiffCommitsResult = z.infer<typeof diffCommitsResultSchema>;
 
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{4,40}$/iu;
 
@@ -123,6 +145,12 @@ const fileSideResultSchema = z.discriminatedUnion("outcome", [
 const filesResultSchema = z.discriminatedUnion("outcome", [
   z.object({
     outcome: z.literal("available"),
+    files: z.array(
+      z.object({
+        path: z.string(),
+        revision: z.string(),
+      }),
+    ),
     truncated: z.boolean(),
     initialPatches: z.array(
       z.object({
@@ -144,12 +172,34 @@ const filesResultSchema = z.discriminatedUnion("outcome", [
   }),
 ]);
 
+const patchResultSchema = z.discriminatedUnion("outcome", [
+  z.object({
+    outcome: z.literal("available"),
+    patch: z.object({
+      path: z.string(),
+      patch: z.string(),
+      truncated: z.boolean(),
+    }),
+  }),
+  z.object({
+    outcome: z.literal("not_applicable"),
+    reason: z.string(),
+    message: z.string(),
+  }),
+  z.object({
+    outcome: z.literal("unavailable"),
+    code: z.string(),
+    message: z.string(),
+  }),
+]);
+const patchesResultSchema = z.record(z.string(), patchResultSchema);
+
 interface BuildFileDiffOptionsArgs {
   commits: readonly WorkspaceCommit[];
   hasMergeBase: boolean;
   hasUncommittedChanges: boolean;
-  isSinceThreadStart: boolean;
   mergeBaseBranch: string | undefined;
+  since: { allValue: string; committedValue: string; title: string } | null;
   threadStartRef: string | null;
 }
 
@@ -157,34 +207,31 @@ function buildFileDiffOptions({
   commits,
   hasMergeBase,
   hasUncommittedChanges,
-  isSinceThreadStart,
   mergeBaseBranch,
+  since,
   threadStartRef,
 }: BuildFileDiffOptionsArgs): FileDiffOption[] {
-  const threadStartShort = threadStartRef?.slice(0, 7) ?? "";
-  const changeOptions = isSinceThreadStart
-    ? [
-        {
-          label: `Changes since thread start (${threadStartShort})`,
-          value: ALL_SELECTION,
-        },
-        ...(commits.length > 0
-          ? [
-              {
-                label: `Committed since thread start (${threadStartShort})`,
-                value: COMMITTED_SELECTION,
-              },
-            ]
-          : []),
-      ]
-    : !hasMergeBase
-      ? [{ label: "Uncommitted changes", value: UNCOMMITTED_SELECTION }]
-      : [
-          { label: "All changes", value: ALL_SELECTION },
+  const changeOptions =
+    since !== null
+      ? [
+          { label: `Changes since ${since.title}`, value: since.allValue },
           ...(commits.length > 0
-            ? [{ label: "Committed changes", value: COMMITTED_SELECTION }]
+            ? [
+                {
+                  label: `Committed since ${since.title}`,
+                  value: since.committedValue,
+                },
+              ]
             : []),
-        ];
+        ]
+      : !hasMergeBase
+        ? [{ label: "Uncommitted changes", value: UNCOMMITTED_SELECTION }]
+        : [
+            { label: "All changes", value: ALL_SELECTION },
+            ...(commits.length > 0
+              ? [{ label: "Committed changes", value: COMMITTED_SELECTION }]
+              : []),
+          ];
   const uncommittedOptions =
     hasUncommittedChanges && hasMergeBase
       ? [{ label: "Uncommitted changes", value: UNCOMMITTED_SELECTION }]
@@ -194,25 +241,42 @@ function buildFileDiffOptions({
     monoPrefix: commit.shortSha,
     value: commit.sha,
   }));
-  if (threadStartRef === null) {
-    return [...changeOptions, ...uncommittedOptions, ...commitOptions];
-  }
-  const switchOption: FileDiffOption = isSinceThreadStart
-    ? {
-        label: mergeBaseBranch
-          ? `Compare with merge base (${mergeBaseBranch})`
-          : "Compare with merge base",
-        value: MERGE_BASE_SELECTION_SWITCH,
-      }
-    : {
-        label: `Since thread start (${threadStartRef.slice(0, 7)})`,
-        value: THREAD_START_SELECTION,
-      };
+  // bb-fork(file-diff-base): a since-commit base still offers the presets, so
+  // bb-fork(file-diff-base): the user can get back to the default comparisons.
+  const switchOptions: FileDiffOption[] =
+    since === null
+      ? threadStartRef === null
+        ? []
+        : [
+            {
+              label: `Since thread start (${threadStartRef.slice(0, 7)})`,
+              value: THREAD_START_SELECTION,
+            },
+          ]
+      : [
+          ...(threadStartRef === null ||
+          since.allValue === ALL_SELECTION
+            ? []
+            : [
+                {
+                  label: `Since thread start (${threadStartRef.slice(0, 7)})`,
+                  value: THREAD_START_SELECTION,
+                },
+              ]),
+          ...(mergeBaseBranch === undefined
+            ? []
+            : [
+                {
+                  label: `Compare with merge base (${mergeBaseBranch})`,
+                  value: MERGE_BASE_SELECTION_SWITCH,
+                },
+              ]),
+        ];
   return [
     ...changeOptions,
     ...uncommittedOptions,
     ...commitOptions,
-    switchOption,
+    ...switchOptions,
   ];
 }
 
@@ -223,16 +287,24 @@ type GitDiffTarget =
 
 function buildFileDiffTarget(
   selection: string,
-  mergeBaseBranch: string | undefined,
+  compareBranch: string | undefined,
 ): GitDiffTarget | null {
-  if (selection === UNCOMMITTED_SELECTION || mergeBaseBranch === undefined) {
+  if (selection === UNCOMMITTED_SELECTION || compareBranch === undefined) {
     return { type: "uncommitted" };
   }
-  if (selection === ALL_SELECTION || selection === THREAD_START_SELECTION) {
-    return { mergeBaseBranch, type: "all" };
+  if (
+    selection === ALL_SELECTION ||
+    selection === THREAD_START_SELECTION ||
+    selection === MERGE_BASE_SELECTION_SWITCH ||
+    selection.startsWith(SINCE_COMMIT_PREFIX)
+  ) {
+    return { mergeBaseBranch: compareBranch, type: "all" };
   }
-  if (selection === COMMITTED_SELECTION) {
-    return { mergeBaseBranch, type: "branch_committed" };
+  if (
+    selection === COMMITTED_SELECTION ||
+    selection.startsWith(SINCE_COMMITTED_PREFIX)
+  ) {
+    return { mergeBaseBranch: compareBranch, type: "branch_committed" };
   }
   return COMMIT_SHA_PATTERN.test(selection)
     ? { sha: selection, type: "commit" }
@@ -241,16 +313,24 @@ function buildFileDiffTarget(
 
 function buildDiffFileTargetArgs(
   selection: string,
-  mergeBaseBranch: string | undefined,
+  compareBranch: string | undefined,
   mergeBaseRef: string | null,
 ): DiffFileTargetArgs | null {
-  if (selection === UNCOMMITTED_SELECTION || mergeBaseBranch === undefined) {
+  if (selection === UNCOMMITTED_SELECTION || compareBranch === undefined) {
     return { target: "uncommitted" };
   }
-  if (selection === ALL_SELECTION || selection === THREAD_START_SELECTION) {
+  if (
+    selection === ALL_SELECTION ||
+    selection === THREAD_START_SELECTION ||
+    selection === MERGE_BASE_SELECTION_SWITCH ||
+    selection.startsWith(SINCE_COMMIT_PREFIX)
+  ) {
     return mergeBaseRef === null ? null : { mergeBaseRef, target: "all" };
   }
-  if (selection === COMMITTED_SELECTION) {
+  if (
+    selection === COMMITTED_SELECTION ||
+    selection.startsWith(SINCE_COMMITTED_PREFIX)
+  ) {
     return mergeBaseRef === null
       ? null
       : { mergeBaseRef, target: "branch_committed" };
@@ -301,6 +381,9 @@ async function readFileDiffContents(
 
 interface ResolveFileDiffArgs {
   environmentId: string | null;
+  // bb-fork(file-diff-base): false skips the old/new file reads the indicator
+  // bb-fork(file-diff-base): marks do not need; only the diff view expands them.
+  includeContents?: boolean;
   path: string;
   plugin: BbPluginApi;
   selection: string | null;
@@ -308,6 +391,7 @@ interface ResolveFileDiffArgs {
 
 export async function resolveFileDiff({
   environmentId,
+  includeContents = true,
   path,
   plugin,
   selection,
@@ -334,9 +418,15 @@ export async function resolveFileDiff({
     undefined;
   // bb-fork(thread-start-ref): a workspace provisioned before this field reports none.
   const threadStartRef = environment.startRef ?? null;
+  // bb-fork(file-diff-base): a since_commit:sha selection compares against that
+  // bb-fork(file-diff-base): commit the same way the start ref does.
+  const since = parseSinceSelection(selection);
   const isSinceThreadStart =
-    selection === THREAD_START_SELECTION && threadStartRef !== null;
-  const compareRef = isSinceThreadStart ? threadStartRef : mergeBaseBranch;
+    since === null &&
+    selection === THREAD_START_SELECTION &&
+    threadStartRef !== null;
+  const compareRef =
+    since?.sha ?? (isSinceThreadStart ? threadStartRef : mergeBaseBranch);
   const statusResponse = await plugin.sdk.plugins.callRpc({
     pluginId: GIT_PLUGIN_ID,
     method: "workspaceStatus",
@@ -359,8 +449,21 @@ export async function resolveFileDiff({
     commits: commitOptions,
     hasMergeBase: compareRef !== undefined,
     hasUncommittedChanges: status.workingTree.hasUncommittedChanges,
-    isSinceThreadStart,
     mergeBaseBranch,
+    since:
+      since !== null
+        ? {
+            allValue: `${SINCE_COMMIT_PREFIX}${since.sha}`,
+            committedValue: `${SINCE_COMMITTED_PREFIX}${since.sha}`,
+            title: since.sha.slice(0, 7),
+          }
+        : isSinceThreadStart
+          ? {
+              allValue: ALL_SELECTION,
+              committedValue: COMMITTED_SELECTION,
+              title: `thread start (${(threadStartRef ?? "").slice(0, 7)})`,
+            }
+          : null,
     threadStartRef,
   });
   const resolvedSelection = isSinceThreadStart
@@ -368,10 +471,7 @@ export async function resolveFileDiff({
     : selection !== null && options.some((option) => option.value === selection)
       ? selection
       : options[0]!.value;
-  const target = buildFileDiffTarget(
-    resolvedSelection,
-    isSinceThreadStart ? (threadStartRef ?? undefined) : mergeBaseBranch,
-  );
+  const target = buildFileDiffTarget(resolvedSelection, compareRef);
   if (target === null) {
     return { outcome: "unavailable", message: "No changes to compare." };
   }
@@ -389,33 +489,96 @@ export async function resolveFileDiff({
     return { outcome: "unavailable", message: filesResponse.message };
   }
 
-  const entry =
-    filesResponse.initialPatches.find((candidate) => candidate.path === path) ??
-    filesResponse.initialPatches[0];
-  if (entry === undefined) {
+  const fileEntry = filesResponse.files.find(
+    (candidate) => candidate.path === path,
+  );
+  if (fileEntry === undefined) {
     return {
       outcome: "unavailable",
       message: "No changes to show for this file.",
     };
   }
 
-  const contents = await readFileDiffContents(
-    plugin,
-    environmentId,
-    path,
-    buildDiffFileTargetArgs(
-      resolvedSelection,
-      mergeBaseBranch,
-      status.mergeBase?.baseRef ?? null,
-    ),
+  // bb-fork(file-diff-base): large workspaces or diffs get no inline patch;
+  // bb-fork(file-diff-base): fetch this file's patch on demand by revision.
+  let entry = filesResponse.initialPatches.find(
+    (candidate) => candidate.path === fileEntry.path,
   );
+  if (entry === undefined) {
+    const key = JSON.stringify([
+      environmentId,
+      target,
+      false,
+      fileEntry.path,
+      fileEntry.revision,
+    ]);
+    const patchesResponse = await plugin.sdk.plugins.callRpc({
+      pluginId: GIT_PLUGIN_ID,
+      method: "patches",
+      input: { keys: [key] },
+      outputSchema: patchesResultSchema,
+    });
+    const result = patchesResponse[key];
+    if (result?.outcome !== "available") {
+      return {
+        outcome: "unavailable",
+        message:
+          result?.outcome === "unavailable" ||
+          result?.outcome === "not_applicable"
+            ? result.message
+            : "This file's diff is too large to show.",
+      };
+    }
+    entry = result.patch;
+  }
+
+  const contents = includeContents
+    ? await readFileDiffContents(
+        plugin,
+        environmentId,
+        path,
+        buildDiffFileTargetArgs(
+          resolvedSelection,
+          compareRef,
+          status.mergeBase?.baseRef ?? null,
+        ),
+      )
+    : null;
 
   return {
     outcome: "available",
     contents,
     options,
     patch: entry.patch,
+    patchPath: entry.path,
     selection: resolvedSelection,
     truncated: entry.truncated,
+  };
+}
+
+// bb-fork(file-diff-base): recent workspace commits for the base picker.
+export async function resolveDiffCommits({
+  environmentId,
+  plugin,
+}: {
+  environmentId: string | null;
+  plugin: BbPluginApi;
+}): Promise<DiffCommitsResult> {
+  if (environmentId === null) {
+    return {
+      outcome: "unavailable",
+      message: "This file is not in a Git workspace.",
+    };
+  }
+  const result = await plugin.sdk.environments.commits({ environmentId });
+  if (result.outcome === "available") {
+    return { commits: result.commits, outcome: "available" };
+  }
+  return {
+    outcome: "unavailable",
+    message:
+      result.outcome === "unavailable"
+        ? result.failure.message
+        : result.message,
   };
 }

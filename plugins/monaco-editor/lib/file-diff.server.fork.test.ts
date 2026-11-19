@@ -26,6 +26,7 @@ interface SetupOverrides {
   environment?: Record<string, unknown>;
   statusResponse?: unknown;
   patchResponse?: unknown;
+  onDemandPatchResponse?: unknown;
 }
 
 async function setup(overrides: SetupOverrides = {}) {
@@ -66,10 +67,23 @@ async function setup(overrides: SetupOverrides = {}) {
     (_args?: unknown) =>
       overrides.patchResponse ?? {
         outcome: "available",
+        files: [{ path: "src/file.ts", revision: "rev_1" }],
         truncated: false,
         initialPatches: [{ path: "src/file.ts", patch: PATCH, truncated: false }],
       },
   );
+  const onDemandPatch = vi.fn((args?: unknown) => {
+    if (overrides.onDemandPatchResponse !== undefined) {
+      return overrides.onDemandPatchResponse;
+    }
+    const key = (args as { keys: string[] }).keys[0]!;
+    return {
+      [key]: {
+        outcome: "available",
+        patch: { path: "src/file.ts", patch: PATCH, truncated: false },
+      },
+    };
+  });
   const diffFile = vi.fn((args: unknown) => {
     const side =
       typeof args === "object" && args !== null && "side" in args
@@ -93,27 +107,48 @@ async function setup(overrides: SetupOverrides = {}) {
       ];
       switch (args.method) {
         case "workspaceStatus":
-          return await status(args.input);
+          return status(args.input);
         case "fileSide": {
           const query = args.input.query as Record<string, unknown>;
-          return await diffFile({
+          return diffFile({
             ...query,
             environmentId: args.input.environmentId,
           });
         }
         case "files":
-          return await diffPatch(args.input);
+          return diffPatch(args.input);
+        case "patches":
+          return onDemandPatch(args.input);
         default:
           throw new Error(`unexpected git rpc ${args.method}`);
       }
     },
   );
+  const commits = vi.fn(() => ({
+    commits: [
+      {
+        sha: "3333333333333333333333333333333333333333",
+        shortSha: "3333333",
+        subject: "Earlier",
+      },
+    ],
+    outcome: "available" as const,
+  }));
   const { bb, harness } = createFakePluginHost({
     pluginId: "monaco-editor",
-    sdk: { environments: { get }, plugins: { callRpc } },
+    sdk: { environments: { commits, get }, plugins: { callRpc } },
   });
   await plugin(bb);
-  return { callRpc, diffFile, diffPatch, get, harness, status };
+  return {
+    callRpc,
+    commits,
+    diffFile,
+    diffPatch,
+    get,
+    harness,
+    onDemandPatch,
+    status,
+  };
 }
 
 describe("file diff rpc", () => {
@@ -138,6 +173,7 @@ describe("file diff rpc", () => {
         { label: "Since thread start (abc1234)", value: "thread_start_ref" },
       ],
       patch: PATCH,
+      patchPath: "src/file.ts",
       selection: "all",
       truncated: false,
     });
@@ -306,6 +342,128 @@ describe("file diff rpc", () => {
     ).not.toContain("thread_start_ref");
   });
 
+  it("compares against a picked base commit", async () => {
+    const { diffFile, diffPatch, harness, status } = await setup();
+    const sha = "9999999999999999999999999999999999999999";
+
+    const result = await harness.callRpc("diff", {
+      path: "src/file.ts",
+      selection: `since_commit:${sha}`,
+      source: workspaceSource,
+    });
+
+    expect(status).toHaveBeenLastCalledWith({
+      environmentId: "env-1",
+      mergeBaseBranch: sha,
+    });
+    expect(diffPatch).toHaveBeenLastCalledWith({
+      environmentId: "env-1",
+      ignoreWhitespace: false,
+      target: { mergeBaseBranch: sha, type: "all" },
+    });
+    expect(diffFile).toHaveBeenCalledWith({
+      environmentId: "env-1",
+      mergeBaseRef: sha,
+      path: "src/file.ts",
+      side: "old",
+      target: "all",
+    });
+    expect(result).toMatchObject({
+      outcome: "available",
+      options: [
+        { label: "Changes since 9999999", value: `since_commit:${sha}` },
+        {
+          label: "Committed since 9999999",
+          value: `since_committed:${sha}`,
+        },
+        { label: "Uncommitted changes", value: "uncommitted" },
+        { label: "First", monoPrefix: "1111111", value: "1111111" },
+        { label: "Second", monoPrefix: "2222222", value: "2222222" },
+        { label: "Since thread start (abc1234)", value: "thread_start_ref" },
+        {
+          label: "Compare with merge base (main)",
+          value: "merge_base_ref",
+        },
+      ],
+      selection: `since_commit:${sha}`,
+    });
+  });
+
+  it("diffs the committed range only for a since_committed base", async () => {
+    const { diffPatch, harness } = await setup();
+    const sha = "9999999999999999999999999999999999999999";
+
+    await harness.callRpc("diff", {
+      path: "src/file.ts",
+      selection: `since_committed:${sha}`,
+      source: workspaceSource,
+    });
+
+    expect(diffPatch).toHaveBeenLastCalledWith({
+      environmentId: "env-1",
+      ignoreWhitespace: false,
+      target: { mergeBaseBranch: sha, type: "branch_committed" },
+    });
+  });
+
+  it("serves recent commits for the base picker", async () => {
+    const { commits, harness } = await setup();
+
+    const result = await harness.callRpc("commits", {
+      source: workspaceSource,
+    });
+
+    expect(commits).toHaveBeenCalledWith({ environmentId: "env-1" });
+    expect(result).toEqual({
+      commits: [
+        {
+          sha: "3333333333333333333333333333333333333333",
+          shortSha: "3333333",
+          subject: "Earlier",
+        },
+      ],
+      outcome: "available",
+    });
+  });
+
+  it("reports commits as unavailable outside a workspace", async () => {
+    const { commits, harness } = await setup();
+
+    const result = await harness.callRpc("commits", {
+      source: {
+        kind: "host",
+        threadId: null,
+        environmentId: null,
+        projectId: null,
+      },
+    });
+
+    expect(commits).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      outcome: "unavailable",
+      message: "This file is not in a Git workspace.",
+    });
+  });
+
+  it("skips the side reads when contents are not requested", async () => {
+    const { diffFile, harness } = await setup();
+
+    const result = await harness.callRpc("diff", {
+      includeContents: false,
+      path: "src/file.ts",
+      selection: null,
+      source: workspaceSource,
+    });
+
+    expect(diffFile).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      contents: null,
+      outcome: "available",
+      patch: PATCH,
+      patchPath: "src/file.ts",
+    });
+  });
+
   it("refuses files outside a git workspace without calling the sdk", async () => {
     const { get, harness, status } = await setup();
 
@@ -364,9 +522,48 @@ describe("file diff rpc", () => {
     ).toEqual({ outcome: "unavailable", message: "The workspace is gone." });
   });
 
+  it("fetches the patch on demand when it is not inline", async () => {
+    const { harness, onDemandPatch } = await setup({
+      patchResponse: {
+        outcome: "available",
+        files: [{ path: "src/file.ts", revision: "rev_9" }],
+        truncated: false,
+        initialPatches: [],
+      },
+    });
+
+    const result = await harness.callRpc("diff", {
+      path: "src/file.ts",
+      selection: null,
+      source: workspaceSource,
+    });
+
+    expect(onDemandPatch).toHaveBeenCalledOnce();
+    const keys = (onDemandPatch.mock.calls[0]![0] as { keys: string[] }).keys;
+    const [environmentId, target, ignoreWhitespace, path, revision] =
+      JSON.parse(keys[0]!) as [
+        string,
+        { type: string; mergeBaseBranch?: string },
+        boolean,
+        string,
+        string,
+      ];
+    expect(environmentId).toBe("env-1");
+    expect(target).toEqual({ type: "all", mergeBaseBranch: "main" });
+    expect(ignoreWhitespace).toBe(false);
+    expect(path).toBe("src/file.ts");
+    expect(revision).toBe("rev_9");
+    expect(result).toMatchObject({ outcome: "available", patch: PATCH });
+  });
+
   it("explains a file with no changes in the chosen base", async () => {
     const { harness } = await setup({
-      patchResponse: { outcome: "available", truncated: false, initialPatches: [] },
+      patchResponse: {
+        outcome: "available",
+        files: [],
+        truncated: false,
+        initialPatches: [],
+      },
     });
 
     expect(

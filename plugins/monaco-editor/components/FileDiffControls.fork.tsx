@@ -1,17 +1,30 @@
-// bb-fork(file-diff): toolbar controls for the editor's diff mode.
+// bb-fork(file-diff): toolbar controls for the editor's diff mode and change marks.
 import {
   experimental_DiffChangeNav,
   experimental_DiffChangeRailToggle,
 } from "@get-bb/plugin-sdk/app";
+import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import type { FileDiffOption, FileDiffState } from "../lib/file-diff.fork.js";
+import type { DiffCommit, FileDiffOption, FileDiffState } from "../lib/file-diff.fork.js";
+import { DiffBasePicker } from "./DiffBasePicker.fork.js";
 
 export type FileDiffViewMode = "split" | "unified";
 
 const HostDiffChangeNav = experimental_DiffChangeNav;
 const HostDiffChangeRailToggle = experimental_DiffChangeRailToggle;
 
+// bb-fork(file-diff): prev/next stepping through the editor's change marks.
+export interface EditorChangeNav {
+  currentIndex: number;
+  markCount: number;
+  onNext: () => void;
+  onPrevious: () => void;
+}
+
 interface FileDiffControlsProps {
+  changeNav?: EditorChangeNav | null;
+  commits: readonly DiffCommit[];
+  commitsLoading: boolean;
   isActive: boolean;
   onSelectionChange: (value: string) => void;
   onToggle: () => void;
@@ -24,6 +37,9 @@ interface FileDiffControlsProps {
 }
 
 export function FileDiffControls({
+  changeNav = null,
+  commits,
+  commitsLoading,
   isActive,
   onSelectionChange,
   onToggle,
@@ -35,55 +51,72 @@ export function FileDiffControls({
   viewMode,
 }: FileDiffControlsProps) {
   const label = isActive ? "Hide changes" : "Show changes";
+  const hasBase = options.length > 0 || commits.length > 0;
   return (
     <div className="flex shrink-0 items-center gap-1">
+      {hasBase ? (
+        <DiffBasePicker
+          commits={commits}
+          commitsLoading={commitsLoading}
+          onSelect={onSelectionChange}
+          options={options}
+          selection={selection}
+        />
+      ) : null}
       {isActive && options.length > 0 ? (
-        <>
-          <select
-            aria-label="Diff base"
-            className={cn(
-              "h-6 max-w-40 cursor-pointer rounded-md border border-border bg-transparent px-1 text-xs",
-              "text-muted-foreground hover:text-foreground",
-              "focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
-            )}
-            value={selection ?? options[0]?.value ?? ""}
-            onChange={(event) => onSelectionChange(event.target.value)}
+        <div
+          className="inline-flex items-center gap-0.5 rounded-md border border-border p-0.5"
+          role="tablist"
+          aria-label="Diff view mode"
+        >
+          <ModeButton
+            isPressed={viewMode === "unified"}
+            onClick={() => onViewModeChange("unified")}
+            title="Show the diff stacked"
           >
-            {options.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.monoPrefix === undefined
-                  ? option.label
-                  : `${option.monoPrefix} ${option.label}`}
-              </option>
-            ))}
-          </select>
-          <div
-            className="inline-flex items-center gap-0.5 rounded-md border border-border p-0.5"
-            role="tablist"
-            aria-label="Diff view mode"
+            Unified
+          </ModeButton>
+          <ModeButton
+            isPressed={viewMode === "split"}
+            onClick={() => onViewModeChange("split")}
+            title="Show the diff side by side"
           >
-            <ModeButton
-              isPressed={viewMode === "unified"}
-              onClick={() => onViewModeChange("unified")}
-              title="Show the diff stacked"
-            >
-              Unified
-            </ModeButton>
-            <ModeButton
-              isPressed={viewMode === "split"}
-              onClick={() => onViewModeChange("split")}
-              title="Show the diff side by side"
-            >
-              Split
-            </ModeButton>
-          </div>
-        </>
+            Split
+          </ModeButton>
+        </div>
       ) : null}
       {isActive ? <HostDiffChangeNav scrollElement={scrollElement} /> : null}
       {isActive ? (
         <HostDiffChangeRailToggle
           className={cn("size-6 shrink-0 text-muted-foreground")}
         />
+      ) : null}
+      {!isActive && changeNav !== null ? (
+        <div
+          data-editor-change-nav=""
+          className="inline-flex shrink-0 items-center gap-0.5"
+        >
+          <NavButton
+            ariaLabel="Previous change"
+            disabled={changeNav.markCount === 0}
+            icon="ChevronUp"
+            onClick={changeNav.onPrevious}
+          />
+          <span
+            aria-hidden
+            className="min-w-7 shrink-0 text-center text-xs tabular-nums text-muted-foreground"
+          >
+            {changeNav.markCount === 0
+              ? "0/0"
+              : `${changeNav.currentIndex + 1}/${changeNav.markCount}`}
+          </span>
+          <NavButton
+            ariaLabel="Next change"
+            disabled={changeNav.markCount === 0}
+            icon="ChevronDown"
+            onClick={changeNav.onNext}
+          />
+        </div>
       ) : null}
       <button
         type="button"
@@ -101,6 +134,36 @@ export function FileDiffControls({
         <DiffGlyph />
       </button>
     </div>
+  );
+}
+
+function NavButton({
+  ariaLabel,
+  disabled,
+  icon,
+  onClick,
+}: {
+  ariaLabel: string;
+  disabled: boolean;
+  icon: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md",
+        "transition-colors hover:bg-state-hover hover:text-foreground",
+        "focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
+        "disabled:pointer-events-none disabled:opacity-40",
+        "text-muted-foreground",
+      )}
+    >
+      <Icon name={icon} className="size-3.5" aria-hidden />
+    </button>
   );
 }
 

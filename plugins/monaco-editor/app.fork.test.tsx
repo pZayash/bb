@@ -9,7 +9,12 @@ import type { PluginFileOpenerProps } from "@get-bb/plugin-sdk/app";
 const editor = vi.hoisted(() => ({
   setSelection: vi.fn(),
   revealRangeInCenter: vi.fn(),
+  revealLineInCenter: vi.fn(),
+  setPosition: vi.fn(),
   focus: vi.fn(),
+  createDecorationsCollection: vi.fn(() => ({ clear: vi.fn() })),
+  getDomNode: vi.fn(() => null),
+  getPosition: vi.fn(() => ({ column: 1, lineNumber: 1 })),
   getModel: vi.fn(() => ({
     getLineCount: () => 160,
     getLineMaxColumn: () => 42,
@@ -18,6 +23,7 @@ const editor = vi.hoisted(() => ({
   })),
   onDidFocusEditorWidget: vi.fn(),
   onDidChangeModelContent: vi.fn<(listener: () => void) => void>(),
+  onDidChangeCursorPosition: vi.fn(),
   getValue: vi.fn(() => "Edited on a phone"),
   setValue: vi.fn<(content: string) => void>(),
   addCommand: vi.fn<(keybinding: number, handler: () => void) => void>(),
@@ -27,7 +33,18 @@ const editor = vi.hoisted(() => ({
 const create = vi.hoisted(() => vi.fn(() => editor));
 vi.mock("./lib/monaco-loader.js", () => ({
   loadMonaco: async () => ({
-    editor: { create },
+    editor: {
+      create,
+      OverviewRulerLane: { Center: 4 },
+    },
+    Range: class Range {
+      constructor(
+        public startLineNumber: number,
+        public startColumn: number,
+        public endLineNumber: number,
+        public endColumn: number,
+      ) {}
+    },
     KeyMod: { CtrlCmd: 1 },
     KeyCode: { KeyS: 2 },
   }),
@@ -172,6 +189,14 @@ function readDiffSelection(input: unknown): string | null {
   return typeof selection === "string" ? selection : null;
 }
 
+const COMMITS = [
+  {
+    sha: "9999999999999999999999999999999999999999",
+    shortSha: "9999999",
+    subject: "Picked base",
+  },
+];
+
 function mountDiff(
   respond: (selection: string | null) => unknown = (selection) => ({
     contents: { new: "new side", old: "old side" },
@@ -180,7 +205,12 @@ function mountDiff(
       { label: "All changes", value: "all" },
       { label: "Uncommitted changes", value: "uncommitted" },
       ...(selection === "thread_start_ref"
-        ? []
+        ? [
+            {
+              label: "Changes since thread start (abc1234)",
+              value: "thread_start_ref",
+            },
+          ]
         : [
             {
               label: "Since thread start (abc1234)",
@@ -189,6 +219,7 @@ function mountDiff(
           ]),
     ],
     patch: diffPatch,
+    patchPath: "target.ts",
     selection: selection ?? "all",
     truncated: false,
   }),
@@ -203,6 +234,7 @@ function mountDiff(
         assets: () => ({ baseUrl: "/assets", expiresAtMs: 99999 }),
         read: () => file,
         diff,
+        commits: () => ({ commits: COMMITS, outcome: "available" }),
       },
     },
   );
@@ -219,7 +251,8 @@ it("shows the change diff in split view and can switch to stacked", async () => 
   expect(rendered.getAttribute("data-has-full-file-contents")).toBe("true");
   expect(rendered.getAttribute("data-expand-unchanged")).toBe("true");
   expect(rendered.textContent).toContain("+new");
-  expect(diff).toHaveBeenCalledWith({
+  expect(diff).toHaveBeenLastCalledWith({
+    includeContents: true,
     path: "target.ts",
     selection: null,
     source: base.source,
@@ -239,12 +272,16 @@ it("loads the diff for a picked base without recreating the editor", async () =>
   fireEvent.click(await slot.findByRole("button", { name: "Show changes" }));
   await slot.findByTestId("bb-diff");
 
-  fireEvent.change(slot.getByRole("combobox", { name: "Diff base" }), {
-    target: { value: "uncommitted" },
-  });
+  fireEvent.click(
+    slot.getByRole("button", {
+      name: /diff base: all changes/i,
+    }),
+  );
+  fireEvent.click(await slot.findByTitle("Uncommitted changes"));
 
   await waitFor(() =>
     expect(diff).toHaveBeenLastCalledWith({
+      includeContents: true,
       path: "target.ts",
       selection: "uncommitted",
       source: base.source,
@@ -254,24 +291,55 @@ it("loads the diff for a picked base without recreating the editor", async () =>
   expect(editor.dispose).not.toHaveBeenCalled();
 });
 
+it("diffs against a commit picked as the base", async () => {
+  const { diff, slot } = mountDiff();
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  fireEvent.click(await slot.findByRole("button", { name: "Show changes" }));
+  await slot.findByTestId("bb-diff");
+
+  fireEvent.click(
+    slot.getByRole("button", {
+      name: /diff base: all changes/i,
+    }),
+  );
+  fireEvent.click(await slot.findByTitle("9999999 Picked base"));
+
+  await waitFor(() =>
+    expect(diff).toHaveBeenLastCalledWith({
+      includeContents: true,
+      path: "target.ts",
+      selection: `since_commit:${COMMITS[0]!.sha}`,
+      source: base.source,
+    }),
+  );
+});
+
 it("switches the comparison to the thread start commit", async () => {
   const { diff, slot } = mountDiff();
   await waitFor(() => expect(create).toHaveBeenCalledOnce());
   fireEvent.click(await slot.findByRole("button", { name: "Show changes" }));
   await slot.findByTestId("bb-diff");
 
-  fireEvent.change(slot.getByRole("combobox", { name: "Diff base" }), {
-    target: { value: "thread_start_ref" },
-  });
+  fireEvent.click(
+    slot.getByRole("button", {
+      name: /diff base: all changes/i,
+    }),
+  );
+  fireEvent.click(await slot.findByTitle("Since thread start (abc1234)"));
 
   await waitFor(() =>
     expect(diff).toHaveBeenLastCalledWith({
+      includeContents: true,
       path: "target.ts",
       selection: "thread_start_ref",
       source: base.source,
     }),
   );
-  expect(slot.getByRole("combobox", { name: "Diff base" })).toBeTruthy();
+  expect(
+    slot.getByRole("button", {
+      name: /diff base: .*thread start/i,
+    }),
+  ).toBeTruthy();
 });
 
 it("starts on the comparison the host asked for", async () => {
@@ -284,6 +352,7 @@ it("starts on the comparison the host asked for", async () => {
         { label: "Since thread start (abc1234)", value: "thread_start_ref" },
       ],
       patch: diffPatch,
+      patchPath: "target.ts",
       selection: selection ?? "all",
       truncated: false,
     }),
@@ -297,17 +366,19 @@ it("starts on the comparison the host asked for", async () => {
   );
 
   await waitFor(() =>
-    expect(diff).toHaveBeenCalledWith({
-      path: "target.ts",
-      selection: "thread_start_ref",
-      source: base.source,
-    }),
+    expect(diff).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "target.ts",
+        selection: "thread_start_ref",
+      }),
+    ),
   );
   await slot.findByTestId("bb-diff");
   expect(
-    (slot.getByRole("combobox", { name: "Diff base" }) as HTMLSelectElement)
-      .value,
-  ).toBe("thread_start_ref");
+    slot.getByRole("button", {
+      name: /diff base: .*thread start/i,
+    }),
+  ).toBeTruthy();
 });
 
 it("returns to the editor when the diff is hidden", async () => {
@@ -319,7 +390,7 @@ it("returns to the editor when the diff is hidden", async () => {
   fireEvent.click(slot.getByRole("button", { name: "Hide changes" }));
 
   await waitFor(() => expect(slot.queryByTestId("bb-diff")).toBeNull());
-  expect(slot.queryByRole("combobox", { name: "Diff base" })).toBeNull();
+  expect(slot.queryByRole("button", { name: "Unified" })).toBeNull();
 });
 
 it("explains a workspace without a diff instead of rendering one", async () => {
@@ -342,6 +413,7 @@ it("flags a truncated diff patch", async () => {
     outcome: "available",
     options: [{ label: "All changes", value: "all" }],
     patch: diffPatch,
+    patchPath: "target.ts",
     selection: selection ?? "all",
     truncated: true,
   }));
@@ -415,4 +487,42 @@ it("reapplies a repeat request after the user picked another view", async () => 
       slot.getByRole("button", { name: "Split" }).getAttribute("aria-pressed"),
     ).toBe("true"),
   );
+});
+
+// bb-fork(file-diff): change marks and stepping on the viewed file.
+it("marks the changed lines and steps between them", async () => {
+  const { slot } = mountDiff();
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+
+  await waitFor(() =>
+    expect(editor.createDecorationsCollection).toHaveBeenCalledWith([
+      expect.objectContaining({
+        options: expect.objectContaining({
+          linesDecorationsClassName:
+            "bb-diff-indicator bb-diff-indicator--modified",
+        }),
+      }),
+    ]),
+  );
+
+  fireEvent.click(await slot.findByRole("button", { name: "Next change" }));
+  expect(editor.revealLineInCenter).toHaveBeenCalledWith(1);
+  expect(editor.setPosition).toHaveBeenCalledWith({
+    column: 1,
+    lineNumber: 1,
+  });
+});
+
+it("offers no change stepping for a file without marks", async () => {
+  const { slot } = mountDiff(() => ({
+    outcome: "unavailable",
+    message: "This workspace is not a Git repository.",
+  }));
+  await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  await waitFor(() =>
+    expect(
+      slot.getByRole("button", { name: "Show changes" }),
+    ).toBeTruthy(),
+  );
+  expect(slot.queryByRole("button", { name: "Next change" })).toBeNull();
 });

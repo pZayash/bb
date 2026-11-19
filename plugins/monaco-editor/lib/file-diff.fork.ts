@@ -26,6 +26,7 @@ export type FileDiffState =
       contents: FileDiffContents;
       options: FileDiffOption[];
       patch: string;
+      patchPath: string;
       selection: string;
       truncated: boolean;
     }
@@ -48,6 +49,7 @@ function toFileDiffState(response: FileDiffResponse): FileDiffState {
         contents: response.contents ?? null,
         options: response.options,
         patch: response.patch,
+        patchPath: response.patchPath,
         selection: response.selection,
         truncated: response.truncated,
       }
@@ -56,7 +58,11 @@ function toFileDiffState(response: FileDiffResponse): FileDiffState {
 
 interface UseFileDiffArgs {
   enabled: boolean;
+  // bb-fork(file-diff-base): the indicator marks need the patch, not the sides.
+  includeContents?: boolean;
   path: string;
+  // bb-fork(file-diff): bump to refetch after the file on disk changed.
+  revision?: number;
   rpc: PluginRpcClient<typeof rpcContract>;
   selection: string | null;
   source: PluginFileOpenerProps["source"];
@@ -64,7 +70,9 @@ interface UseFileDiffArgs {
 
 export function useFileDiff({
   enabled,
+  includeContents = true,
   path,
+  revision = 0,
   rpc,
   selection,
   source,
@@ -81,6 +89,8 @@ export function useFileDiff({
   ].join("\u0000");
   const requestKey = [
     enabled ? "enabled" : "disabled",
+    includeContents ? "contents" : "no-contents",
+    String(revision),
     path,
     selection ?? "",
     sourceKey,
@@ -95,7 +105,12 @@ export function useFileDiff({
     requestIdRef.current = requestId;
     setState(loadingState);
     void rpc
-      .call("diff", { path, selection, source: sourceRef.current })
+      .call("diff", {
+        includeContents,
+        path,
+        selection,
+        source: sourceRef.current,
+      })
       .then((response) => {
         if (requestIdRef.current !== requestId) return;
         setState(toFileDiffState(response));
@@ -110,7 +125,71 @@ export function useFileDiff({
               : "Could not load this file's diff.",
         });
       });
-  }, [enabled, path, requestKey, rpc, selection]);
+  }, [enabled, includeContents, path, requestKey, rpc, selection]);
+
+  return state;
+}
+
+// bb-fork(file-diff-base): recent workspace commits for the base picker.
+export interface DiffCommit {
+  sha: string;
+  shortSha: string;
+  subject: string;
+}
+
+export interface DiffCommitsState {
+  commits: DiffCommit[];
+  isLoading: boolean;
+}
+
+const NO_COMMITS: DiffCommit[] = [];
+
+export function useDiffCommits({
+  enabled,
+  rpc,
+  source,
+}: {
+  enabled: boolean;
+  rpc: PluginRpcClient<typeof rpcContract>;
+  source: PluginFileOpenerProps["source"];
+}): DiffCommitsState {
+  const [state, setState] = useState<DiffCommitsState>({
+    commits: NO_COMMITS,
+    isLoading: false,
+  });
+  const requestIdRef = useRef(0);
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
+  const sourceKey = [
+    source.kind,
+    source.environmentId ?? "",
+    source.threadId ?? "",
+    source.projectId ?? "",
+  ].join("\u0000");
+
+  useEffect(() => {
+    if (!enabled) {
+      setState({ commits: NO_COMMITS, isLoading: false });
+      return;
+    }
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    setState({ commits: NO_COMMITS, isLoading: true });
+    void rpc
+      .call("commits", { source: sourceRef.current })
+      .then((response) => {
+        if (requestIdRef.current !== requestId) return;
+        setState({
+          commits:
+            response.outcome === "available" ? response.commits : NO_COMMITS,
+          isLoading: false,
+        });
+      })
+      .catch(() => {
+        if (requestIdRef.current !== requestId) return;
+        setState({ commits: NO_COMMITS, isLoading: false });
+      });
+  }, [enabled, rpc, sourceKey]);
 
   return state;
 }

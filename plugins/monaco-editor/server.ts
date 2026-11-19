@@ -12,8 +12,10 @@ import {
 import { z } from "zod";
 // bb-fork(file-diff): workspace diff of the open file.
 import {
+  diffCommitsResultSchema,
   fileDiffResultSchema,
   fileDiffSelectionSchema,
+  resolveDiffCommits,
   resolveFileDiff,
 } from "./lib/file-diff.server.fork.js";
 
@@ -87,8 +89,19 @@ export const rpcContract = defineRpcContract({
   },
   // bb-fork(file-diff): the file's diff against the workspace Git state.
   diff: {
-    input: fileSchema.extend({ selection: fileDiffSelectionSchema }).strict(),
+    input: fileSchema
+      .extend({
+        // bb-fork(file-diff-base): the indicator marks skip both side reads.
+        includeContents: z.boolean().optional(),
+        selection: fileDiffSelectionSchema,
+      })
+      .strict(),
     output: fileDiffResultSchema,
+  },
+  // bb-fork(file-diff-base): recent commits for the base-commit picker.
+  commits: {
+    input: z.object({ source: sourceSchema }).strict(),
+    output: diffCommitsResultSchema,
   },
 });
 
@@ -308,13 +321,22 @@ export default async function plugin(bb: BbPluginApi) {
     },
 
     // bb-fork(file-diff): only workspace files have Git state to diff against.
-    diff: ({ path: filePath, source, selection }) =>
+    diff: ({ path: filePath, source, selection, includeContents }) =>
       resolveFileDiff({
         environmentId:
           source.kind === "workspace" ? source.environmentId : null,
+        includeContents,
         path: filePath,
         plugin: bb,
         selection,
+      }),
+
+    // bb-fork(file-diff-base): only workspace files have a commit history.
+    commits: ({ source }) =>
+      resolveDiffCommits({
+        environmentId:
+          source.kind === "workspace" ? source.environmentId : null,
+        plugin: bb,
       }),
   });
 }
