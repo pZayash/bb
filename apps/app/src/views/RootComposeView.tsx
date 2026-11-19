@@ -1251,6 +1251,8 @@ function RootComposeSurface({
       terminals.autoFocusTerminalId,
       terminals.close,
       terminals.handleAutoFocusHandled,
+      // bb-fork(windows): the shell picker disables on starting terminals.
+      terminals.isStarting,
       terminals.retryStart,
       terminals.start,
       terminalShellChoice,

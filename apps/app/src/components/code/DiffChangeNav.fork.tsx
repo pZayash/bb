@@ -87,6 +87,8 @@ export function DiffChangeNav({
   jumpToFirstChange = true,
   scrollElement,
 }: DiffChangeNavProps) {
+  // bb-fork(diff-rail): imperative scroll writes trip the compiler opt-out.
+  "use no memo";
   const marks = useDiffChangeRailMarks(scrollElement);
   const [currentIndex, setCurrentIndex] = useState(0);
   const hasJumpedRef = useRef(false);

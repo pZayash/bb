@@ -90,7 +90,9 @@ export function DiffChangeRailFrame({
   onScrollToFraction,
   viewport,
 }: DiffChangeRailFrameProps) {
-  const rootRef = useRef<HTMLDivElement | null>(null);
+  // bb-fork(diff-rail): drag/scroll ref plumbing trips the compiler opt-out.
+  "use no memo";
+  const rootRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
   const [railHeight, setRailHeight] = useState(0);
   const measureRailHeight = useCallback(() => {
@@ -233,6 +235,8 @@ export function DiffChangeRail({
   className,
   scrollElement,
 }: DiffChangeRailProps) {
+  // bb-fork(diff-rail): imperative scroll writes trip the compiler opt-out.
+  "use no memo";
   const [isChangeRailEnabled] = useGitDiffChangeRailPreference();
   const model = useDiffChangeRailModel(
     isChangeRailEnabled ? scrollElement : null,

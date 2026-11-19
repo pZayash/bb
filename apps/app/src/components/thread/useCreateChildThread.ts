@@ -29,6 +29,11 @@ export function useCreateChildThread(): (thread: Thread) => Promise<void> {
       }
 
       createInFlightRef.current = true;
+      // bb-fork(windows): hoisted — React Compiler rejects optional chaining
+      // bb-fork(windows): inside try/catch.
+      const supportsServiceTier =
+        findCachedProviderInfo(queryClient, thread.providerId)?.capabilities
+          .supportsServiceTier ?? false;
       try {
         const executionOptions = await queryClient.fetchQuery({
           queryKey: threadDefaultExecutionOptionsQueryKey(thread.id),
@@ -46,10 +51,7 @@ export function useCreateChildThread(): (thread: Thread) => Promise<void> {
           return;
         }
 
-        const supportsServiceTier =
-          findCachedProviderInfo(queryClient, thread.providerId)?.capabilities
-            .supportsServiceTier ?? false;
-        const created = await createThread.mutateAsync({
+        const request: Parameters<typeof createThread.mutateAsync>[0] = {
           environment: {
             type: "reuse",
             environmentId: thread.environmentId,
@@ -62,11 +64,16 @@ export function useCreateChildThread(): (thread: Thread) => Promise<void> {
           projectId: thread.projectId,
           providerId: thread.providerId,
           reasoningLevel: executionOptions.reasoningLevel,
-          ...(supportsServiceTier && executionOptions.serviceTier
-            ? { serviceTier: executionOptions.serviceTier }
-            : {}),
           startedOnBehalfOf: null,
-        });
+        };
+        // bb-fork(windows): no ternary/logical inside try — React Compiler
+        // bb-fork(windows): rejects value blocks there.
+        if (supportsServiceTier) {
+          if (executionOptions.serviceTier) {
+            request.serviceTier = executionOptions.serviceTier;
+          }
+        }
+        const created = await createThread.mutateAsync(request);
         navigate(
           getThreadRoutePath({
             projectId: created.projectId,
@@ -76,9 +83,9 @@ export function useCreateChildThread(): (thread: Thread) => Promise<void> {
       } catch {
         // bb-fork(windows): useCreateThread reports the failure through its
         // bb-fork(windows): mutation meta toast.
-      } finally {
-        createInFlightRef.current = false;
       }
+      // bb-fork(windows): no finally — React Compiler cannot lower it.
+      createInFlightRef.current = false;
     },
     [createThread, navigate, queryClient],
   );
