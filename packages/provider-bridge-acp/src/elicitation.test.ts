@@ -97,7 +97,9 @@ describe("planAcpElicitation", () => {
           { value: "balanced", label: "balanced" },
           { value: "aggressive", label: "aggressive" },
         ],
-        allowFreeText: false,
+        // bb-fork(user-questions): was false upstream; custom answers are
+        // always offered
+        allowFreeText: true,
         required: true,
       },
       {
@@ -109,7 +111,8 @@ describe("planAcpElicitation", () => {
           { value: "web", label: "Web app" },
           { value: "cli", label: "CLI" },
         ],
-        allowFreeText: false,
+        // bb-fork(user-questions): was false upstream
+        allowFreeText: true,
         required: true,
       },
       {
@@ -199,12 +202,44 @@ describe("planAcpElicitation", () => {
         answers: { branch: { selected: [], freeText: "Hotfix" } },
       }),
     ).toEqual({ action: "accept", content: { branch: "hotfix" } });
+    // bb-fork(user-questions): a custom answer becomes the field value
+    // instead of failing as unmappable
     expect(
       plan.toResponse({
         kind: "user_answer",
         answers: { branch: { selected: [], freeText: "staging" } },
       }),
-    ).toEqual({ unmappable: 'the answer to "branch" does not fit that field' });
+    ).toEqual({ action: "accept", content: { branch: "staging" } });
+  });
+
+  it("passes a typed answer through as the field value when a choice has no _other companion", () => {
+    const plan = questions(
+      planAcpElicitation(
+        form({
+          strategy: { type: "string", enum: ["fast", "safe"] },
+          targets: {
+            type: "array",
+            items: { enum: ["web", "cli"] },
+          },
+        }),
+      ),
+    );
+    expect(plan.payload.questions).toMatchObject([
+      { id: "strategy", multiSelect: false, allowFreeText: true },
+      { id: "targets", multiSelect: true, allowFreeText: true },
+    ]);
+    expect(
+      plan.toResponse({
+        kind: "user_answer",
+        answers: {
+          strategy: { selected: [], freeText: "balanced" },
+          targets: { selected: ["web"], freeText: "desktop" },
+        },
+      }),
+    ).toEqual({
+      action: "accept",
+      content: { strategy: "balanced", targets: ["web", "desktop"] },
+    });
   });
 
   it("shows a form without fields as accept or decline", () => {

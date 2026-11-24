@@ -186,7 +186,6 @@ function questionFor(
   schema: AcpJsonObject,
   field: AcpElicitationField,
   required: boolean,
-  other: OtherCompanion | null,
   message: string | undefined,
 ): PendingInteractionUserQuestionQuestion {
   const label = readString(schema, "title")?.trim() || name;
@@ -214,14 +213,18 @@ function questionFor(
         ...base,
         multiSelect: false,
         options: field.choices,
-        allowFreeText: other !== null,
+        // bb-fork(user-questions): always offer a custom answer, even
+        // without an _other companion field in the agent's schema
+        allowFreeText: true,
       };
     case "multiChoice":
       return {
         ...base,
         multiSelect: true,
         options: field.choices,
-        allowFreeText: other !== null,
+        // bb-fork(user-questions): always offer a custom answer, even
+        // without an _other companion field in the agent's schema
+        allowFreeText: true,
       };
     case "boolean":
       return {
@@ -283,7 +286,14 @@ function contentFor(
     case "choice": {
       const [value] = selected;
       if (value === undefined) {
-        return typed === undefined ? null : otherContent(entry, typed);
+        if (typed === undefined) {
+          return null;
+        }
+        // bb-fork(user-questions): without an _other companion the typed
+        // answer becomes the field value
+        return entry.other === null
+          ? { [name]: typed }
+          : otherContent(entry, typed);
       }
       if (!field.choices.some((choice) => choice.value === value)) {
         return null;
@@ -301,7 +311,16 @@ function contentFor(
         return null;
       }
       const other = typed === undefined ? null : entry.other;
-      const values = [...selected, ...(other?.choice ? [other.choice] : [])];
+      // bb-fork(user-questions): without an _other companion the typed
+      // answer joins the selected values
+      const values = [
+        ...selected,
+        ...(other?.choice
+          ? [other.choice]
+          : other === null && typed !== undefined
+            ? [typed]
+            : []),
+      ];
       return {
         ...(values.length > 0 ? { [name]: values } : {}),
         ...(other !== null && typed !== undefined
@@ -320,7 +339,14 @@ function contentFor(
         return null;
       }
       const match = matchTypedChoice(field.choices, typed);
-      return match === null ? otherContent(entry, typed) : { [name]: match };
+      if (match !== null) {
+        return { [name]: match };
+      }
+      // bb-fork(user-questions): without an _other companion the typed
+      // answer becomes the field value
+      return entry.other === null
+        ? { [name]: typed }
+        : otherContent(entry, typed);
     }
     case "text":
       return typed === undefined ? null : { [name]: typed };
@@ -450,7 +476,6 @@ export function planAcpElicitation(params: unknown): AcpElicitationPlan {
         entry.schema,
         field,
         entry.required,
-        other,
         planned.length === 0 ? message : undefined,
       ),
     });
