@@ -545,6 +545,28 @@ it("waits for the requested list before scrolling to an opened file", async () =
   await waitFor(() => expect(onScrolledToPath).toHaveBeenCalled());
 });
 
+it("expands only the targeted card before scrolling to it", async () => {
+  const files = Array.from({ length: 11 }, (_, index) =>
+    makeDiffFileEntry({ path: `f${index}.ts`, revision: `rev-${index}` }),
+  );
+  const onScrolledToPath = vi.fn();
+  renderPanel(
+    { files, scrollToPath: "f5.ts", onScrolledToPath },
+    {
+      viewed: () => ({ files: [] }),
+      patches: ({ keys }) => availablePatches(keys),
+    },
+  );
+
+  const target = screen.getByRole("button", { name: "Toggle f5.ts" });
+  const other = screen.getByRole("button", { name: "Toggle f4.ts" });
+  await waitFor(() =>
+    expect(target.getAttribute("aria-expanded")).toBe("true"),
+  );
+  expect(other.getAttribute("aria-expanded")).toBe("false");
+  await waitFor(() => expect(onScrolledToPath).toHaveBeenCalled());
+});
+
 it("reads no patches or Viewed marks while the panel is closed", async () => {
   const file = makeDiffFileEntry({ path: "a.ts", revision: "r1" });
   const { inspection } = renderPanel(

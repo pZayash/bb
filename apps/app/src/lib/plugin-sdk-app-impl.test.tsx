@@ -407,6 +407,94 @@ describe("plugin SDK navigation components", () => {
     expect(openUrl).toHaveBeenCalledWith({ url: "https://example.com/a" });
   });
 
+  it("forwards a valid experimental_diffIntent to openFilePreview and rejects a malformed one", () => {
+    const openFilePreview = vi.fn(() => true);
+    const results: boolean[] = [];
+    const target = {
+      kind: "workspace" as const,
+      environmentId: "env_1",
+      path: "src/a.ts",
+    };
+    function Probe() {
+      const navigate = pluginSdkAppImplementation.useBbNavigate();
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              results.push(
+                navigate.experimental_openFilePreview({
+                  target,
+                  location: null,
+                  experimental_diffIntent: {
+                    requestId: "req-1",
+                    view: "split",
+                  },
+                }),
+              );
+            }}
+          >
+            Valid
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              results.push(
+                navigate.experimental_openFilePreview({
+                  target,
+                  location: null,
+                  experimental_diffIntent: {
+                    requestId: "",
+                    view: "sideways" as never,
+                  },
+                }),
+              );
+            }}
+          >
+            Invalid
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              results.push(
+                navigate.experimental_openFilePreview({
+                  target,
+                  location: null,
+                }),
+              );
+            }}
+          >
+            Plain
+          </button>
+        </>
+      );
+    }
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <AppNavigationHostProvider capabilities={{ openFilePreview }}>
+            <PluginSlotMount pluginId="demo" slotKind="test" slotId="probe">
+              <Probe />
+            </PluginSlotMount>
+          </AppNavigationHostProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Valid" }));
+    expect(results).toEqual([true]);
+    expect(openFilePreview).toHaveBeenLastCalledWith({
+      target,
+      location: null,
+      diffIntent: { requestId: "req-1", view: "split" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Invalid" }));
+    expect(results).toEqual([true, false]);
+    expect(openFilePreview).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Plain" }));
+    expect(results).toEqual([true, false, true]);
+    expect(openFilePreview).toHaveBeenLastCalledWith({ target, location: null });
+  });
+
   it("exposes the file link through the real runtime", () => {
     const openFilePreview = vi.fn(() => true);
     const FileLink = pluginSdkAppImplementation.experimental_FileLink;

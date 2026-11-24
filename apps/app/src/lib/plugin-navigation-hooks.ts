@@ -156,14 +156,16 @@ export function useBbNavigate(): BbNavigate {
     (options) => {
       const normalized = normalizeExperimentalFilePreviewOptions(options);
       if (normalized === null) return false;
-      return appNavigation.openFilePreview(
-        normalized.opener === null
-          ? normalized.options
-          : {
-              ...normalized.options,
-              viewer: { pluginId, openerId: normalized.opener },
-            },
-      );
+      return appNavigation.openFilePreview({
+        ...normalized.options,
+        // bb-fork(file-diff-open): a plugin may request the file's diff view.
+        ...(normalized.diffIntent === null
+          ? {}
+          : { diffIntent: normalized.diffIntent }),
+        ...(normalized.opener === null
+          ? {}
+          : { viewer: { pluginId, openerId: normalized.opener } }),
+      });
     },
     [appNavigation, pluginId],
   );

@@ -5416,6 +5416,14 @@ export interface ExperimentalFilePreviewOptions extends ExperimentalFileOpenOpti
    * that is not registered falls back to BB's preview.
    */
   opener?: string;
+  /**
+   * Request the file's diff view for this open: openers that support diffs
+   * show the file in diff mode against the requested comparison, openers
+   * that do not show the plain preview. Mint a fresh `requestId` per call so
+   * reopening an already-open file reapplies the intent. Experimental: see
+   * docs/api_to_audit.md.
+   */
+  experimental_diffIntent?: ExperimentalFileDiffIntent;
 }
 
 /**

@@ -68,6 +68,8 @@ function livePreviewRequest(
           path: target.path,
           source: getEnvironmentFilePreviewSourceAtRef(target.experimental_ref),
           statusLabel: null,
+          // bb-fork(file-diff-open): a plugin may request the file's diff view.
+          diffIntent: intent.diffIntent ?? null,
         },
       };
     case "host":

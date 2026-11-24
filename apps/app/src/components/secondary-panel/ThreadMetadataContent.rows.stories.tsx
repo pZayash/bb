@@ -45,7 +45,7 @@ const noop = () => {};
 
 const noopChangedFileActions: ChangedFileActions = {
   onChangedFileClick: noop,
-  onOpenChangedFile: noop,
+  onChangedFileDiffClick: noop,
   onCommitClick: noop,
 };
 

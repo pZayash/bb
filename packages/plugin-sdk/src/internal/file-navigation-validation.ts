@@ -1,4 +1,5 @@
 import type {
+  ExperimentalFileDiffIntent,
   ExperimentalFileLocation,
   ExperimentalFileOpenOptions,
   ExperimentalLiveFileTarget,
@@ -222,17 +223,51 @@ export function normalizeExperimentalFileOpenOptions(
   return { target, location };
 }
 
+function normalizeExperimentalFileDiffIntent(
+  value: unknown,
+): ExperimentalFileDiffIntent | null {
+  if (!isJsonObject(value)) return null;
+  const { base = null, ...rest } = value;
+  if (
+    !hasExactKeys(rest, ["requestId", "view"]) ||
+    typeof rest.requestId !== "string" ||
+    rest.requestId.length === 0 ||
+    (rest.view !== "unified" && rest.view !== "split") ||
+    (base !== null && base !== "merge_base" && base !== "thread_start")
+  ) {
+    return null;
+  }
+  const intent: ExperimentalFileDiffIntent = {
+    requestId: rest.requestId,
+    view: rest.view,
+  };
+  return base === null ? intent : { ...intent, base };
+}
+
 export function normalizeExperimentalFilePreviewOptions(
   value: unknown,
-): { options: ExperimentalFileOpenOptions; opener: string | null } | null {
+): {
+  diffIntent: ExperimentalFileDiffIntent | null;
+  options: ExperimentalFileOpenOptions;
+  opener: string | null;
+} | null {
   if (!isJsonObject(value)) return null;
-  const { opener = null, ...rest } = value;
+  const {
+    experimental_diffIntent: diffIntentValue = null,
+    opener = null,
+    ...rest
+  } = value;
+  const diffIntent =
+    diffIntentValue === null
+      ? null
+      : normalizeExperimentalFileDiffIntent(diffIntentValue);
   if (
-    opener !== null &&
-    (typeof opener !== "string" || !PLUGIN_SLOT_ID_PATTERN.test(opener))
+    (opener !== null &&
+      (typeof opener !== "string" || !PLUGIN_SLOT_ID_PATTERN.test(opener))) ||
+    (diffIntentValue !== null && diffIntent === null)
   ) {
     return null;
   }
   const options = normalizeExperimentalFileOpenOptions(rest);
-  return options === null ? null : { options, opener };
+  return options === null ? null : { diffIntent, options, opener };
 }

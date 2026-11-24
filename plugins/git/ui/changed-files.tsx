@@ -83,7 +83,7 @@ export function resolveChangedFileOpen({
 
 export interface ChangedFileActions {
   onChangedFileClick(selection: WorkspaceChangedFileSelection<WorkspaceFileStatus>): void;
-  onOpenChangedFile(path: string): void;
+  onChangedFileDiffClick(selection: WorkspaceChangedFileSelection<WorkspaceFileStatus>): void;
   onCommitClick(sha: string): void;
 }
 
@@ -104,11 +104,28 @@ export function useChangedFileActions(
       }),
     [panel],
   );
-  const onOpenChangedFile = useCallback(
-    (path: string) => {
+  // bb-fork(file-diff-open): the row action opens the file's split diff.
+  const onChangedFileDiffClick = useCallback(
+    (selection: WorkspaceChangedFileSelection<WorkspaceFileStatus>) => {
+      const open = resolveChangedFileOpen(selection);
       navigate.experimental_openFilePreview({
-        target: { kind: "workspace", environmentId, path },
+        target: {
+          kind: "workspace",
+          environmentId,
+          path: selection.file.path,
+          ...(open.kind === "preview" && open.ref !== undefined
+            ? { experimental_ref: open.ref }
+            : {}),
+        },
         location: null,
+        ...(open.kind === "diff"
+          ? {
+              experimental_diffIntent: {
+                requestId: crypto.randomUUID(),
+                view: "split" as const,
+              },
+            }
+          : {}),
       });
     },
     [environmentId, navigate],
@@ -138,7 +155,7 @@ export function useChangedFileActions(
     },
     [openDiff],
   );
-  return { onChangedFileClick, onOpenChangedFile, onCommitClick };
+  return { onChangedFileClick, onChangedFileDiffClick, onCommitClick };
 }
 
 export function ChangedFilesTally({
@@ -194,8 +211,9 @@ function ChangedFileRow({
           ? [
               {
                 icon: "ExternalLink",
-                label: "Open file in tab",
-                onSelect: () => actions.onOpenChangedFile(file.path),
+                label: "Open file diff",
+                onSelect: () =>
+                  actions.onChangedFileDiffClick({ file, section }),
               },
             ]
           : []

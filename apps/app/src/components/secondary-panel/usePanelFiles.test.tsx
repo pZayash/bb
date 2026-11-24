@@ -117,11 +117,47 @@ describe.each(SURFACES)("panel files on the $name", (surface) => {
       {
         kind: "workspace-file-preview",
         environmentId: "env_1",
-        tab: { lineRange: null, path: "src/a.ts", source, statusLabel: null },
+        tab: {
+          diffIntent: null,
+          lineRange: null,
+          path: "src/a.ts",
+          source,
+          statusLabel: null,
+        },
       },
       undefined,
     );
   });
+
+  it.runIf(surface.accepts.ownWorkspace)(
+    "passes a diff intent through to the workspace file tab",
+    () => {
+      const { openTab, panelFiles } = renderSurface(surface);
+      const diffIntent = { requestId: "req-1", view: "split" as const };
+
+      expect(
+        panelFiles.openFilePreview({
+          target: OWN_WORKSPACE,
+          location: null,
+          diffIntent,
+        }),
+      ).toBe(true);
+      expect(openTab).toHaveBeenCalledWith(
+        {
+          kind: "workspace-file-preview",
+          environmentId: "env_1",
+          tab: {
+            diffIntent,
+            lineRange: null,
+            path: "src/a.ts",
+            source: { kind: "working-tree" },
+            statusLabel: null,
+          },
+        },
+        undefined,
+      );
+    },
+  );
 
   it.runIf(surface.accepts.ownHost)(
     "passes a one-off viewer through to the opened tab",

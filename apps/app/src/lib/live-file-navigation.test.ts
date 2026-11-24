@@ -143,10 +143,18 @@ describe("normalizeExperimentalFilePreviewOptions", () => {
         location: null,
         opener: "page",
       }),
-    ).toEqual({ options: { target, location: null }, opener: "page" });
+    ).toEqual({
+      diffIntent: null,
+      options: { target, location: null },
+      opener: "page",
+    });
     expect(
       normalizeExperimentalFilePreviewOptions({ target, location: null }),
-    ).toEqual({ options: { target, location: null }, opener: null });
+    ).toEqual({
+      diffIntent: null,
+      options: { target, location: null },
+      opener: null,
+    });
   });
 
   it.each(["", "a/b", "plugin:page", 3])(
@@ -161,6 +169,52 @@ describe("normalizeExperimentalFilePreviewOptions", () => {
       ).toBeNull();
     },
   );
+
+  it("accepts a diff intent and strips it from the open options", () => {
+    expect(
+      normalizeExperimentalFilePreviewOptions({
+        target,
+        location: null,
+        experimental_diffIntent: {
+          requestId: "req-1",
+          base: "thread_start",
+          view: "split",
+        },
+      }),
+    ).toEqual({
+      diffIntent: { requestId: "req-1", base: "thread_start", view: "split" },
+      options: { target, location: null },
+      opener: null,
+    });
+  });
+
+  it.each([
+    { experimental_diffIntent: { requestId: "", view: "split" } },
+    { experimental_diffIntent: { view: "split" } },
+    { experimental_diffIntent: { requestId: "r", view: "sideways" } },
+    {
+      experimental_diffIntent: {
+        requestId: "r",
+        view: "split",
+        base: "upstream",
+      },
+    },
+    {
+      experimental_diffIntent: {
+        requestId: "r",
+        view: "split",
+        extra: 1,
+      },
+    },
+  ])("rejects a malformed diff intent: %s", (option) => {
+    expect(
+      normalizeExperimentalFilePreviewOptions({
+        target,
+        location: null,
+        ...option,
+      }),
+    ).toBeNull();
+  });
 });
 
 describe("normalizeExperimentalFileOpenOptions", () => {

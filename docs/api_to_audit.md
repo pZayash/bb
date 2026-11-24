@@ -5078,6 +5078,25 @@ request rather than on the opener props. The intent rides on the workspace file
 tab state (`diffIntent`) and is stripped from stored tabs, so a restored tab
 opens in the editor as before.
 
+## `experimental_openFilePreview` option `experimental_diffIntent`
+
+**Added 2026-11-20 (fork).** `experimental_openFilePreview` accepts an
+optional `experimental_diffIntent` (`ExperimentalFileDiffIntent`:
+`{ requestId, base?, view }`). A plugin file open can thereby ask for the
+file's diff view, the same request `PluginFileOpenerProps.experimental_diffIntent`
+delivers to the opener. The Git plugin's changed-files row action is the
+first caller: it opens a modified file straight into its split diff. Mint a
+fresh `requestId` per call — a repeat open of the same file re-applies the
+intent; omit `base` for the merge-base comparison. Openers without a diff
+mode ignore the intent and show the plain preview; the option is rejected
+entirely (the open returns `false`) when its shape is malformed.
+
+Before stabilizing, audit whether the intent should ride on the shared
+`ExperimentalFileOpenOptions` (external openers have no diff to honor) or
+stay preview-only, and whether view/base survive a stored tab — today the
+intent is client-local and stripped from synced tabs, matching the opener
+prop.
+
 ## `PluginSettingDescriptor.experimental_model`
 
 **Added 2026-10-10 (fork).** A `type: "string"` setting descriptor field

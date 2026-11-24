@@ -114,12 +114,15 @@ export function DiffFilesPanel({
   );
 
   const cardStates = useDiffFileCardStates(diffIdentity);
-  const isCardCollapsed = (entry: DiffFileEntry) =>
-    resolveCardCollapsed(
-      cardStates.get(entry.path) ?? null,
-      entry,
-      files.length,
-    );
+  const isCardCollapsed = useCallback(
+    (entry: DiffFileEntry) =>
+      resolveCardCollapsed(
+        cardStates.get(entry.path) ?? null,
+        entry,
+        files.length,
+      ),
+    [cardStates, files.length],
+  );
 
   const virtualizer = useVirtualizer({
     count: visibleFiles.length,
@@ -186,9 +189,29 @@ export function DiffFilesPanel({
     if (index < 0) {
       return;
     }
+    const entry = visibleFiles[index];
+    // bb-fork(file-diff-open): expand the targeted card before scrolling.
+    if (isCardCollapsed(entry)) {
+      const current =
+        readDiffFileCardState(diffIdentity, entry.path) ??
+        resolveDiffFileCardInitialState({ entry, fileCount: files.length });
+      writeDiffFileCardStates(diffIdentity, [
+        [entry.path, { ...current, collapsed: false }],
+      ]);
+      return;
+    }
     virtualizer.scrollToIndex(index, { align: "start" });
     onScrolledToPath?.();
-  }, [isPlaceholder, scrollToPath, visibleFiles, virtualizer, onScrolledToPath]);
+  }, [
+    isPlaceholder,
+    scrollToPath,
+    visibleFiles,
+    virtualizer,
+    onScrolledToPath,
+    isCardCollapsed,
+    diffIdentity,
+    files.length,
+  ]);
 
   if (visibleFiles.length === 0) {
     return (

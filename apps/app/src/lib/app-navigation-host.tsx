@@ -13,6 +13,7 @@ import type {
   JsonValue,
 } from "@get-bb/plugin-sdk";
 import type { TerminalSession } from "@bb/server-contract";
+import type { FilePreviewDiffIntent } from "@bb/client-core";
 import type { FileOpenerOverride } from "@/lib/plugin-slot-resolvers";
 import {
   UNAVAILABLE_APP_PANEL_CONTROLLER,
@@ -24,6 +25,8 @@ interface AppUrlOpenIntent {
 }
 
 export interface AppFilePreviewIntent extends ExperimentalFileOpenOptions {
+  // bb-fork(file-diff-open): a plugin may request the file's diff view.
+  diffIntent?: FilePreviewDiffIntent;
   viewer?: FileOpenerOverride;
 }
 
