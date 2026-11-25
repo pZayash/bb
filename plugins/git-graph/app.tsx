@@ -902,45 +902,51 @@ function GitGraphPanel({ subPath: _subPath }: PluginNavPanelProps) {
           ref={attachScroller}
           onScroll={handleScroll}
           data-testid="git-graph-scroller"
-          className="@container min-h-0 flex-1 overflow-auto"
+          className="min-h-0 flex-1 overflow-auto"
         >
-          <div style={{ minWidth: graphWidth + TEXT_COLUMNS_MIN_WIDTH }}>
-            <div
-              data-testid="git-graph-header"
-              className="sticky top-0 z-20 flex h-7 items-center border-b border-border bg-background text-xs font-medium text-muted-foreground"
-            >
+          {/* bb-fork(ui-flicker): a scroll container must not also be a
+              container-query container, or Blink relayouts the whole scrolled
+              subtree on every content change; the wrapper keeps the measured
+              width at the viewport instead of the minWidth content. */}
+          <div className="@container">
+            <div style={{ minWidth: graphWidth + TEXT_COLUMNS_MIN_WIDTH }}>
               <div
-                data-testid="git-graph-header-graph"
-                className="shrink-0 truncate"
-                style={{ width: graphWidth, paddingLeft: GRAPH_PADDING_LEFT }}
+                data-testid="git-graph-header"
+                className="sticky top-0 z-20 flex h-7 items-center border-b border-border bg-background text-xs font-medium text-muted-foreground"
               >
-                Graph
+                <div
+                  data-testid="git-graph-header-graph"
+                  className="shrink-0 truncate"
+                  style={{ width: graphWidth, paddingLeft: GRAPH_PADDING_LEFT }}
+                >
+                  Graph
+                </div>
+                <div
+                  ref={observeDescriptionColumn}
+                  className={DESCRIPTION_COLUMN_CLASS}
+                >
+                  <span className="truncate">Description</span>
+                </div>
+                <div className={AUTHOR_COLUMN_CLASS}>Author</div>
+                <div className={DATE_COLUMN_CLASS}>Date</div>
               </div>
               <div
-                ref={observeDescriptionColumn}
-                className={DESCRIPTION_COLUMN_CLASS}
+                role="list"
+                className="relative"
+                style={{ height: totalRows * ROW_HEIGHT }}
               >
-                <span className="truncate">Description</span>
+                {rowIndexes.map(renderRow)}
+                <GraphLanes
+                  layout={layout}
+                  edges={graphEdges.edges}
+                  openEdges={graphEdges.openEdges}
+                  nodeKinds={nodeKinds}
+                  renderFrom={renderFrom}
+                  renderTo={renderTo}
+                  width={graphWidth}
+                  highlightChain={highlightChain}
+                />
               </div>
-              <div className={AUTHOR_COLUMN_CLASS}>Author</div>
-              <div className={DATE_COLUMN_CLASS}>Date</div>
-            </div>
-            <div
-              role="list"
-              className="relative"
-              style={{ height: totalRows * ROW_HEIGHT }}
-            >
-              {rowIndexes.map(renderRow)}
-              <GraphLanes
-                layout={layout}
-                edges={graphEdges.edges}
-                openEdges={graphEdges.openEdges}
-                nodeKinds={nodeKinds}
-                renderFrom={renderFrom}
-                renderTo={renderTo}
-                width={graphWidth}
-                highlightChain={highlightChain}
-              />
             </div>
           </div>
           <div ref={sentinelRef} aria-hidden="true" />

@@ -243,17 +243,44 @@ describe("createPluginDevLoop", () => {
     expect(calls).toEqual(["build", "reload"]);
   });
 
-  it("does not consult hasSourceChanges for named changes", async () => {
-    const { deps } = makeDeps({ hasApp: true });
-    const hasSourceChanges = vi.fn(async () => false);
+  it("consults hasSourceChanges for named changes and passes the file list and last cycle start", async () => {
+    const { calls, deps } = makeDeps({ hasApp: true });
+    const hasSourceChanges = vi.fn(
+      async (_context: {
+        files: readonly string[];
+        lastCycleStartedAtMs: number;
+      }) => true,
+    );
     const loop = createPluginDevLoop({ ...deps, hasSourceChanges });
+
+    loop.handleChange("app.tsx");
+    loop.handleChange("server.ts");
+    await vi.advanceTimersByTimeAsync(300);
+    await loop.settled();
+
+    expect(hasSourceChanges).toHaveBeenCalledTimes(1);
+    const context = hasSourceChanges.mock.calls[0]?.[0];
+    expect(context?.files).toEqual(["app.tsx", "server.ts"]);
+    expect(context?.lastCycleStartedAtMs).toBeGreaterThan(0);
+    expect(calls).toEqual(["build", "reload"]);
+  });
+
+  it("skips a metadata-only change when hasSourceChanges reports no source edit", async () => {
+    const { calls, deps } = makeDeps({ hasApp: true });
+    const notifyChanged = vi.fn();
+    const loop = createPluginDevLoop({
+      ...deps,
+      hasSourceChanges: async () => false,
+      notifyChanged,
+    });
 
     loop.handleChange("app.tsx");
     await vi.advanceTimersByTimeAsync(300);
     await loop.settled();
 
-    expect(hasSourceChanges).not.toHaveBeenCalled();
-    expect(deps.buildApp).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual([]);
+    expect(deps.buildApp).not.toHaveBeenCalled();
+    expect(notifyChanged).not.toHaveBeenCalled();
   });
 });
 
@@ -275,5 +302,6 @@ describe("isIgnoredPluginDevPath", () => {
     expect(isIgnoredPluginDevPath(".turbo/turbo-typecheck.log")).toBe(true);
     expect(isIgnoredPluginDevPath(".bundled-runtime/package.json")).toBe(true);
     expect(isIgnoredPluginDevPath(".bundled-runtime/dist/host.js")).toBe(true);
+    expect(isIgnoredPluginDevPath("coverage/index.html")).toBe(true);
   });
 });

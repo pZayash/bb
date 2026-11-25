@@ -11,13 +11,13 @@ const IGNORED_SEGMENTS = new Set([
   // bb-fork(windows): environment provisioning.
   ".turbo",
   ".bundled-runtime",
+  // bb-fork(windows): test runs inside a plugin directory write real files
+  // bb-fork(windows): under coverage/ that are not sources.
+  "coverage",
 ]);
 // bb-fork(windows): how long to wait before retrying a hot reload that was
 // bb-fork(windows): held back by an open plugin form.
 export const PLUGIN_DEV_DEFER_RETRY_MS = 3000;
-// bb-fork(windows): fs.watch reports a change it cannot attribute as a null
-// bb-fork(windows): filename, which the watcher dispatches as this marker.
-const UNKNOWN_CHANGE_PATH = ".";
 
 export function isIgnoredPluginDevPath(relativePath: string): boolean {
   return relativePath
@@ -41,8 +41,17 @@ interface PluginDevLoopDeps {
   // bb-fork(windows): is still answering this plugin's form; null to proceed.
   deferReload?: () => string | null;
   // bb-fork(windows): confirm that a tracked source file really changed before
-  // bb-fork(windows): rebuilding on an unattributed (null) watch event.
-  hasSourceChanges?: () => Promise<boolean>;
+  // bb-fork(windows): rebuilding. Windows fs.watch also reports metadata-only
+  // bb-fork(windows): updates (attribute and last-access writes from readers,
+  // bb-fork(windows): indexers, antivirus) with real filenames, so every
+  // bb-fork(windows): reported file list is verified, not just the
+  // bb-fork(windows): unattributed (null filename) case. `files` are the
+  // bb-fork(windows): watcher-relative paths; `lastCycleStartedAtMs` is when
+  // bb-fork(windows): the previous rebuild cycle started.
+  hasSourceChanges?: (context: {
+    files: readonly string[];
+    lastCycleStartedAtMs: number;
+  }) => Promise<boolean>;
   // bb-fork(windows): emit exactly one plugins-changed notification per cycle
   // bb-fork(windows): instead of one per build step.
   notifyChanged?: () => void;
@@ -64,8 +73,14 @@ export function createPluginDevLoop(deps: PluginDevLoopDeps): PluginDevLoop {
   let disposed = false;
   let deferralNotified = false;
   let queueTail: Promise<void> = Promise.resolve();
+  // bb-fork(windows): mtimes older than the last cycle's start cannot be the
+  // bb-fork(windows): reason a watcher event fired; starting at "now" also
+  // bb-fork(windows): suppresses the metadata-only storm seen right after the
+  // bb-fork(windows): watcher attaches.
+  let lastCycleStartedAt = Date.now();
   async function runCycle(files: readonly string[]): Promise<void> {
     if (disposed) return;
+    const cycleStartedAt = Date.now();
     // bb-fork(windows): a rebuild or reload would destroy an open plugin form
     // bb-fork(windows): (for example an AskUserQuestion card), so hold the whole
     // bb-fork(windows): cycle until the request is answered or expires.
@@ -82,16 +97,16 @@ export function createPluginDevLoop(deps: PluginDevLoopDeps): PluginDevLoop {
       return;
     }
     deferralNotified = false;
-    // bb-fork(windows): a null watch filename becomes UNKNOWN_CHANGE_PATH; ask
-    // bb-fork(windows): whether a source file is actually newer than the build.
-    if (
-      files.length === 1 &&
-      files[0] === UNKNOWN_CHANGE_PATH &&
-      deps.hasSourceChanges !== undefined
-    ) {
+    // bb-fork(windows): ask whether a source file actually changed; metadata-
+    // bb-fork(windows): only watch events carry real filenames and must not
+    // bb-fork(windows): rebuild, remounting every plugin slot in the UI.
+    if (deps.hasSourceChanges !== undefined) {
       let changed: boolean;
       try {
-        changed = await deps.hasSourceChanges();
+        changed = await deps.hasSourceChanges({
+          files,
+          lastCycleStartedAtMs: lastCycleStartedAt,
+        });
       } catch {
         changed = true;
       }
@@ -143,6 +158,7 @@ export function createPluginDevLoop(deps: PluginDevLoopDeps): PluginDevLoop {
       }
       deps.log(parts.join(" · "));
     } finally {
+      lastCycleStartedAt = cycleStartedAt;
       deps.notifyChanged?.();
     }
   }

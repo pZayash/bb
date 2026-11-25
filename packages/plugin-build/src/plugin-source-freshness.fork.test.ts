@@ -2,7 +2,10 @@ import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { hasPluginSourceChanges } from "./plugin-source-freshness.fork.js";
+import {
+  hasPluginSourceChanges,
+  pluginSourcesChangedSince,
+} from "./plugin-source-freshness.fork.js";
 
 const BUILD_TIME = new Date("2026-01-02T00:00:00Z");
 const OLDER_TIME = new Date("2026-01-01T00:00:00Z");
@@ -96,5 +99,80 @@ describe("hasPluginSourceChanges", () => {
         artifactRelativePaths: ["dist/app.js"],
       }),
     ).resolves.toBe(true);
+  });
+});
+
+describe("pluginSourcesChangedSince", () => {
+  const rootDirs: string[] = [];
+  const SINCE_MS = Date.parse("2026-01-02T00:00:00Z");
+
+  afterEach(async () => {
+    await Promise.all(
+      rootDirs
+        .splice(0)
+        .map((rootDir) => rm(rootDir, { recursive: true, force: true })),
+    );
+  });
+
+  it("reports no change when every reported file is older than the last cycle", async () => {
+    const rootDir = await makePluginDir();
+    rootDirs.push(rootDir);
+    await writeFile(join(rootDir, "app.tsx"), "source");
+    await utimes(join(rootDir, "app.tsx"), OLDER_TIME, OLDER_TIME);
+
+    await expect(
+      pluginSourcesChangedSince({
+        rootDir,
+        relativePaths: ["app.tsx"],
+        artifactRelativePaths: ["dist/app.js"],
+        sinceMs: SINCE_MS,
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it("reports a change when a reported file is newer than the last cycle start", async () => {
+    const rootDir = await makePluginDir();
+    rootDirs.push(rootDir);
+    await writeFile(join(rootDir, "app.tsx"), "source");
+    await utimes(join(rootDir, "app.tsx"), NEWER_TIME, NEWER_TIME);
+
+    await expect(
+      pluginSourcesChangedSince({
+        rootDir,
+        relativePaths: ["app.tsx"],
+        artifactRelativePaths: ["dist/app.js"],
+        sinceMs: SINCE_MS,
+      }),
+    ).resolves.toBe(true);
+  });
+
+  it("reports a change when a reported file cannot be statted", async () => {
+    const rootDir = await makePluginDir();
+    rootDirs.push(rootDir);
+
+    await expect(
+      pluginSourcesChangedSince({
+        rootDir,
+        relativePaths: ["deleted.tsx"],
+        artifactRelativePaths: ["dist/app.js"],
+        sinceMs: SINCE_MS,
+      }),
+    ).resolves.toBe(true);
+  });
+
+  it('falls back to the artifact scan for the unattributed "." marker', async () => {
+    const rootDir = await makePluginDir();
+    rootDirs.push(rootDir);
+    await writeFile(join(rootDir, "app.tsx"), "source");
+    await utimes(join(rootDir, "app.tsx"), OLDER_TIME, OLDER_TIME);
+
+    await expect(
+      pluginSourcesChangedSince({
+        rootDir,
+        relativePaths: ["."],
+        artifactRelativePaths: ["dist/app.js"],
+        sinceMs: SINCE_MS,
+      }),
+    ).resolves.toBe(false);
   });
 });

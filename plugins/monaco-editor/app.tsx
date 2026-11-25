@@ -671,10 +671,13 @@ function MonacoFileOpener({
       ) : null}
       {isPreviewVisible ? (
         <div
-          className="@container/page min-h-0 flex-1 overflow-y-auto bg-background"
+          className="min-h-0 flex-1 overflow-y-auto bg-background"
           style={MARKDOWN_PREVIEW_WRAPPER_STYLE}
         >
-          <div className="px-4 py-4">
+          {/* bb-fork(ui-flicker): a scroll container must not also be a
+              container-query container; keep the named container on the
+              content child so Blink does not relayout the whole subtree. */}
+          <div className="@container/page px-4 py-4">
             <Markdown
               content={previewContent}
               {...(markdownPreviewDocument === undefined

@@ -50,7 +50,7 @@ import {
 import {
   buildPluginApp,
   createPluginDevLoop,
-  hasPluginSourceChanges,
+  pluginSourcesChangedSince,
 } from "@bb/plugin-build";
 import { getPluginBuildToolchain } from "./build-toolchain.js";
 import { buildMutablePluginHost } from "./mutable-plugin-artifacts.js";
@@ -1641,14 +1641,16 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
             pluginId: row.id,
             // bb-fork(windows): never hot-reload a plugin whose form is open.
             deferReload: () => pluginDevReloadDeferralReason(deps.db, row.id),
-            hasSourceChanges: () =>
-              hasPluginSourceChanges({
+            hasSourceChanges: ({ files, lastCycleStartedAtMs }) =>
+              pluginSourcesChangedSince({
                 rootDir: bundled.rootDir,
+                relativePaths: files,
                 artifactRelativePaths: [
                   "dist/app.js",
                   "dist/host.js",
                   "dist/server.js",
                 ],
+                sinceMs: lastCycleStartedAtMs,
               }),
             notifyChanged: notifyPluginsChanged,
             targets: async () => {

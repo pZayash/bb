@@ -49,6 +49,7 @@ import {
   buildPluginServer,
   createPluginDevLoop,
   findPluginSdkInstallImports,
+  pluginSourcesChangedSince,
   type PluginSdkInstallImport,
   PLUGIN_TOOLCHAIN_PINS,
   resolvePluginBuildToolchain,
@@ -1977,6 +1978,19 @@ export function registerPluginCommands(
             );
             if (!result.ok) throw new Error(result.error ?? "reload failed");
           },
+          // bb-fork(windows): skip metadata-only watch events so reads do not
+          // rebuild.
+          hasSourceChanges: ({ files, lastCycleStartedAtMs }) =>
+            pluginSourcesChangedSince({
+              rootDir,
+              relativePaths: files,
+              artifactRelativePaths: [
+                "dist/app.js",
+                "dist/host.js",
+                "dist/server.js",
+              ],
+              sinceMs: lastCycleStartedAtMs,
+            }),
           log: (line) => console.log(line),
         });
         const watcher = watch(
