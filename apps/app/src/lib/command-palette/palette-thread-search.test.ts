@@ -36,6 +36,7 @@ function makeThread(
     deletedAt: null,
     lastReadAt: null,
     latestAttentionAt: 1,
+    statusChangedAt: 1,
     createdAt: 1,
     updatedAt: NOW,
     activity: {
@@ -47,6 +48,8 @@ function makeThread(
     hasPendingInteraction: false,
     environmentHostId: null,
     environmentPath: null,
+    environmentStatus: null,
+    environmentHostLifecycle: null,
     environmentProviderId: null,
     environmentIsWorktree: null,
     environmentName: null,
@@ -68,8 +71,8 @@ function build(
     query: "match",
     recentThreads: [],
     searchResponse: {
-      active: { results: [], total: 0 },
-      archived: { results: [], total: 0 },
+      active: { results: [], total: 0, totalCapped: false },
+      archived: { results: [], total: 0, totalCapped: false },
     },
     searchResultsAreCurrent: true,
     sort: "relevance",
@@ -123,6 +126,7 @@ describe("buildPaletteThreadSearchRows", () => {
       searchResponse: {
         active: {
           total: 1,
+          totalCapped: false,
           results: [
             {
               thread: makeThread("saved", { status: "pending" }),
@@ -137,7 +141,7 @@ describe("buildPaletteThreadSearchRows", () => {
             },
           ],
         },
-        archived: { total: 0, results: [] },
+        archived: { total: 0, totalCapped: false, results: [] },
       },
     });
     expect(result.rows).toHaveLength(1);
@@ -155,10 +159,12 @@ describe("buildPaletteThreadSearchRows", () => {
     const searchResponse: ThreadSearchResponse = {
       active: {
         total: 1,
+        totalCapped: false,
         results: [{ thread: active, matches: [] }],
       },
       archived: {
         total: 1,
+        totalCapped: false,
         results: [{ thread: archived, matches: [] }],
       },
     };
@@ -189,6 +195,7 @@ describe("buildPaletteThreadSearchRows", () => {
       searchResponse: {
         active: {
           total: 1,
+          totalCapped: false,
           results: [
             {
               thread,
@@ -203,7 +210,7 @@ describe("buildPaletteThreadSearchRows", () => {
             },
           ],
         },
-        archived: { results: [], total: 0 },
+        archived: { results: [], total: 0, totalCapped: false },
       },
     });
 
@@ -226,8 +233,12 @@ describe("buildPaletteThreadSearchRows", () => {
     const recents = build({
       query: "",
       searchResponse: {
-        active: { total: 0, results: [] },
-        archived: { total: 1, results: [{ thread: archived, matches: [] }] },
+        active: { total: 0, totalCapped: false, results: [] },
+        archived: {
+          total: 1,
+          totalCapped: false,
+          results: [{ thread: archived, matches: [] }],
+        },
       },
       recentThreads: [active],
     });
@@ -246,8 +257,16 @@ describe("buildPaletteThreadSearchRows", () => {
       build({
         searchResultsAreCurrent: false,
         searchResponse: {
-          active: { total: 1, results: [{ thread, matches: [] }] },
-          archived: { total: 1, results: [{ thread, matches: [] }] },
+          active: {
+            total: 1,
+            totalCapped: false,
+            results: [{ thread, matches: [] }],
+          },
+          archived: {
+            total: 1,
+            totalCapped: false,
+            results: [{ thread, matches: [] }],
+          },
         },
       }).rows,
     ).toEqual([]);
@@ -337,12 +356,13 @@ describe("buildPaletteThreadSearchRows", () => {
       const searchResponse: ThreadSearchResponse = {
         active: {
           total: 2,
+          totalCapped: false,
           results: [
             { thread: messageOnly, matches: [] },
             { thread: titleHit, matches: [] },
           ],
         },
-        archived: { total: 0, results: [] },
+        archived: { total: 0, totalCapped: false, results: [] },
       };
       expect(
         build({ query: "fix", searchResponse }).rows.map((row) => row.threadId),
@@ -511,6 +531,7 @@ describe("buildPaletteThreadSearchRows", () => {
         searchResponse: {
           active: {
             total: 2,
+            totalCapped: false,
             results: [
               {
                 thread: messageOnly,
@@ -536,7 +557,7 @@ describe("buildPaletteThreadSearchRows", () => {
               },
             ],
           },
-          archived: { total: 0, results: [] },
+          archived: { total: 0, totalCapped: false, results: [] },
         },
       });
       expect(result.rows.map((row) => row.threadId)).toEqual([
@@ -573,9 +594,10 @@ describe("buildPaletteThreadSearchRows", () => {
         query: "fix",
         lifecycles: ["archived"],
         searchResponse: {
-          active: { total: 0, results: [] },
+          active: { total: 0, totalCapped: false, results: [] },
           archived: {
             total: 1,
+            totalCapped: false,
             results: [
               {
                 thread,
@@ -619,9 +641,10 @@ describe("buildPaletteThreadSearchRows", () => {
         query: "fix",
         lifecycles: ["archived"],
         searchResponse: {
-          active: { total: 0, results: [] },
+          active: { total: 0, totalCapped: false, results: [] },
           archived: {
             total: 2,
+            totalCapped: false,
             results: [
               {
                 thread: messageOnly,
@@ -675,9 +698,10 @@ describe("buildPaletteThreadSearchRows", () => {
           query,
           lifecycles: ["archived"],
           searchResponse: {
-            active: { total: 0, results: [] },
+            active: { total: 0, totalCapped: false, results: [] },
             archived: {
               total: 2,
+              totalCapped: false,
               results: [
                 { thread: messageOnly, matches: [] },
                 { thread: titleHit, matches: [] },
@@ -700,9 +724,10 @@ describe("buildPaletteThreadSearchRows", () => {
         searchResponse: {
           active: {
             total: 1,
+            totalCapped: false,
             results: [{ thread: titled("stale", "Stale"), matches: [] }],
           },
-          archived: { total: 0, results: [] },
+          archived: { total: 0, totalCapped: false, results: [] },
         },
       });
       expect(result.rows.map((row) => row.threadId)).toEqual(["a"]);

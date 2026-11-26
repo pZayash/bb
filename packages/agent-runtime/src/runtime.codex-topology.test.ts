@@ -190,6 +190,7 @@ describe("codex process topology", () => {
     });
     const sibling = await startCodexThread(runtime, "sibling");
     await runtime.runTurn({
+      additionalWorkspaceWriteRoots: [],
       clientRequestId: "creq_cdxtpgy328",
       threadId: "source",
       input: [promptTextInput({ text: "continue source" })],
@@ -228,6 +229,7 @@ describe("codex process topology", () => {
     expect(topology.exited()).toBe(0);
 
     await runtime.runTurn({
+      additionalWorkspaceWriteRoots: [],
       clientRequestId: "creq_cdxtpgy222",
       threadId: "t2",
       input: [promptTextInput({ text: "hello" })],
@@ -316,6 +318,7 @@ describe("codex process topology", () => {
     const { runtime, events } = topology;
     await startCodexThread(runtime, "t1");
     await runtime.runTurn({
+      additionalWorkspaceWriteRoots: [],
       clientRequestId: "creq_cdxtpgy223",
       threadId: "t1",
       input: [promptTextInput({ text: "/wait-for-interrupt" })],

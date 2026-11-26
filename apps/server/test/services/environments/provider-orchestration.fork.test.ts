@@ -10,12 +10,14 @@ import {
 } from "@bb/db";
 import { recordProvisionedEnvironmentWorkspace } from "@bb/db/internal-environment-lifecycle";
 import { makeHost } from "@bb/test-helpers/domain-fixtures";
-import type { PluginEnvironmentProviderDeclaration } from "@get-bb/plugin-sdk";
-import { validatePluginEnvironmentProviderDeclaration } from "@get-bb/plugin-sdk/internal/host-policy";
+import {
+  validatePluginEnvironmentProviderDeclaration,
+  type PluginEnvironmentProviderV1Declaration,
+} from "@get-bb/plugin-sdk/internal/host-policy";
 import { prepareProviderEnvironment } from "../../../src/services/threads/thread-environment-placement.js";
 import {
   markProviderEnvironmentAttached,
-  type ProviderOperationContext,
+  type ThreadProviderOperationContext,
 } from "../../../src/services/environments/environment-engine.js";
 import { setPluginEnvironmentProviderBridge } from "../../../src/services/plugins/plugin-environment-provider-registry.js";
 import { toThreadResponseFromThread } from "../../../src/services/threads/thread-runtime-display.js";
@@ -31,7 +33,7 @@ import {
 
 function setup(
   harness: TestAppHarness,
-  overrides: Partial<PluginEnvironmentProviderDeclaration> = {},
+  overrides: Partial<PluginEnvironmentProviderV1Declaration> = {},
 ) {
   const { host, session } = seedHostSession(harness.deps, { id: "host_test" });
   const { project, source } = seedProjectWithSource(harness.deps, {
@@ -68,7 +70,7 @@ function setup(
     }),
     decisionTimeoutMs: 10_000,
   });
-  const context: ProviderOperationContext = {
+  const context: ThreadProviderOperationContext = {
     thread: toThreadResponseFromThread(harness.deps, { thread }),
     project,
     host: makeHost({ id: host.id, name: host.name }),
@@ -76,8 +78,8 @@ function setup(
     projectCheckout: null,
     gitRemote: null,
     inputs: null,
-    suggestedBranchName: "bb/test",
-    environment: null,
+    branchName: async () => "bb/test",
+    previous: null,
   };
   let lastEnvironmentId: string | null = null;
   const row = () => {

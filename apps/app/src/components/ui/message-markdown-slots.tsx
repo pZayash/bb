@@ -1,5 +1,12 @@
 import { useMemo, type ReactNode } from "react";
 import type { PluginMessageDirectiveMessage } from "@get-bb/plugin-sdk";
+import { useAtomValue } from "jotai";
+import {
+  codeFencePicksAtom,
+  messageDirectivePicksAtom,
+} from "@/lib/plugin-choice-picks";
+import { useExclusiveBootState } from "@/lib/plugin-replacement-preference";
+import { usePluginFrontendsSettled } from "@/lib/plugin-frontend-boot-state";
 import { usePluginSlotKind } from "@/lib/plugin-slots";
 import {
   buildCodeFenceRendererRegistry,
@@ -21,13 +28,26 @@ export function MessageSlotRegistriesProvider({
 }) {
   const messageDirectiveSlots = usePluginSlotKind("messageDirectives");
   const codeFenceRendererSlots = usePluginSlotKind("codeFenceRenderers");
+  const directivePicks = useAtomValue(messageDirectivePicksAtom);
+  const codeFencePicks = useAtomValue(codeFencePicksAtom);
+  const { bbPluginIds, settledOnce } = useExclusiveBootState();
+  const settled = usePluginFrontendsSettled();
   const messageDirectiveRegistry = useMemo(
-    () => buildMessageDirectiveRegistry(messageDirectiveSlots),
-    [messageDirectiveSlots],
+    () =>
+      buildMessageDirectiveRegistry(messageDirectiveSlots, {
+        unclaimed: settled ? "literal" : "hold",
+        picks: directivePicks,
+        boot: { bbPluginIds, settledOnce },
+      }),
+    [bbPluginIds, directivePicks, messageDirectiveSlots, settled, settledOnce],
   );
   const codeFenceRendererRegistry = useMemo(
-    () => buildCodeFenceRendererRegistry(codeFenceRendererSlots),
-    [codeFenceRendererSlots],
+    () =>
+      buildCodeFenceRendererRegistry(codeFenceRendererSlots, codeFencePicks, {
+        bbPluginIds,
+        settledOnce,
+      }),
+    [bbPluginIds, codeFencePicks, codeFenceRendererSlots, settledOnce],
   );
   return (
     <CodeFenceRendererRegistryProvider registry={codeFenceRendererRegistry}>
@@ -45,7 +65,8 @@ export function useMessageDirectives(
   const registry = useMessageDirectiveRegistry();
   return useMemo(
     () =>
-      registry === null || registry.size === 0
+      registry === null ||
+      (registry.directives.size === 0 && registry.unclaimed === "literal")
         ? undefined
         : { registry, message, openWorkspaceFile },
     [registry, message, openWorkspaceFile],

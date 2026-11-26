@@ -64,6 +64,8 @@ const THREAD_COLUMN_CHANGES: {
   originPluginId: () => ({ originPluginId: PLUGIN_ID }),
   visibility: () => ({ visibility: "hidden" }),
   parentNotifications: () => ({ parentNotifications: "off" }),
+  // bb-fork(windows): the fork's parent-notification mute stamp is a column too.
+  parentNotificationsMutedAt: () => ({ parentNotificationsMutedAt: LATER }),
   archivedAt: () => ({ archivedAt: LATER }),
   pinnedAt: () => ({ pinnedAt: LATER }),
   pinSortKey: () => ({ pinSortKey: "a0" }),

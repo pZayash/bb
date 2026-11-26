@@ -68,6 +68,7 @@ function thread(
     updatedAt: 1,
     lastReadAt: 1,
     latestAttentionAt: 1,
+    experimental_statusChangedAt: 0,
   };
 }
 

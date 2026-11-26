@@ -12,7 +12,7 @@ import {
   type ThreadTitleMentionResources,
 } from "@/components/thread/ThreadTitleMentions";
 import { getThreadDisplayTitle } from "./thread-title";
-import { getThreadRoutePath } from "./route-paths";
+import { getThreadLocationPath } from "./route-paths";
 
 type PluginSidebarThreadActivityWithRetiredGoals =
   PluginSidebarThreadActivity & { goals: 0 };
@@ -78,7 +78,7 @@ export function toPluginSidebarThread(
     pinSortKey: entry.pinSortKey,
     isArchived: entry.archivedAt !== null,
     archivedAt: entry.archivedAt,
-    href: getThreadRoutePath({
+    href: getThreadLocationPath({
       projectId: entry.projectId,
       threadId: entry.id,
     }),
@@ -108,5 +108,6 @@ export function toPluginSidebarThread(
     updatedAt: entry.updatedAt,
     lastReadAt: entry.lastReadAt,
     latestAttentionAt: entry.latestAttentionAt,
+    experimental_statusChangedAt: entry.statusChangedAt,
   };
 }

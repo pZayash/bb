@@ -2,7 +2,7 @@
 // the host.list_terminal_shells and workspace.commits RPCs and the
 // terminal.open payload field "shellId". scripts/windows/merge-upstream.ps1
 // maintains the number on every merge.
-export const HOST_DAEMON_PROTOCOL_VERSION = 273 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 286 as const;
 
 export const HOST_DAEMON_DESKTOP_BROKER_PROOF_PROTOCOL_VERSION = 248 as const;
 

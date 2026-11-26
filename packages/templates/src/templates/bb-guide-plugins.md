@@ -85,16 +85,18 @@ under `<bb-data-dir>/plugins/<id>/` (SQLite database, secrets, logs).
                                  Show or change a plugin's declared settings.
                                  Running plugins receive changes live; a
                                  plugin waiting for configuration retries
-  bb plugin logs <id> [-n N] [-f]  Print (or follow) a plugin's log
+  bb plugin logs <id> [-n N] [-f]  Print (or follow) a plugin's log: bb.log
+                                 output plus its load, handler, service and
+                                 host-worker failures
   bb plugin run <id> [args...]   Run a plugin command explicitly (also works
                                  when a core command owns its name)
   bb plugin token <id> [--rotate]  Print the token for a plugin's
                                  token-authenticated HTTP routes; --rotate
                                  replaces it
   bb plugin remove <id>          Uninstall and delete the plugin's settings,
-                                 secrets, and schedules (local path sources
-                                 stay on disk; builtin removals are
-                                 remembered)
+                                 secrets, stored files, and schedules (local
+                                 path sources stay on disk; builtin removals
+                                 are remembered)
   bb plugin prune [--dry-run]    Delete cached git:/npm: plugin versions no
                                  installed plugin uses (left by earlier bb
                                  releases, rolled-back updates, or
@@ -111,8 +113,8 @@ under `<bb-data-dir>/plugins/<id>/` (SQLite database, secrets, logs).
                                  git: source, --subdirectory <path> reads
                                  marketplace.json from that directory of the
                                  repository instead of its root
-  bb marketplace list            Name, source, entry count, and last refresh
-                                 (--json for raw rows)
+  bb marketplace list            Name, source, entry count, and last refresh,
+                                 or "disabled" (--json for raw rows)
   bb marketplace refresh [name]  Re-read one catalog or all of them. Never
                                  installs, updates, or runs plugin code; a
                                  failed refresh keeps the last valid catalog
@@ -122,6 +124,15 @@ under `<bb-data-dir>/plugins/<id>/` (SQLite database, secrets, logs).
                                  updating from their recorded source.
                                  bb-official and bb-community cannot be
                                  removed
+  bb marketplace disable <name>  Turn a marketplace off but keep it listed:
+                                 bb stops refreshing its catalog (no network
+                                 requests) and leaves its plugins out of
+                                 search and installs. Installed plugins keep
+                                 running and update from their recorded
+                                 source. Works for bb-community and added
+                                 marketplaces; bb-official cannot be disabled
+  bb marketplace enable <name>   Turn a disabled marketplace back on and
+                                 refresh its catalog
 
 Installed plugins and their settings also appear under Settings → Installed
 plugins.
@@ -156,6 +167,9 @@ Each bundled plugin documents its commands and behavior in its own skill.
   or `bb keep-awake hosts <host-id>...`.
 - GitHub Star (builtin): asks once for a GitHub star after more than five
   prompts. `bb plugin disable bb--github-star` stops it from asking.
+- Server switcher (builtin, off by default): a Servers item in the sidebar
+  footer of bb Desktop and the mobile app to switch servers, add one, or sign
+  in to bb Connect. `bb plugin enable bb--server-switcher` adds it.
 - Concurrency limit (builtin): caps running threads overall and per host.
   `bb concurrency-limit status|global|host`; see the `concurrency-limit`
   skill.
@@ -203,6 +217,10 @@ Each bundled plugin documents its commands and behavior in its own skill.
   reusable Modal cloud machines. `bb modal account inspect`,
   `bb machine create --provider modal-sandbox`, and `bb modal image|sandbox`;
   see the `modal-sandboxes` skill.
+- Tailscale (official, `bb plugin install tailscale`): reach this bb at
+  `https://<machine>.<tailnet>.ts.net` through Tailscale Serve, set up in one
+  click, and offer that address as the `tailscale` machine access provider.
+  `bb tailscale status|setup|teardown [--json]`; see the `tailscale` skill.
 
 Multi-plugin repositories
 
@@ -250,7 +268,9 @@ that bb measures through anonymous telemetry, so they undercount; third-party
 marketplaces have none. Builtins show "Built in", and a plugin under 25
 installs that was published in the last 30 days shows "New".
 `bb plugin search --json` returns the raw `installs`, `installedByDefault`,
-and long-form `overview` fields.
+and long-form `overview` fields. `bb marketplace disable bb-community` stops
+those requests and hides its plugins; `bb marketplace enable bb-community`
+brings them back.
 
 Anyone can host a third-party marketplace:
 
@@ -301,7 +321,7 @@ Exact npm versions, Git tags and commits, path sources, and bundled official
 plugins are pinned. npm ranges, dist-tags, and omitted specs, omitted Git refs
 (the default branch), Git branches, and Git semver ranges track compatible
 updates. Change a pinned git:/npm: source with `bb plugin remove` (which
-deletes settings, secrets, and schedules) and a fresh install. Edit a local
+deletes settings, secrets, stored files, and schedules) and a fresh install. Edit a local
 path plugin in place and `bb plugin reload <id>`, or move it with
 `bb plugin install path:<new dir>`; both keep its configuration. Before bb
 deletes a thread's storage folder or removes a bb-managed workspace (such as
@@ -341,7 +361,8 @@ caret range admits patches only (`^0.2.0` stops before 0.3.0). Each update
 check also reports one newer release outside that range, for git semver and
 npm range sources. A plugin installed from a marketplace is offered only a
 release its entry's current range admits, and that range is proposed; if the
-marketplace no longer lists the plugin, none is offered. Other plugins are
+marketplace no longer lists the plugin, none is offered. A plugin from a removed
+or disabled marketplace is offered its newest stable release instead. Other plugins are
 offered their newest stable release with `^<version>`. Pinned sources are never
 offered one, and --range still takes any release you choose. `bb plugin outdated` prints the release, the
 proposed range, whether it may break (a new major, or a new minor on 0.x),

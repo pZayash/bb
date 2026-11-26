@@ -13,6 +13,7 @@ import {
 } from "@bb/host-daemon-contract";
 import type { HostDaemonLogger } from "./logger.js";
 import type { ServerClient } from "./server-client.js";
+import type { ServerRouteResolver } from "./server-routes.js";
 import type { ProtocolSelfUpdater } from "./protocol-self-update.js";
 import { createNodeWebSocketConstructor } from "./websocket-constructor.js";
 
@@ -23,7 +24,7 @@ export interface ReconnectingWebSocketLike {
   onmessage: ((event: any) => void) | null;
   onclose: ((event: any) => void) | null;
   onerror: ((event: any) => void) | null;
-  send(data: string): void;
+  send(data: string | Uint8Array<ArrayBuffer>): void;
   close(code?: number, reason?: string): void;
   reconnect(code?: number, reason?: string): void;
 }
@@ -33,8 +34,9 @@ interface ReconnectingWebSocketOptions {
   maxReconnectionDelay: number;
   reconnectionDelayGrowFactor: number;
   connectionTimeout: number;
-  headers?: Record<string, string>;
+  headers?: () => Record<string, string>;
   maxRetries: number;
+  onFrameWritten: () => void;
   protocols?: string[];
 }
 
@@ -52,6 +54,7 @@ export type HostDaemonServerTerminalMessage = Exclude<
   | { type: "heartbeat-ack" }
   | { type: "machine-environment.replace" }
   | { type: "provider-session-policy.replace" }
+  | { type: "server-routes.replace" }
   | HostDaemonOnlineRpcRequestMessage
   | HostDaemonOnlineRpcCancelMessage
   | HostDaemonWatchSetReplaceMessage
@@ -73,10 +76,9 @@ export type ServerMovedNotice =
     };
 
 export interface ServerConnectionOptions {
-  serverUrl: string;
+  routes: ServerRouteResolver;
   hostKey: string;
   logger: HostDaemonLogger;
-  serverHeaders?: Record<string, string>;
   serverClient: ServerClient;
   protocolSelfUpdater?: ProtocolSelfUpdater;
   onSelfUpdateInstalled?: () => void | Promise<void>;
@@ -112,7 +114,6 @@ export interface ServerConnectionOptions {
     session: HostDaemonSessionOpenResponse,
   ) => void | Promise<void>;
   onIdleProviderSessionTimeout?: (minutes: number) => void;
-  onAgentCpuPriority?: (enabled: boolean) => void;
   onMachineEnvironment?: (
     environment: HostDaemonSessionOpenResponse["machineEnvironment"],
   ) => void;
@@ -137,10 +138,11 @@ export function createDefaultReconnectingWebSocket(
   urlProvider: () => Promise<string>,
   options: ReconnectingWebSocketOptions,
 ): ReconnectingWebSocketLike {
-  const { headers, protocols, ...reconnectionOptions } = options;
+  const { headers, onFrameWritten, protocols, ...reconnectionOptions } =
+    options;
   return new ReconnectingWebSocket(urlProvider, protocols ?? [], {
     ...reconnectionOptions,
-    WebSocket: createNodeWebSocketConstructor(headers),
+    WebSocket: createNodeWebSocketConstructor({ headers, onFrameWritten }),
   });
 }
 

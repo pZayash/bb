@@ -71,9 +71,11 @@ export const APP_COMMAND_IDS = [
   "window.new",
   "window.find",
   "window.reload",
+  "window.forceReload",
   "app.back",
   "settings.open",
   "settings.openServers",
+  "settings.search",
   "sidebar.toggle",
   "panel.previousTab",
   "panel.nextTab",
@@ -144,6 +146,8 @@ const APP_COMMAND_CONTEXT_KEYS = [
   "questionOpen",
   "questionFocus",
   "promptAvailable",
+  "pluginPage",
+  "settingsPage",
   "splitActive",
   "webSurface",
   "macPlatform",
@@ -245,6 +249,7 @@ function layoutAppShortcutKey(input: AppShortcutKeyInput): string {
 export function normalizeAppShortcutInputKey(
   input: AppShortcutKeyInput,
 ): string {
+  if (/^Digit[0-9]$/u.test(input.code)) return input.code.slice(5);
   const usePhysicalKey = input.altKey
     ? !isAsciiAlphanumeric(input.key)
     : isNonLatinCharacter(input.key);

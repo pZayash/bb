@@ -24,10 +24,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  useSystemProviderInfo,
-  useSystemConfig,
-} from "@/hooks/queries/system-queries";
+import { useSystemProviderInfo } from "@/hooks/queries/system-queries";
 import { useImmediateRouteNavigate } from "@/components/ui/app-route-anchor";
 import { useAtom } from "jotai";
 import { useDesktopBrowserReveal } from "@/lib/use-desktop-browser-reveal";
@@ -38,7 +35,7 @@ import {
   type ThreadTimelineLocalFileLink,
 } from "@/components/thread/timeline";
 import { ThreadProviderContext } from "@/components/thread/thread-provider-context";
-import { type ThreadListEntry } from "@bb/domain";
+import { isAbsoluteHostPath, type ThreadListEntry } from "@bb/domain";
 import type { TerminalSession } from "@bb/server-contract";
 import type { WorkspaceOpenTarget } from "@bb/host-daemon-contract";
 import { copyToClipboardWithToast } from "@/lib/clipboard";
@@ -64,7 +61,6 @@ import type {
   PluginThreadActionsInlineItem,
 } from "@get-bb/plugin-sdk";
 import { ThreadActionsMenu } from "@/components/thread/ThreadActionsMenu";
-import { toThreadActionTarget } from "@/lib/thread-actions/thread-action-target";
 import { Button } from "@bb/shared-ui/button";
 import { COARSE_POINTER_ICON_SIZE_CLASS } from "@bb/shared-ui/coarse-pointer-sizing";
 import { cn } from "@bb/shared-ui/lib/utils";
@@ -151,8 +147,10 @@ import { Icon } from "@bb/shared-ui/icon";
 import { getBbDesktopInfo, isDesktopBrowserAvailable } from "@/lib/bb-desktop";
 import { UrlOpenRoutingProvider } from "@/lib/url-open-routing";
 import {
+  AppNavigationHostCapture,
   AppNavigationSurfaceProvider,
   useAppNavigationHost,
+  useAppNavigationHostRef,
 } from "@/lib/app-navigation-host";
 import { getFileBasename } from "@/lib/live-file-navigation";
 import {
@@ -291,12 +289,9 @@ function ThreadDetailViewInternal(
   } = usePaneContext();
   const navigate = useImmediateRouteNavigate();
   useFixedPanelTabsStorageMaintenance();
-  const systemConfigQuery = useSystemConfig();
   const isCompactViewport = useIsCompactViewport();
   const isPointerCoarse = usePointerCoarse();
-  const threadContextCardEnabled =
-    systemConfigQuery.data?.experiments.threadContextCard === true &&
-    !(isCompactViewport && isPointerCoarse);
+  const threadContextCardEnabled = !(isCompactViewport && isPointerCoarse);
   const {
     hasThreadDetailBootstrapSettled,
     threadDetailBootstrapQuery,
@@ -759,8 +754,9 @@ function ThreadDetailViewInternal(
     if (isSecondaryPanelOpen) panel.close();
     else toggleWorkspacePanel();
   }, [isSecondaryPanelOpen, panel, toggleWorkspacePanel]);
+  const surfaceHost = useAppNavigationHostRef();
   const pluginPanelActions = usePluginPanelActions({
-    panel,
+    hostRef: surfaceHost,
     threadId,
     environmentId: threadTabEnvironmentId,
     actions: threadFixedTabs.actions,
@@ -888,6 +884,15 @@ function ThreadDetailViewInternal(
             path: resource.path,
           });
       }
+      if (isAbsoluteHostPath(resource.path)) {
+        const hostId = environment?.hostId;
+        if (hostId === undefined) return null;
+        return () =>
+          openLiveFilePreview({
+            target: { kind: "host", hostId, path: resource.path },
+            location: null,
+          });
+      }
       if (!thread?.environmentId) return null;
       return () =>
         openWorkspaceFile({
@@ -898,7 +903,9 @@ function ThreadDetailViewInternal(
         });
     },
     [
+      environment?.hostId,
       openAttachment,
+      openLiveFilePreview,
       navigate,
       navigateInPane,
       openStorageFile,
@@ -1398,14 +1405,6 @@ function ThreadDetailViewInternal(
           },
         }))
       : [];
-  const threadActionTarget = toThreadActionTarget(
-    thread,
-    reusesEnvironment &&
-      thread.environmentId !== null &&
-      environment?.path != null
-      ? { id: thread.environmentId, path: environment.path }
-      : null,
-  );
   const workspaceOpenButton =
     workspaceOpenPath && preferredDirectoryTarget ? (
       <ThreadWorkspaceOpenButton
@@ -1437,7 +1436,7 @@ function ThreadDetailViewInternal(
           onCloseAutoFocus,
         }) => (
           <ThreadActionsMenu
-            thread={threadActionTarget}
+            thread={thread}
             trigger={(triggerProps) => (
               <Button
                 {...triggerProps}
@@ -1490,7 +1489,7 @@ function ThreadDetailViewInternal(
             projectId={thread.projectId}
           />
         }
-        thread={threadActionTarget}
+        thread={thread}
         threadTitle={threadTitle}
         contextCardButton={<ThreadContextCardHeaderButton />}
         workspaceOpenButton={workspaceOpenButton}
@@ -1715,6 +1714,7 @@ function ThreadDetailViewInternal(
             capabilities={appNavigationCapabilities}
             isFocused={isFocused}
           >
+            <AppNavigationHostCapture hostRef={surfaceHost} />
             <AppPanelTabsPublisher
               publish={panel.publishTabs}
               activeTabId={activeFixedSecondaryTabId}
@@ -1800,7 +1800,7 @@ function ThreadDetailViewInternal(
   );
   return (
     <>
-      <PaneThreadActionCommandHandler thread={threadActionTarget} />
+      <PaneThreadActionCommandHandler thread={thread} />
       <ThreadProviderContext.Provider value={threadProviderContextValue}>
         <MarkdownLocalFileOpenTargetsContext.Provider value={fileOpenTargets}>
           <AttachmentOpenerContext.Provider value={openAttachment}>

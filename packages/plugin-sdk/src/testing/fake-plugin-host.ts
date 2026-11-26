@@ -14,9 +14,11 @@ import {
   pluginHookAlreadyRegisteredMessage,
   coerceStoredPluginSettingValue,
   enforcePluginCliOutputLimit,
+  pluginCliFailureResult,
   isStandardSchema,
   storePluginHook,
   validatePluginEnvironmentProviderDeclaration,
+  type AnyPluginEnvironmentProviderDeclaration,
   validatePluginMachineProviderDeclaration,
   type NormalizedPluginEnvironmentProvider,
   type NormalizedPluginMachineProvider,
@@ -52,7 +54,7 @@ import {
   type NormalizedPluginProviderDeclaration,
 } from "../internal/host-policy.js";
 import type { MachineBootstrapApi } from "../machine-bootstrap.js";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -150,7 +152,9 @@ import {
  * Deliberately different from the real host:
  * - storage is process-local: kv in a Map, `storage.database()` one shared
  *   better-sqlite3 handle in a temp directory (same data across calls, like
- *   the host's shared file), secret settings alongside plain values (no files).
+ *   the host's shared file), `storage.experimental_directory()` a `files`
+ *   folder in that temp directory rather than under `server.experimental_dataDir`,
+ *   secret settings alongside plain values (no files).
  * - `bb.sdk` is always bound (no listen gate) and every unstubbed method
  *   throws instead of hitting a server.
  * - http auth modes are recorded but not enforced — signature checks and
@@ -783,6 +787,12 @@ function createFakePluginHostInternal(
       assertLive();
       runPluginStorageMigrations(database, statements);
     },
+    experimental_directory() {
+      assertLive();
+      const directory = join(storageRoot, "files");
+      mkdirSync(directory, { recursive: true, mode: 0o700 });
+      return directory;
+    },
   };
 
   // --- settings ---
@@ -1275,6 +1285,7 @@ function createFakePluginHostInternal(
     [K in PluginHookName]: PluginHookHandler<K> | null;
   } = {
     "message.dispatch": null,
+    "thread.delete_finalize": null,
   };
   const environmentCompositions = new Map<
     string,
@@ -1559,7 +1570,7 @@ function createFakePluginHostInternal(
   const experimental_environments: PluginEnvironments = {
     register(
       declaration:
-        | import("@get-bb/plugin-sdk").PluginEnvironmentProviderDeclaration
+        | AnyPluginEnvironmentProviderDeclaration
         | NormalizedPluginEnvironmentComposition,
     ) {
       assertLive();
@@ -1651,12 +1662,12 @@ function createFakePluginHostInternal(
     experimental_serverAccess: {
       register(declaration) {
         assertLive();
-        validateServerAccessProviderDeclaration(declaration);
+        const provider = validateServerAccessProviderDeclaration(declaration);
         if (serverAccessProviders.has(declaration.id))
           throw new Error(
             `Server access provider "${declaration.id}" is already registered`,
           );
-        serverAccessProviders.set(declaration.id, declaration);
+        serverAccessProviders.set(provider.id, provider);
       },
       recheck() {
         assertLive();
@@ -1697,7 +1708,7 @@ function createFakePluginHostInternal(
     for (const session of [...websocketSessions]) {
       await session.closeForReload();
     }
-    // Host order (§3): services first, then hooks LIFO (isolated), then
+    // Host order: services first, then hooks LIFO (isolated), then
     // vended database handles, then handle invalidation.
     for (const controller of serviceControllers) controller.abort();
     for (const controller of activeWatches) controller.abort();
@@ -2014,11 +2025,10 @@ function createFakePluginHostInternal(
           argv.includes("--json"),
         );
       } catch (error) {
-        return enforcePluginCliOutputLimit(
+        return pluginCliFailureResult(
           {
-            exitCode: 1,
-            stdout: "",
-            stderr: `bb ${registration.name} failed: ${errorMessage(error)}`,
+            code: "command_failed",
+            message: `bb ${registration.name} failed: ${errorMessage(error)}`,
           },
           argv.includes("--json"),
         );

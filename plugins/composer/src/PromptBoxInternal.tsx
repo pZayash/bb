@@ -141,7 +141,6 @@ import {
   forkPrimarySubmitShortcutLabel,
   isForkPrimarySubmitKeyEvent,
 } from "./submit-key-chords.fork";
-import { composerSubmittingBlockedReason } from "./composer-submit-gate";
 
 import { ComposerSendMenu } from "./ComposerSendMenu";
 import { isImeComposing, isNonImeKey } from "@/lib/ime-keyboard";
@@ -1091,11 +1090,11 @@ export function PromptBoxInternal({
   const editorAriaKeyshortcuts = FORK_ENTER_SUBMITS
     ? modifierSubmitAction?.shortcut.ariaKeyshortcuts
     : [
-          forkPrimarySubmitAriaKeyshortcut(),
-          modifierSubmitAction?.shortcut.ariaKeyshortcuts,
-        ]
-          .filter((shortcut): shortcut is string => Boolean(shortcut))
-          .join(" ");
+        forkPrimarySubmitAriaKeyshortcut(),
+        modifierSubmitAction?.shortcut.ariaKeyshortcuts,
+      ]
+        .filter((shortcut): shortcut is string => Boolean(shortcut))
+        .join(" ");
   const formRef = useRef<HTMLFormElement>(null);
   const typeaheadMenuRef = useRef<HTMLDivElement>(null);
   const blurAfterPointerSubmitRef = useRef(false);
@@ -2848,33 +2847,9 @@ export function PromptBoxInternal({
   const canPrimarySubmit = canSubmitAction(primarySubmitAction);
   const canSubmit = hasSubmittableInput && canPrimarySubmit;
   const canModifierSubmit = canSubmitAction(modifierSubmitAction);
-  const submittingBlockedReason = composerSubmittingBlockedReason({
-    canSubmit: canPrimarySubmit,
-    hasSubmittableInput,
-    isAttaching,
-    isSubmitting,
-    voiceActive: showVoiceActionGroup,
-    submitDisabledReason,
-  });
   const composerEditorState = useMemo<ExperimentalComposerEditorState>(
-    () => ({
-      layout: composerLayout,
-      isRunning,
-      isSubmitting,
-      isSubmittingBlocked: !canPrimarySubmit,
-      submittingBlockedReason,
-      isAttaching,
-      attachmentError,
-    }),
-    [
-      attachmentError,
-      canPrimarySubmit,
-      composerLayout,
-      isAttaching,
-      isRunning,
-      isSubmitting,
-      submittingBlockedReason,
-    ],
+    () => ({ layout: composerLayout }),
+    [composerLayout],
   );
   const insertAtCursorForPlugin = useCallback(
     (draft: ComposerDraft, block: boolean) => {

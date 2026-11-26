@@ -38,6 +38,7 @@ import {
   allPluginSettingsQueryKeyPrefix,
   allPluginSettingsViewQueryKeyPrefix,
   allPluginSourceQueryKeyPrefix,
+  pluginMarketplacesQueryKey,
   pluginSafeModeQueryKey,
   allProjectCommandsQueryKeyPrefix,
   allThreadStorageFilePreviewQueryKeyPrefix,
@@ -474,6 +475,7 @@ export const REALTIME_ENVIRONMENT_CHANGE_REGISTRY = {
     dirty: [
       dirtyEnvironmentRecordQueries,
       dirtyEnvironmentWorkspaceStateQueries,
+      dirtyEnvironmentThreadListQueries,
     ],
   },
   "work-status-changed": {
@@ -1202,6 +1204,7 @@ function dirtyPluginManagementQueries(): QueryKey[] {
     allPluginSettingsQueryKeyPrefix(),
     allPluginSourceQueryKeyPrefix(),
     allPluginCatalogSearchQueryKeyPrefix(),
+    pluginMarketplacesQueryKey(),
     pluginSafeModeQueryKey(),
   ];
 }

@@ -44,6 +44,8 @@ import {
 import { makePluginRegistrationSet } from "@/test/fixtures/plugins";
 import { collectPluginAppRegistrations } from "@get-bb/plugin-sdk/internal/plugin-app-collector";
 import { LocationProbe } from "@/test/location-probe";
+import { PluginActionContextProvider } from "@/lib/plugin-action-context-provider";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { settleLazyModules } from "@/test/lazy-modules";
 
 const PALETTE_SHORTCUT = {
@@ -130,9 +132,16 @@ const modeState = vi.hoisted(() => ({
 const routeNavigateMock = vi.hoisted(() => vi.fn());
 const openThreadInSplitMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@/lib/split-layout/openThreadInSplit", () => ({
-  openThreadInSplit: openThreadInSplitMock,
-}));
+vi.mock("@/lib/split-layout/openThread", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/split-layout/openThread")>();
+  return {
+    openThread: (args: Parameters<typeof actual.openThread>[0]) =>
+      args.split === undefined
+        ? actual.openThread(args)
+        : openThreadInSplitMock(args),
+  };
+});
 
 function expectClasses(
   element: Element | null | undefined,
@@ -215,7 +224,10 @@ vi.mock("@/lib/app-query-client", () => ({
   },
 }));
 
-vi.mock("@/components/ui/app-route-anchor", () => ({
+vi.mock("@/components/ui/app-route-anchor", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/components/ui/app-route-anchor")
+  >()),
   useRouteNavigate: () => routeNavigateMock,
 }));
 
@@ -328,6 +340,7 @@ function makeThread(
     deletedAt: null,
     lastReadAt: null,
     latestAttentionAt: 1,
+    statusChangedAt: 1,
     createdAt: 1,
     updatedAt: threadUpdatedAt,
     activity: {
@@ -339,6 +352,8 @@ function makeThread(
     hasPendingInteraction: false,
     environmentHostId: null,
     environmentPath: null,
+    environmentStatus: null,
+    environmentHostLifecycle: null,
     environmentProviderId: null,
     environmentIsWorktree: null,
     environmentName: null,
@@ -366,20 +381,24 @@ function renderPalette({
     <Provider store={store}>
       <CompactViewportOverrideProvider isCompactViewport={compact}>
         <MemoryRouter>
-          <AppCommandProvider>
-            <button type="button" data-testid="origin">
-              origin
-            </button>
-            <Handler command="thread.new" />
-            <Handler command="thread.search" />
-            <Handler command="thread.next" />
-            <Handler command="panel.toggle" />
-            <Handler command="terminal.open" />
-            <Handler command="composer.focus" />
-            <Handler command="browser.reload" />
-            <CommandPalette threadId={null} projectId={null} />
-            <LocationProbe />
-          </AppCommandProvider>
+          <QueryClientProvider client={new QueryClient()}>
+            <PluginActionContextProvider>
+              <AppCommandProvider>
+                <button type="button" data-testid="origin">
+                  origin
+                </button>
+                <Handler command="thread.new" />
+                <Handler command="thread.search" />
+                <Handler command="thread.next" />
+                <Handler command="panel.toggle" />
+                <Handler command="terminal.open" />
+                <Handler command="composer.focus" />
+                <Handler command="browser.reload" />
+                <CommandPalette threadId={null} projectId={null} />
+                <LocationProbe />
+              </AppCommandProvider>
+            </PluginActionContextProvider>
+          </QueryClientProvider>
         </MemoryRouter>
       </CompactViewportOverrideProvider>
     </Provider>,
@@ -503,7 +522,10 @@ describe("CommandPalette", () => {
         expect(openThreadInSplitMock).toHaveBeenCalledTimes(1),
       );
       expect(openThreadInSplitMock).toHaveBeenCalledWith(
-        expect.objectContaining({ threadId: "second", isCompact: false }),
+        expect.objectContaining({
+          threadId: "second",
+          split: expect.objectContaining({ zone: "right", isCompact: false }),
+        }),
       );
       expect(routeNavigateMock).not.toHaveBeenCalled();
     },
@@ -579,12 +601,13 @@ describe("CommandPalette", () => {
     modeState.searchResponse = {
       active: {
         total: 8,
+        totalCapped: false,
         results: Array.from({ length: 8 }, (_, i) => ({
           thread: makeThread(`match-${i}`),
           matches: [],
         })),
       },
-      archived: { total: 0, results: [] },
+      archived: { total: 0, totalCapped: false, results: [] },
     };
     renderPalette({ layout: splitLayout });
     await openThreadSearch();
@@ -597,8 +620,8 @@ describe("CommandPalette", () => {
     expect(screen.getAllByRole("option")).toHaveLength(8);
     expect(openThreadInSplitMock).not.toHaveBeenCalled();
     modeState.searchResponse = {
-      active: { total: 0, results: [] },
-      archived: { total: 0, results: [] },
+      active: { total: 0, totalCapped: false, results: [] },
+      archived: { total: 0, totalCapped: false, results: [] },
     };
     fireEvent.change(searchField(), { target: { value: "missing" } });
     await screen.findByText("No matching threads");
@@ -607,9 +630,10 @@ describe("CommandPalette", () => {
 
   it("preserves archived message anchors for split opening", async () => {
     modeState.searchResponse = {
-      active: { total: 0, results: [] },
+      active: { total: 0, totalCapped: false, results: [] },
       archived: {
         total: 1,
+        totalCapped: false,
         results: [
           {
             thread: makeThread("archived-message", { archivedAt: Date.now() }),
@@ -1076,9 +1100,10 @@ describe("CommandPalette", () => {
     ];
     modeState.threadDraftIds.add("newer");
     modeState.searchResponse = {
-      active: { total: 0, results: [] },
+      active: { total: 0, totalCapped: false, results: [] },
       archived: {
         total: 1,
+        totalCapped: false,
         results: [
           {
             thread: makeThread("archived", { archivedAt: Date.now() }),
@@ -1205,10 +1230,12 @@ describe("CommandPalette", () => {
       modeState.searchResponse = {
         active: {
           total: 7,
+          totalCapped: false,
           results: active.map((thread) => ({ thread, matches: [] })),
         },
         archived: {
           total: 4,
+          totalCapped: false,
           results: archived.map((thread) => ({ thread, matches: [] })),
         },
       };
@@ -1260,6 +1287,7 @@ describe("CommandPalette", () => {
     modeState.searchResponse = {
       active: {
         total: 1,
+        totalCapped: false,
         results: [
           {
             thread: active,
@@ -1274,7 +1302,11 @@ describe("CommandPalette", () => {
           },
         ],
       },
-      archived: { total: 1, results: [{ thread: archived, matches: [] }] },
+      archived: {
+        total: 1,
+        totalCapped: false,
+        results: [{ thread: archived, matches: [] }],
+      },
     };
     renderPalette({ lifecycles: ["active", "archived"] });
     await openThreadSearch();
@@ -1330,10 +1362,12 @@ describe("CommandPalette", () => {
     modeState.searchResponse = {
       active: {
         total: 8,
+        totalCapped: false,
         results: active.map((thread) => ({ thread, matches: [] })),
       },
       archived: {
         total: 8,
+        totalCapped: false,
         results: archived.map((thread) => ({ thread, matches: [] })),
       },
     };
@@ -1431,6 +1465,7 @@ describe("CommandPalette", () => {
     setSearchResponse({
       active: {
         total: 2,
+        totalCapped: false,
         results: [
           {
             thread: makeThread("message-only", { title: "Weekly sync" }),
@@ -1456,7 +1491,7 @@ describe("CommandPalette", () => {
           },
         ],
       },
-      archived: { total: 0, results: [] },
+      archived: { total: 0, totalCapped: false, results: [] },
     });
     expect(optionTitles()).toEqual([
       expect.stringContaining("Fix 0"),
@@ -1499,6 +1534,7 @@ describe("CommandPalette", () => {
     setSearchResponse({
       active: {
         total: 1,
+        totalCapped: false,
         results: [
           {
             thread: makeThread("fx-rollout", { title: "Fx rollout" }),
@@ -1513,7 +1549,7 @@ describe("CommandPalette", () => {
           },
         ],
       },
-      archived: { total: 0, results: [] },
+      archived: { total: 0, totalCapped: false, results: [] },
     });
     expectText(selectedOption(), "Fix 5");
     fireEvent.keyDown(input, { key: "ArrowUp" });
@@ -1526,7 +1562,6 @@ describe("CommandPalette", () => {
     await waitFor(() =>
       expect(routeNavigateMock).toHaveBeenCalledWith(
         "/projects/project-1/threads/fix-5",
-        { state: undefined },
       ),
     );
   });
@@ -1567,6 +1602,7 @@ describe("CommandPalette", () => {
     modeState.searchResponse = {
       active: {
         total: 5,
+        totalCapped: false,
         results: [
           {
             thread: sceneSeed,
@@ -1617,7 +1653,7 @@ describe("CommandPalette", () => {
           },
         ],
       },
-      archived: { total: 0, results: [] },
+      archived: { total: 0, totalCapped: false, results: [] },
     };
     renderPalette();
     await openThreadSearch();
@@ -1712,10 +1748,11 @@ describe("CommandPalette", () => {
         }),
       );
       modeState.searchResponse = {
-        active: { total: 0, results: [] },
-        archived: { total: 0, results: [] },
+        active: { total: 0, totalCapped: false, results: [] },
+        archived: { total: 0, totalCapped: false, results: [] },
         [lifecycle]: {
           total: 7,
+          totalCapped: false,
           results: threads.map((thread) => ({ thread, matches: [] })),
         },
       };
@@ -1748,10 +1785,12 @@ describe("CommandPalette", () => {
     modeState.searchResponse = {
       active: {
         total: 1,
+        totalCapped: false,
         results: [{ thread: makeThread("active"), matches: [] }],
       },
       archived: {
         total: 1,
+        totalCapped: false,
         results: [
           {
             thread: makeThread("archived", { archivedAt: Date.now() }),
@@ -1825,9 +1864,10 @@ describe("CommandPalette", () => {
       modeState.searchResponse = {
         active: {
           total: threads.length,
+          totalCapped: false,
           results: threads.map((thread) => ({ thread, matches: [] })),
         },
-        archived: { total: 0, results: [] },
+        archived: { total: 0, totalCapped: false, results: [] },
       };
       renderPalette();
       await openThreadSearch();
@@ -1934,9 +1974,10 @@ describe("CommandPalette", () => {
 
   it("opens an archived message match with its anchor", async () => {
     modeState.searchResponse = {
-      active: { total: 0, results: [] },
+      active: { total: 0, totalCapped: false, results: [] },
       archived: {
         total: 1,
+        totalCapped: false,
         results: [
           {
             thread: makeThread("archived-message", {
@@ -2438,8 +2479,11 @@ describe("CommandPalette", () => {
             id: "open-issue",
             title: "Open issue",
             defaultShortcut: null,
-            run: () => {
+            run: ({ navigate }) => {
               testState.calls.push("plugin-ran");
+              navigate.toPluginPanel("issues", {
+                subPath: "LIN-1",
+              });
             },
           },
         ],
@@ -2461,6 +2505,9 @@ describe("CommandPalette", () => {
     fireEvent.keyDown(searchField(), { key: "Enter" });
 
     await waitFor(() => expect(testState.calls).toEqual(["plugin-ran"]));
+    expect(screen.getByTestId("location").textContent).toBe(
+      "/plugins/linear/issues/LIN-1",
+    );
   });
 
   it("says so when nothing matches", async () => {

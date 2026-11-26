@@ -19,6 +19,7 @@ import {
   listThreadEventSuffixBackgroundSettlementRows,
   type AppendStoredThreadEventArgs,
   type DbQueryConnection,
+  type QueuedThreadMessageRow,
 } from "@bb/db";
 import {
   threadScope,
@@ -57,6 +58,8 @@ import {
 } from "../hosts/live-command.js";
 import { resolveMessageSenderThreadId } from "./thread-send.js";
 import { attemptDispatch } from "./dispatch-attempt.js";
+import { emitPluginMessageCancelled } from "../plugins/plugin-thread-events.js";
+import { toThreadQueuedMessage } from "./thread-queued-messages.js";
 import {
   requestThreadStopForCurrentState,
   stopThreadForCurrentState,
@@ -566,7 +569,7 @@ export async function editThreadMessage(
     expectedRequestSequence: _expectedRequestSequence,
     ...sendPayload
   } = args.payload;
-  let cancelledRetryCount = 0;
+  let cancelledRetries: QueuedThreadMessageRow[] = [];
   try {
     await attemptDispatch(deps, {
       thread: editableThread,
@@ -634,7 +637,7 @@ export async function editThreadMessage(
               },
             },
           });
-          cancelledRetryCount =
+          cancelledRetries =
             deleteQueuedRetriesForThreadEventSuffixInTransaction(tx, {
               cutoffSequence: target.requestSequence,
               oldMaxSequence: target.oldMaxSequence,
@@ -666,7 +669,7 @@ export async function editThreadMessage(
       editableThread.id,
       [
         "history-rewritten",
-        ...(cancelledRetryCount > 0 ? ["queue-changed" as const] : []),
+        ...(cancelledRetries.length > 0 ? ["queue-changed" as const] : []),
       ],
       {
         projectId: editableThread.projectId,
@@ -686,6 +689,9 @@ export async function editThreadMessage(
       operationId: args.payload.operationId,
       requestSequence: concurrentCommit.requestSequence,
     };
+  }
+  for (const retry of cancelledRetries) {
+    emitPluginMessageCancelled(toThreadQueuedMessage(retry));
   }
   return {
     ok: true,

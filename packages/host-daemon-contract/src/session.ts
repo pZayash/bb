@@ -22,6 +22,7 @@ import {
   jsonValueSchema,
   pendingInteractionCreateSchema,
   pendingInteractionStatusSchema,
+  serverRouteKindSchema,
   terminalColsSchema,
   terminalDataBase64Schema,
   terminalRowsSchema,
@@ -119,6 +120,36 @@ const hostDaemonPluginHostGenerationSchema = z
   })
   .strict();
 
+export const hostDaemonServerRouteSchema = z
+  .object({
+    providerId: z.string().min(1),
+    kind: serverRouteKindSchema,
+    url: z.string().url(),
+    headers: z.record(z.string(), z.string()),
+  })
+  .strict();
+export type HostDaemonServerRoute = z.infer<typeof hostDaemonServerRouteSchema>;
+
+export const hostDaemonServerRoutesSchema = z
+  .object({
+    serverId: z.string().min(1),
+    routes: z.array(hostDaemonServerRouteSchema),
+  })
+  .strict();
+export type HostDaemonServerRoutes = z.infer<
+  typeof hostDaemonServerRoutesSchema
+>;
+
+export const hostDaemonSessionRouteSchema = z
+  .object({
+    providerId: z.string().min(1),
+    kind: serverRouteKindSchema,
+  })
+  .strict();
+export type HostDaemonSessionRoute = z.infer<
+  typeof hostDaemonSessionRouteSchema
+>;
+
 export const hostDaemonSessionOpenRequestSchema = z
   .object({
     hostId: z.string().min(1),
@@ -134,6 +165,7 @@ export const hostDaemonSessionOpenRequestSchema = z
     openThreadWork: z.array(hostDaemonOpenThreadWorkSchema),
     undeliveredEventThreadIds: z.array(z.string().min(1)).default([]),
     loadedEnvironments: z.array(hostDaemonLoadedEnvironmentSchema).default([]),
+    route: hostDaemonSessionRouteSchema.nullable().default(null),
   })
   .strict();
 export type HostDaemonSessionOpenRequest = z.output<
@@ -190,7 +222,6 @@ export const hostDaemonSessionOpenResponseSchema = z
     sessionId: z.string().min(1),
     machineEnvironment: machineEnvironmentSchema,
     idleProviderSessionTimeoutMinutes: idleProviderSessionTimeoutMinutesSchema,
-    agentCpuPriority: z.boolean(),
     heartbeatIntervalMs: z.number().int().positive(),
     leaseTimeoutMs: z.number().int().positive(),
     reconnectGraceMs: z.number().int().nonnegative(),
@@ -208,6 +239,7 @@ export const hostDaemonSessionOpenResponseSchema = z
       .default([]),
     retiredEnvironmentIds: z.array(z.string().min(1)).default([]),
     endedInteractiveRequests: z.array(hostDaemonInteractiveRequestKeySchema),
+    serverRoutes: hostDaemonServerRoutesSchema,
   })
   .strict();
 export type HostDaemonSessionOpenResponse = z.infer<
@@ -456,6 +488,7 @@ const hostDaemonOnlineRpcResponseSuccessSchema = z.discriminatedUnion(
     onlineRpcResponseSuccessSchemaFor("host.paths_exist"),
     // bb-fork(windows): shell enumeration for the Start terminal picker.
     onlineRpcResponseSuccessSchemaFor("host.list_terminal_shells"),
+    onlineRpcResponseSuccessSchemaFor("host.find_git_repos"),
     onlineRpcResponseSuccessSchemaFor("project.inspect"),
     onlineRpcResponseSuccessSchemaFor("project.clone_default_path"),
     onlineRpcResponseSuccessSchemaFor("host.pick_folder"),
@@ -524,10 +557,13 @@ const hostDaemonOnlineRpcResponseFailureSchema = z
   })
   .strict();
 
-export const hostDaemonOnlineRpcResponseMessageSchema = z.union([
-  hostDaemonOnlineRpcResponseSuccessSchema,
-  hostDaemonOnlineRpcResponseFailureSchema,
-]);
+export const hostDaemonOnlineRpcResponseMessageSchema = z.discriminatedUnion(
+  "ok",
+  [
+    hostDaemonOnlineRpcResponseSuccessSchema,
+    hostDaemonOnlineRpcResponseFailureSchema,
+  ],
+);
 export type HostDaemonOnlineRpcResponseMessage = z.infer<
   typeof hostDaemonOnlineRpcResponseMessageSchema
 >;
@@ -639,9 +675,9 @@ const hostDaemonTerminalCloseMessageSchema = z
   })
   .strict();
 
-const hostDaemonTerminalFlowControlMessageSchema = z
+const hostDaemonTerminalStreamMessageSchema = z
   .object({
-    type: z.literal("terminal.flow-control"),
+    type: z.literal("terminal.stream"),
     terminalId: terminalIdSchema,
     enabled: z.boolean(),
   })
@@ -658,10 +694,15 @@ const hostDaemonTerminalAckMessageSchema = z
 export const hostDaemonServerWsMessageSchema = z.discriminatedUnion("type", [
   z
     .object({
+      type: z.literal("server-routes.replace"),
+      serverRoutes: hostDaemonServerRoutesSchema,
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("provider-session-policy.replace"),
       idleProviderSessionTimeoutMinutes:
         idleProviderSessionTimeoutMinutesSchema,
-      agentCpuPriority: z.boolean(),
     })
     .strict(),
   z
@@ -703,7 +744,7 @@ export const hostDaemonServerWsMessageSchema = z.discriminatedUnion("type", [
   hostDaemonTerminalInputMessageSchema,
   hostDaemonTerminalResizeMessageSchema,
   hostDaemonTerminalCloseMessageSchema,
-  hostDaemonTerminalFlowControlMessageSchema,
+  hostDaemonTerminalStreamMessageSchema,
   hostDaemonTerminalAckMessageSchema,
 ]);
 export type HostDaemonServerWsMessage = z.infer<
@@ -750,11 +791,29 @@ const hostDaemonConnectTunnelIdentityMessageSchema = z
   })
   .strict();
 
+const hostDaemonSessionRouteMessageSchema = z
+  .object({
+    type: z.literal("session.route"),
+    route: hostDaemonSessionRouteSchema.nullable(),
+  })
+  .strict();
+
 const pluginHostWorkerExitedMessageSchema = z
   .object({
     type: z.literal("plugin-host.worker-exited"),
     pluginId: z.string().min(1),
     generation: z.string().min(1),
+    reason: z.string(),
+  })
+  .strict();
+
+const pluginHostWorkerOutputMessageSchema = z
+  .object({
+    type: z.literal("plugin-host.worker-output"),
+    pluginId: z.string().min(1),
+    generation: z.string().min(1),
+    stream: z.enum(["stdout", "stderr"]),
+    line: z.string(),
   })
   .strict();
 
@@ -765,8 +824,11 @@ export const environmentHookProgressMessageSchema = z
     entry: z
       .object({
         type: z.enum(["step", "output"]),
+        key: z.string().min(1),
         text: z.string(),
         status: z.enum(["started", "completed", "failed"]).nullable(),
+        startedAt: z.number().nullable(),
+        metadata: z.record(z.string(), z.unknown()).nullable(),
       })
       .strict(),
   })
@@ -837,7 +899,7 @@ const hostDaemonTerminalErrorMessageSchema = z
   })
   .strict();
 
-export const hostDaemonDaemonWsMessageSchema = z.union([
+export const hostDaemonDaemonWsMessageSchema = z.discriminatedUnion("type", [
   desktopBrowserChangedSchema,
   hostDaemonMachineShutdownAckMessageSchema,
   hostDaemonHeartbeatMessageSchema,
@@ -845,7 +907,9 @@ export const hostDaemonDaemonWsMessageSchema = z.union([
   hostDaemonThreadStorageChangeMessageSchema,
   hostDaemonEnvironmentMetadataChangeMessageSchema,
   hostDaemonConnectTunnelIdentityMessageSchema,
+  hostDaemonSessionRouteMessageSchema,
   pluginHostWorkerExitedMessageSchema,
+  pluginHostWorkerOutputMessageSchema,
   pluginHostSignalMessageSchema,
   environmentHookProgressMessageSchema,
   serverMoveProgressMessageSchema,
@@ -859,6 +923,57 @@ export const hostDaemonDaemonWsMessageSchema = z.union([
 export type HostDaemonDaemonWsMessage = z.infer<
   typeof hostDaemonDaemonWsMessageSchema
 >;
+
+export interface EncodedHostDaemonDaemonWsMessage {
+  json: string;
+  attachment: Uint8Array | null;
+}
+
+export function encodeHostDaemonDaemonWsMessage(
+  message: HostDaemonDaemonWsMessage,
+): EncodedHostDaemonDaemonWsMessage {
+  if (
+    message.type === "host-rpc.response" &&
+    message.ok &&
+    message.commandType === "host.read_file_chunk"
+  ) {
+    const { content, ...result } = message.result;
+    return {
+      json: JSON.stringify({ ...message, result }),
+      attachment: content,
+    };
+  }
+  return { json: JSON.stringify(message), attachment: null };
+}
+
+const binaryAttachmentCarrierSchema = z
+  .object({
+    type: z.literal("host-rpc.response"),
+    ok: z.literal(true),
+    commandType: z.literal("host.read_file_chunk"),
+    result: z.object({}).passthrough(),
+  })
+  .passthrough();
+
+export function decodeHostDaemonDaemonWsMessage(
+  message: unknown,
+  attachment: Uint8Array | null,
+): { ok: true; message: unknown } | { ok: false } {
+  if (attachment === null) {
+    return { ok: true, message };
+  }
+  const carrier = binaryAttachmentCarrierSchema.safeParse(message);
+  if (!carrier.success) {
+    return { ok: false };
+  }
+  return {
+    ok: true,
+    message: {
+      ...carrier.data,
+      result: { ...carrier.data.result, content: attachment },
+    },
+  };
+}
 
 export const hostDaemonToolCallRequestSchema = toolCallRequestSchema
   .pick({

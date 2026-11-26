@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import Ajv from "ajv";
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { experimental_BbHttpError, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
   WORKFLOW_CALL_CACHE_VERSION,
@@ -760,6 +760,8 @@ export function createWorkflowService(
     const catalog = await bb.sdk.providers.models({
       environmentId: run.environmentId,
       providerId: requested.provider,
+      selectedModel: requested.model,
+      signal,
     });
     throwIfCancelled(signal);
     if (catalog.modelLoadError !== null) {
@@ -767,10 +769,7 @@ export function createWorkflowService(
         `Could not load models for provider ${requested.provider}: ${catalog.modelLoadError.code}`,
       );
     }
-    const eligibleModels = inherited
-      ? [...catalog.models, ...catalog.selectedOnlyModels]
-      : catalog.models;
-    const model = eligibleModels.find(
+    const model = [...catalog.models, ...catalog.selectedOnlyModels].find(
       (candidate) =>
         candidate.id === requested.model || candidate.model === requested.model,
     );
@@ -996,6 +995,7 @@ export function createWorkflowService(
         if (signal.aborted) handoffCalls.delete(call.id);
         throwIfCancelled(signal);
         let failure = error;
+        let providerRetryGaveUp: string | null = null;
         while (handoffCalls.has(call.id)) {
           const failedWorker = getCall(
             db,
@@ -1018,6 +1018,8 @@ export function createWorkflowService(
             handoffCalls.delete(call.id);
           }
           if (reopened === null || handoff.kind !== "stand-down") {
+            if (handoff.kind === "give-up")
+              providerRetryGaveUp = handoff.reason;
             wakeWorker();
             break;
           }
@@ -1032,6 +1034,12 @@ export function createWorkflowService(
             throwIfCancelled(signal);
             failure = handedOffError;
           }
+        }
+        if (providerRetryGaveUp !== null) {
+          bb.log.info(
+            `[${run.id}] Agent call ${callIndex + 1} is not retried: provider retry declined it (${providerRetryGaveUp})`,
+          );
+          throw failure;
         }
         const delay = PROVIDER_RETRY_DELAYS_MS[call.providerRetryAttempts];
         if (delay === undefined || !isRetryableProviderFailure(failure)) {
@@ -1653,9 +1661,10 @@ export function createWorkflowService(
   }
 
   function isMissingThread(error: unknown): boolean {
-    if (typeof error !== "object" || error === null) return false;
-    const candidate = error as { status?: unknown; code?: unknown };
-    return candidate.status === 404 || candidate.code === "thread_not_found";
+    return (
+      error instanceof experimental_BbHttpError &&
+      (error.status === 404 || error.code === "thread_not_found")
+    );
   }
 
   async function reconcileRunningCalls(): Promise<void> {

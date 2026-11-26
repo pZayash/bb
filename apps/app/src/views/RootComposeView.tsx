@@ -1,6 +1,6 @@
 import { AppPanelTabsPublisher } from "@/lib/app-panel-tabs";
 import { appendQuoteAndAttachmentsToDraft } from "@bb/client-core";
-import type { ComposerAttachment } from "@get-bb/plugin-sdk";
+import type { ComposerAttachment, NewThreadRequest } from "@get-bb/plugin-sdk";
 import { createCoreComposerActions } from "@/lib/plugin-composer-handle";
 
 import {
@@ -8,12 +8,17 @@ import {
   DEFAULT_THREAD_CREATION_PLACEMENT,
 } from "@/lib/thread-creation-placement";
 import { useRootComposePlacement } from "@/lib/root-compose-selection";
-import { useInitialPromptDraft } from "@/components/promptbox/mentions/initial-prompt-draft";
+import {
+  initialPromptSeedSchema,
+  useInitialPromptDraft,
+  type InitialPromptSeed,
+} from "@/components/promptbox/mentions/initial-prompt-draft";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useProviderDirectory } from "@/hooks/queries/system-queries";
 import {
   findLocalPathProjectSourceForHost,
+  isAbsoluteHostPath,
   type EnvironmentStatus,
   type Host,
   type ProviderInfo,
@@ -26,7 +31,6 @@ import type {
 import {
   NewThreadComposer,
   type NewThreadComposerState,
-  type NewThreadComposerSubmission,
 } from "@/components/promptbox/NewThreadComposer";
 import {
   ProviderCliBanner,
@@ -104,7 +108,6 @@ import {
   stripInitialPromptFromSearch,
 } from "./root-compose-initial-prompt";
 import {
-  getThreadRoutePath,
   getProjectComposeRoutePath,
   getRootComposeRoutePath,
 } from "@/lib/route-paths";
@@ -120,7 +123,11 @@ import { useTerminalShellChoice } from "@/components/secondary-panel/useTerminal
 import { TerminalShellSelector } from "@/components/secondary-panel/TerminalShellSelector";
 import type { MarkdownPreviewLinkHandler } from "@/components/ui/markdown-link";
 import { UrlOpenRoutingProvider } from "@/lib/url-open-routing";
-import { AppNavigationSurfaceProvider } from "@/lib/app-navigation-host";
+import {
+  AppNavigationHostCapture,
+  AppNavigationSurfaceProvider,
+  useAppNavigationHostRef,
+} from "@/lib/app-navigation-host";
 import { useAppPanelController } from "@/lib/app-fixed-tab-navigation";
 import { useRootComposeProjectId } from "@/lib/root-compose-selection";
 import {
@@ -165,6 +172,7 @@ import {
   RootComposePanelTabContent,
   type RootComposeTerminalTarget,
 } from "./RootComposePanelTabContent";
+import { openThread } from "@/lib/split-layout/openThread";
 
 const ROOT_COMPOSE_SIDEBAR_ACTION_ALIGNED_TOP_PADDING_CLASS = "pt-14";
 
@@ -312,11 +320,12 @@ export function hasSingleUseRootComposeTargetState(state: unknown): boolean {
 
 export function readInitialPromptFromLocationState(
   state: unknown,
-): string | null {
-  if (!state || typeof state !== "object") return null;
-  const candidate = (state as { initialPrompt?: unknown }).initialPrompt;
-  if (typeof candidate === "string" && candidate.length > 0) return candidate;
-  return null;
+): InitialPromptSeed | null {
+  if (!state || typeof state !== "object" || !("initialPrompt" in state)) {
+    return null;
+  }
+  const parsed = initialPromptSeedSchema.safeParse(state.initialPrompt);
+  return parsed.success ? parsed.data : null;
 }
 
 export function shouldReplaceInitialPromptFromLocationState(
@@ -410,7 +419,7 @@ export function RootComposeView() {
     useNavigateToThreadAfterCreatePreference();
 
   const handleSubmit = useCallback(
-    async (request: NewThreadComposerSubmission) => {
+    async (request: NewThreadRequest) => {
       const { sendAt, ...requestFields } = request;
       const thread = await createThread.mutateAsync({
         ...requestFields,
@@ -502,6 +511,7 @@ function RootComposeSurface({
     parsedEnvironment?.type === "reuse"
       ? parsedEnvironment.environmentId
       : null;
+  const surfaceProjectId = isProjectless ? null : projectId;
   const pluginComposerHost = useMemo(
     () => ({
       ...sharedPluginComposerHost,
@@ -536,7 +546,10 @@ function RootComposeSurface({
   );
 
   const searchInitialPrompt = readInitialPromptFromSearch(location.search);
-  const stateInitialPrompt = readInitialPromptFromLocationState(location.state);
+  const stateInitialPrompt = useMemo(
+    () => readInitialPromptFromLocationState(location.state),
+    [location.state],
+  );
   const searchInitialDraft = useInitialPromptDraft(searchInitialPrompt);
   const stateInitialDraft = useInitialPromptDraft(stateInitialPrompt);
   const setPromptDraft = composerActions.restoreDraft;
@@ -609,8 +622,7 @@ function RootComposeSurface({
     stateInitialDraft,
   ]);
   useEffect(() => {
-    const initialPrompt = readInitialPromptFromLocationState(location.state);
-    if (initialPrompt === null || stateInitialDraft === undefined) return;
+    if (stateInitialPrompt === null || stateInitialDraft === undefined) return;
     const nextDraft = stateInitialDraft;
     if (shouldReplaceInitialPromptFromLocationState(location.state)) {
       setPromptDraft(nextDraft);
@@ -628,6 +640,7 @@ function RootComposeSurface({
     seedPromptDraftIfEmpty,
     setPromptDraft,
     stateInitialDraft,
+    stateInitialPrompt,
   ]);
   const shouldFocusPrompt =
     typeof location.state === "object" &&
@@ -860,7 +873,7 @@ function RootComposeSurface({
     onCloseLastTab: secondaryPanelDrawerVisibility.closeDrawer,
     preserveWorkspaceTabsAcrossContexts: true,
     projectHostId: rootProjectHostId,
-    projectId: isProjectless ? null : projectId,
+    projectId: surfaceProjectId,
     storageFiles: rootThreadStorageFiles,
     terminalSessions: loadedTerminalSessions,
   });
@@ -974,9 +987,10 @@ function RootComposeSurface({
     close: closeWorkspacePanel,
     destinations: panelDestinations,
   });
+  const surfaceHost = useAppNavigationHostRef();
   const rootPluginPanelActions = usePluginNewThreadPanelActions({
-    panel,
-    projectId: isProjectless ? null : projectId,
+    hostRef: surfaceHost,
+    projectId: surfaceProjectId,
   });
   const openAttachment = useCallback(
     (attachment: OpenAttachmentRequest) => {
@@ -989,12 +1003,11 @@ function RootComposeSurface({
     (resource) => {
       if (resource.kind === "thread") {
         return () =>
-          void navigate(
-            getThreadRoutePath({
-              projectId: resource.projectId ?? projectId,
-              threadId: resource.threadId,
-            }),
-          );
+          openThread({
+            navigate,
+            projectId: resource.projectId ?? projectId,
+            threadId: resource.threadId,
+          });
       }
       if (resource.kind === "project") {
         return () =>
@@ -1021,6 +1034,17 @@ function RootComposeSurface({
       if (isProjectless) {
         return null;
       }
+      if (isAbsoluteHostPath(resource.path)) {
+        const hostId =
+          rootPanelEnvironmentQuery.data?.hostId ?? rootProjectHostId;
+        if (hostId === null) return null;
+        return () => {
+          openLiveFilePreview({
+            target: { kind: "host", hostId, path: resource.path },
+            location: null,
+          });
+        };
+      }
       if (rootPanelEnvironmentId === null) return null;
       return () => {
         openLiveFilePreview({
@@ -1034,6 +1058,8 @@ function RootComposeSurface({
       };
     },
     [
+      rootPanelEnvironmentQuery.data?.hostId,
+      rootProjectHostId,
       isProjectless,
       openLiveFilePreview,
       navigate,
@@ -1457,6 +1483,7 @@ function RootComposeSurface({
               capabilities={appNavigationCapabilities}
               isFocused={isFocusedPane}
             >
+              <AppNavigationHostCapture hostRef={surfaceHost} />
               <AppPanelTabsPublisher
                 publish={panel.publishTabs}
                 activeTabId={activeFixedSecondaryTabId}
@@ -1481,6 +1508,7 @@ function RootComposeSurface({
                 }
                 isSecondaryPanelOpen={isSecondaryPanelOpen}
                 onToggleSecondaryPanel={handleToggleSecondaryPanel}
+                projectId={surfaceProjectId}
                 secondaryPanel={{
                   activeTab: activeFixedSecondaryTab,
                   environmentId: rootPanelEnvironmentId ?? undefined,

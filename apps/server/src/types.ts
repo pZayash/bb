@@ -18,7 +18,7 @@ import type { SkillTreeRegistry } from "./services/skills/injected-skills.js";
 import type { ProviderRegistryService } from "./services/providers/provider-registry.js";
 import type { AiServiceRegistry } from "./services/ai/ai-service-registry.js";
 import type { PluginHostArtifactRegistry } from "./services/plugins/plugin-host-artifact-registry.js";
-import type { ProviderNativeRootsCache } from "./services/providers/native-roots.js";
+import type { ProjectSkillIndexCache } from "./services/skills/skill-listing.js";
 import type { ProviderLiveCommandsCache } from "./services/providers/provider-live-commands.js";
 
 // bb-fork(log-noise): high-frequency periodic detail is logged at optional trace.
@@ -54,7 +54,7 @@ export interface AppDeps {
   pendingInteractions: PendingInteractionLifecycle;
   providerRegistry: ProviderRegistryService;
   pluginHostArtifacts: PluginHostArtifactRegistry;
-  providerNativeRoots: ProviderNativeRootsCache;
+  projectSkillIndexes: ProjectSkillIndexCache;
   providerLiveCommands: ProviderLiveCommandsCache;
   aiServices: AiServiceRegistry;
   skillTreeRegistry: SkillTreeRegistry;

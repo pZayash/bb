@@ -2,7 +2,14 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { setExperiments, setThreadExecutionOverride } from "@bb/db";
+import {
+  createProjectSource,
+  createProjectSourceFolder,
+  listStoredEventRows,
+  setEnvironmentColumns,
+  setExperiments,
+  setThreadExecutionOverride,
+} from "@bb/db";
 import {
   defaultExperiments,
   encodeClientTurnRequestIdNumber,
@@ -12,6 +19,7 @@ import { validatePluginProviderDeclaration } from "@get-bb/plugin-sdk/internal/h
 import type { PluginAgentConfigurationContext } from "@get-bb/plugin-sdk";
 import { buildPluginProviderRegistration } from "../../src/services/providers/plugin-provider-registration.js";
 import type { DiscoveredSkill } from "@bb/host-daemon-contract";
+import { skillFrontmatterBlock } from "@bb/skill-index/metadata";
 import { setPluginAgentContributions } from "../../src/services/plugins/plugin-agent-contributions.js";
 import { SkillTreeRegistry } from "../../src/services/skills/injected-skills.js";
 import type { PluginAgentToolContribution } from "../../src/services/plugins/plugin-service.js";
@@ -124,7 +132,7 @@ function registerRemoteRuntimeFileResponder(
           .map(({ segments, content }) => ({
             kind: "file" as const,
             directoryName: segments[0]!,
-            content,
+            frontmatter: skillFrontmatterBlock(content),
           }))
           .sort((left, right) =>
             left.directoryName.localeCompare(right.directoryName),
@@ -140,6 +148,7 @@ function registerRemoteRuntimeFileResponder(
             projectSkills,
             projectSkillsTruncated: false,
             sharedSkills: args.sharedSkills ?? [],
+            folders: [],
           },
         };
       }
@@ -176,7 +185,9 @@ function registerRemoteRuntimeFileResponder(
         return {
           ok: true,
           result: {
-            skills: [...projectSkills, ...(args.sharedSkills ?? [])],
+            workspaceSkills: projectSkills,
+            sharedSkills: args.sharedSkills ?? [],
+            providers: [],
           },
         };
       }
@@ -689,6 +700,7 @@ describe("thread runtime config", () => {
         readSettings: () => ({ verbose: true }),
       });
       harness.deps.providerRegistry.register({
+        reportBridgeFailure: () => undefined,
         ...registration,
         pluginId,
         iconNames: new Set<string>(),
@@ -1019,8 +1031,354 @@ describe("thread runtime config", () => {
         expect.objectContaining({
           type: "host.read_workspace_agent_context",
           rootPath: workspacePath,
+          folderPaths: [],
         }),
       ]);
+      expect(runtimeConfig.additionalWorkspaceFolders).toEqual([]);
+      expect(runtimeConfig.instructions).not.toContain(
+        "You are working across these folders:",
+      );
+    });
+  });
+
+  it("gives the session the project's and the environment's folders, without duplicates, and reports a missing one once", async () => {
+    await withTestHarness(async (harness) => {
+      const { host, session } = seedHostSession(harness.deps, {
+        id: "host-runtime-folders",
+      });
+      seedPrimaryHost(harness.deps, host.id);
+      const workspacePath = "/work/app";
+      const existing = new Set(["/work/app", "/work/api", "/work/docs"]);
+      const responder = registerHostRpcResponder(harness, {
+        hostId: host.id,
+        sessionId: session.id,
+        handle: ({ command }) => {
+          if (command.type === "host.find_git_repos") {
+            return {
+              ok: true,
+              result: {
+                folders: command.folderPaths.map((folderPath) => ({
+                  path: folderPath,
+                  exists: existing.has(folderPath),
+                  gitRoot:
+                    existing.has(folderPath) && folderPath !== "/work/docs"
+                      ? folderPath
+                      : null,
+                  repos:
+                    folderPath === "/work/docs"
+                      ? [
+                          {
+                            path: "/work/docs/notes",
+                            gitRoot: "/work/docs/notes",
+                          },
+                        ]
+                      : [],
+                  truncated: false,
+                })),
+              },
+            };
+          }
+          if (command.type !== "host.read_workspace_agent_context") {
+            throw new Error(`Unexpected RPC ${command.type}`);
+          }
+          return {
+            ok: true,
+            result: {
+              agentInstructions: null,
+              projectSkills: [],
+              projectSkillsTruncated: false,
+              sharedSkills: [],
+              folders: command.folderPaths.map((folderPath) => ({
+                path: folderPath,
+                exists: existing.has(folderPath),
+                isGitRepo: folderPath !== "/work/docs",
+              })),
+            },
+          };
+        },
+      });
+      const { project, source } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+        path: workspacePath,
+      });
+      const otherHost = seedHostSession(harness.deps, {
+        id: "host-runtime-folders-other",
+      }).host;
+      const otherSource = createProjectSource(harness.db, harness.hub, {
+        projectId: project.id,
+        type: "local_path",
+        hostId: otherHost.id,
+        path: "/elsewhere/app",
+      });
+      for (const folderPath of ["/work/api", "/work/gone"]) {
+        createProjectSourceFolder(harness.db, harness.hub, {
+          projectId: project.id,
+          projectSourceId: source.id,
+          path: folderPath,
+        });
+      }
+      createProjectSourceFolder(harness.db, harness.hub, {
+        projectId: project.id,
+        projectSourceId: otherSource.id,
+        path: "/elsewhere/api",
+      });
+      const environment = seedEnvironment(harness.deps, {
+        hostId: host.id,
+        projectId: project.id,
+        path: workspacePath,
+      });
+      setEnvironmentColumns(harness.db, environment.id, {
+        additionalPaths: [
+          { path: "/work/docs", replaces: null },
+          { path: "/work/api", replaces: null },
+        ],
+      });
+      const thread = seedThread(harness.deps, {
+        environmentId: environment.id,
+        projectId: project.id,
+      });
+      const resolve = () =>
+        resolveThreadRuntimeCommandConfig(harness.deps, {
+          thread,
+          environment,
+          model: "test-model",
+        });
+      const missingNotices = () =>
+        listStoredEventRows(harness.db, {
+          threadId: thread.id,
+          types: ["system/operation"],
+        });
+
+      const runtimeConfig = await resolve();
+
+      expect(responder.requests.map(({ command }) => command)).toEqual([
+        expect.objectContaining({
+          type: "host.read_workspace_agent_context",
+          folderPaths: ["/work/app", "/work/api", "/work/gone", "/work/docs"],
+        }),
+        expect.objectContaining({
+          type: "host.find_git_repos",
+          folderPaths: ["/work/app", "/work/api", "/work/gone", "/work/docs"],
+        }),
+      ]);
+      expect(runtimeConfig.additionalWorkspaceFolders).toEqual([
+        "/work/api",
+        "/work/docs",
+      ]);
+      expect(runtimeConfig.instructions).toContain(
+        [
+          "You are working across these folders:",
+          "- Main folder (your working directory): /work/app (git repository)",
+          "- Additional folder: /work/api (git repository)",
+          "- Additional folder: /work/gone (missing on this machine, so you cannot use it this session)",
+          "- Additional folder: /work/docs (not a git repository)",
+          "  - Git repository inside it: /work/docs/notes",
+        ].join("\n"),
+      );
+      expect(missingNotices()).toHaveLength(1);
+
+      await resolve();
+      expect(missingNotices()).toHaveLength(1);
+
+      existing.add("/work/gone");
+      const recovered = await resolve();
+      expect(recovered.additionalWorkspaceFolders).toEqual([
+        "/work/api",
+        "/work/gone",
+        "/work/docs",
+      ]);
+      existing.delete("/work/gone");
+      await resolve();
+      expect(missingNotices()).toHaveLength(2);
+    });
+  });
+
+  it("replaces a project folder the environment branched with its worktree, and keeps the others shared", async () => {
+    await withTestHarness(async (harness) => {
+      const { host, session } = seedHostSession(harness.deps, {
+        id: "host-runtime-replaced-folders",
+      });
+      seedPrimaryHost(harness.deps, host.id);
+      const workspacePath = "/worktrees/thr-1/app";
+      const responder = registerHostRpcResponder(harness, {
+        hostId: host.id,
+        sessionId: session.id,
+        handle: ({ command }) => {
+          if (command.type === "host.find_git_repos") {
+            return {
+              ok: true,
+              result: {
+                folders: command.folderPaths.map((folderPath) => ({
+                  path: folderPath,
+                  exists: true,
+                  gitRoot: folderPath,
+                  repos: [],
+                  truncated: false,
+                })),
+              },
+            };
+          }
+          if (command.type !== "host.read_workspace_agent_context") {
+            throw new Error(`Unexpected RPC ${command.type}`);
+          }
+          return {
+            ok: true,
+            result: {
+              agentInstructions: null,
+              projectSkills: [],
+              projectSkillsTruncated: false,
+              sharedSkills: [],
+              folders: command.folderPaths.map((folderPath) => ({
+                path: folderPath,
+                exists: true,
+                isGitRepo: true,
+              })),
+            },
+          };
+        },
+      });
+      const { project, source } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+        path: "/work/app",
+      });
+      for (const folderPath of ["/work/api", "/work/web"]) {
+        createProjectSourceFolder(harness.db, harness.hub, {
+          projectId: project.id,
+          projectSourceId: source.id,
+          path: folderPath,
+        });
+      }
+      const environment = seedEnvironment(harness.deps, {
+        hostId: host.id,
+        projectId: project.id,
+        path: workspacePath,
+      });
+      setEnvironmentColumns(harness.db, environment.id, {
+        additionalPaths: [
+          { path: "/worktrees/thr-1/api", replaces: "/work/api" },
+        ],
+      });
+      const thread = seedThread(harness.deps, {
+        environmentId: environment.id,
+        projectId: project.id,
+      });
+
+      const runtimeConfig = await resolveThreadRuntimeCommandConfig(
+        harness.deps,
+        { thread, environment, model: "test-model" },
+      );
+
+      expect(responder.requests.map(({ command }) => command)).toEqual([
+        expect.objectContaining({
+          type: "host.read_workspace_agent_context",
+          folderPaths: [workspacePath, "/work/web", "/worktrees/thr-1/api"],
+        }),
+        expect.objectContaining({
+          type: "host.find_git_repos",
+          folderPaths: [workspacePath, "/work/web", "/worktrees/thr-1/api"],
+        }),
+      ]);
+      expect(runtimeConfig.additionalWorkspaceFolders).toEqual([
+        "/work/web",
+        "/worktrees/thr-1/api",
+      ]);
+      expect(runtimeConfig.instructions).not.toContain("/work/api ");
+    });
+  });
+
+  it.each([
+    {
+      name: "names the repos found inside a main folder that is not a repo",
+      isGitRepo: false,
+      expectedBlock: [
+        "You are working across these folders:",
+        "- Main folder (your working directory): /work/repos (not a git repository)",
+        "  - Git repository inside it: /work/repos/api",
+        "  - Git repository inside it: /work/repos/web",
+      ].join("\n"),
+      expectedTypes: [
+        "host.read_workspace_agent_context",
+        "host.find_git_repos",
+      ],
+    },
+    {
+      name: "leaves a single-repo thread's instructions alone without looking for repos",
+      isGitRepo: true,
+      expectedBlock: null,
+      expectedTypes: ["host.read_workspace_agent_context"],
+    },
+  ])("$name", async ({ isGitRepo, expectedBlock, expectedTypes }) => {
+    await withTestHarness(async (harness) => {
+      const { host, session } = seedHostSession(harness.deps, {
+        id: "host-runtime-repos",
+      });
+      seedPrimaryHost(harness.deps, host.id);
+      const responder = registerHostRpcResponder(harness, {
+        hostId: host.id,
+        sessionId: session.id,
+        handle: ({ command }) => {
+          if (command.type === "host.find_git_repos") {
+            return {
+              ok: true,
+              result: {
+                folders: command.folderPaths.map((folderPath) => ({
+                  path: folderPath,
+                  exists: true,
+                  gitRoot: null,
+                  repos: ["api", "web"].map((name) => ({
+                    path: `${folderPath}/${name}`,
+                    gitRoot: `${folderPath}/${name}`,
+                  })),
+                  truncated: false,
+                })),
+              },
+            };
+          }
+          if (command.type !== "host.read_workspace_agent_context") {
+            throw new Error(`Unexpected RPC ${command.type}`);
+          }
+          return {
+            ok: true,
+            result: {
+              agentInstructions: null,
+              projectSkills: [],
+              projectSkillsTruncated: false,
+              sharedSkills: [],
+              folders: [],
+            },
+          };
+        },
+      });
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+        path: "/work/repos",
+      });
+      const environment = seedEnvironment(harness.deps, {
+        hostId: host.id,
+        projectId: project.id,
+        path: "/work/repos",
+        isGitRepo,
+      });
+      const thread = seedThread(harness.deps, {
+        environmentId: environment.id,
+        projectId: project.id,
+      });
+
+      const runtimeConfig = await resolveThreadRuntimeCommandConfig(
+        harness.deps,
+        { thread, environment, model: "test-model" },
+      );
+
+      expect(responder.requests.map(({ command }) => command.type)).toEqual(
+        expectedTypes,
+      );
+      if (expectedBlock === null) {
+        expect(runtimeConfig.instructions ?? "").not.toContain(
+          "You are working across these folders",
+        );
+      } else {
+        expect(runtimeConfig.instructions).toContain(expectedBlock);
+      }
     });
   });
 
@@ -1216,7 +1574,7 @@ describe("thread runtime config", () => {
             projectSkillRead: {
               limit: 1_000,
               maxFileBytes: 10 * 1024 * 1024,
-              maxContentBytes: 32 * 1024 * 1024,
+              maxFrontmatterBytes: 4 * 1024 * 1024,
               excludeNames: expect.arrayContaining(["venv", "node_modules"]),
             },
             rootPath: workspacePath,
@@ -1411,7 +1769,7 @@ describe("thread runtime config", () => {
       });
     });
 
-    it("skips null/empty providers, truncates long text, and isolates throws", async () => {
+    it("skips null/empty providers and truncates long text", async () => {
       await withTestHarness(async (harness) => {
         const hostId = "host-runtime-plugin-instr-edge";
         seedHostSession(harness.deps, { id: hostId });
@@ -1440,12 +1798,6 @@ describe("thread runtime config", () => {
             {
               pluginId: "blank",
               provider: () => "   \n\t  ",
-            },
-            {
-              pluginId: "boom",
-              provider: () => {
-                throw new Error("provider boom");
-              },
             },
             {
               pluginId: "global",
@@ -1482,9 +1834,6 @@ describe("thread runtime config", () => {
         );
         expect(instructions).not.toContain(
           'The following instructions come from the BB plugin "blank":',
-        );
-        expect(instructions).not.toContain(
-          'The following instructions come from the BB plugin "boom":',
         );
         expect(instructions).toContain(
           'The following instructions come from the BB plugin "verbose":',

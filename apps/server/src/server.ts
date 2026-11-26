@@ -1,3 +1,8 @@
+import { getOrCreateServerId } from "@bb/db";
+import {
+  refreshServerAccessOrigins,
+  restoreServerAccessOrigins,
+} from "./services/machines/server-access.js";
 import { createPluginUpdateJobs } from "./services/plugins/plugin-update-jobs.js";
 import { registerPluginUpdateJobRoutes } from "./routes/plugin-update-jobs.js";
 import {
@@ -19,7 +24,7 @@ import {
 } from "./install-machine-asset.js";
 import { createNodeWebSocket } from "@hono/node-ws";
 import {
-  declineWebSocketCompression,
+  declineSameMachineWebSocketCompression,
   WEB_SOCKET_COMPRESSION,
 } from "./ws/compression.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -71,6 +76,7 @@ import {
 } from "./services/plugins/plugin-server-access-registry.js";
 import { setPluginMachineProviderBridge } from "./services/plugins/plugin-machine-provider-registry.js";
 import { invalidateEnvironmentProviderMachineAvailability } from "./services/environments/provider-machine-availability.js";
+import { releasePluginEnvironmentHolds } from "./services/environments/environment-engine.js";
 import { requestHostDerivedStateRefreshForPluginChange } from "./services/hosts/host-derived-state.js";
 import { requestQueuedMessageDispatch } from "./services/threads/queued-message-dispatch.js";
 import { registerInternalEventRoutes } from "./internal/events.js";
@@ -491,7 +497,7 @@ export function createApp(
   app.use("*", async (context, next) => {
     const problem = requestHostProblem(context, deps);
     if (problem !== null) {
-      throw new ApiError(problem.status, "forbidden_host", problem.error);
+      throw new ApiError(problem.status, problem.code, problem.error);
     }
     return next();
   });
@@ -546,6 +552,7 @@ export function createApp(
     });
     return context.json({
       ok: true,
+      serverId: getOrCreateServerId(deps.db),
       ...(deps.config.launchId === undefined
         ? {}
         : { launchId: deps.config.launchId }),
@@ -780,13 +787,17 @@ export function createApp(
       ),
     callPluginHost: (args) => callPluginHostRpc(deps, args),
     disposePluginHost: (args) => disposePluginHostWorkers(deps, args),
-    onSettingsChanged: (pluginId) => {
-      deps.providerNativeRoots.invalidate(pluginId);
+    onSettingsChanged: () => {
+      deps.projectSkillIndexes.clear();
       deps.providerRegistry.forgetAllInstalled();
       requestHostDerivedStateRefreshForPluginChange(deps);
     },
-    onPluginsChanged: () => requestHostDerivedStateRefreshForPluginChange(deps),
+    onPluginsChanged: () => {
+      requestHostDerivedStateRefreshForPluginChange(deps);
+      refreshServerAccessOrigins(deps);
+    },
     onPluginUnregistered: (pluginId) => {
+      releasePluginEnvironmentHolds(deps, pluginId);
       requestQueuedMessageDispatch(deps, {
         kind: "plugin-unregistered",
         pluginId,
@@ -828,7 +839,9 @@ export function createApp(
     ),
   );
   setServerAccessBridge(pluginService.serverAccessProviders);
+  restoreServerAccessOrigins(deps);
   setServerAccessRecheckHandler(() => {
+    refreshServerAccessOrigins(deps);
     deps.hub.notifySystem(["config-changed"]);
   });
   setEnvironmentProviderRecheckHandler((pluginId) => {
@@ -878,7 +891,7 @@ export function createApp(
     }
     const problem = browserRequestProblem(context, deps);
     if (problem !== null) {
-      throw new ApiError(problem.status, "forbidden_origin", problem.error);
+      throw new ApiError(problem.status, problem.code, problem.error);
     }
     return next();
   });
@@ -958,12 +971,7 @@ export function createApp(
   ): void => {
     const problem = browserRequestProblem(context, deps);
     if (problem !== null) {
-      throw new ApiError(
-        problem.status,
-        "forbidden_origin",
-        problem.error,
-        false,
-      );
+      throw new ApiError(problem.status, problem.code, problem.error, false);
     }
   };
 
@@ -984,7 +992,7 @@ export function createApp(
     "/ws/terminals/:terminalId",
     upgradeWebSocket((context) => {
       assertBrowserWebSocketAllowed(context);
-      declineWebSocketCompression(context);
+      declineSameMachineWebSocketCompression(context);
       const terminalId = context.req.param("terminalId");
       if (terminalId === undefined) {
         throw new ApiError(404, "terminal_not_found", "missing terminal id");
@@ -1026,7 +1034,7 @@ export function createApp(
   app.get(
     "/internal/ws",
     upgradeWebSocket(async (context) => {
-      declineWebSocketCompression(context);
+      declineSameMachineWebSocketCompression(context);
       const target = await validateDaemonWebSocket(deps, {
         authorizationHeader: context.req.header("authorization"),
         protocolHeader: context.req.header("sec-websocket-protocol"),

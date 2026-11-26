@@ -48,7 +48,6 @@ import { BbHttpError } from "@/lib/sdk";
 import { ThreadChatLoadingBody } from "@/components/thread/timeline/ThreadChatLoading";
 import {
   getProjectComposeRoutePath,
-  getThreadRoutePath,
   type ThreadRoutePathArgs,
 } from "@/lib/route-paths";
 import { useOptionalPaneContext } from "@/views/thread-detail/PaneContext";
@@ -62,6 +61,7 @@ import {
   ThreadScreen,
   type ThreadScreenPresentation,
 } from "@/views/thread-detail/ThreadScreen";
+import { openThread } from "@/lib/split-layout/openThread";
 
 const NO_CONSUMER_MESSAGE_ACTIONS: readonly ThreadTimelineConsumerMessageAction[] =
   [];
@@ -159,7 +159,7 @@ function PluginThreadChatBody({
         paneNavigateInPane(target);
         return;
       }
-      void navigate(getThreadRoutePath(target));
+      openThread({ navigate, ...target });
     },
     [navigate, paneNavigateInPane],
   );
@@ -260,12 +260,11 @@ function PluginThreadChatBody({
         const targetProjectId = resource.projectId ?? thread?.projectId;
         if (targetProjectId === undefined) return null;
         return () =>
-          void navigate(
-            getThreadRoutePath({
-              projectId: targetProjectId,
-              threadId: resource.threadId,
-            }),
-          );
+          openThread({
+            navigate,
+            projectId: targetProjectId,
+            threadId: resource.threadId,
+          });
       }
       if (resource.kind === "project") {
         return () =>

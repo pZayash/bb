@@ -1616,7 +1616,7 @@ export function registerPluginCommands(
             if (!shouldAttempt) {
               if (result.outcome === "pinned") {
                 console.log(
-                  `${result.id}: skipped — pinned${detail ? ` (${detail})` : ""}; remove and reinstall with a tracking npm range, git branch, or git semver range to receive updates (remove deletes the plugin's settings, secrets, and schedules). A local path plugin updates with \`bb plugin reload\`; move it with \`bb plugin install path:<new directory>\`.`,
+                  `${result.id}: skipped — pinned${detail ? ` (${detail})` : ""}; remove and reinstall with a tracking npm range, git branch, or git semver range to receive updates (remove deletes the plugin's settings, secrets, stored files, and schedules). A local path plugin updates with \`bb plugin reload\`; move it with \`bb plugin install path:<new directory>\`.`,
                 );
               } else if (result.outcome === "incompatible") {
                 console.log(
@@ -2277,7 +2277,9 @@ export function registerPluginCommands(
 
   plugin
     .command("logs <id>")
-    .description("Print a plugin's log (bb.log output)")
+    .description(
+      "Print a plugin's log: bb.log output plus its load, handler, service and host-worker failures",
+    )
     .option("-n, --lines <count>", "Number of lines to show", "100")
     .option("-f, --follow", "Poll for new lines every second (Ctrl+C to stop)")
     .action(
@@ -2315,7 +2317,7 @@ export function registerPluginCommands(
     .command("remove <id>")
     .alias("uninstall")
     .description(
-      "Remove an installed plugin and delete its settings, secrets, and schedules (git:/npm: managed files are deleted; local path sources stay on disk). To move a local plugin to another directory, install the new path instead",
+      "Remove an installed plugin and delete its settings, secrets, stored files, and schedules (git:/npm: managed files are deleted; local path sources stay on disk). To move a local plugin to another directory, install the new path instead",
     )
     .option("--json", "Output JSON")
     .addOption(new Option("--yes").hideHelp())

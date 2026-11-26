@@ -4501,10 +4501,11 @@ describe("public thread data routes", () => {
         harness,
         ({ command }) =>
           command.type === "host.list_paths" &&
-          command.path === threadStoragePath,
+          command.rootPaths[0] === threadStoragePath,
       );
       expect(pathsCommand.command).toMatchObject({
-        path: threadStoragePath,
+        rootPaths: [threadStoragePath],
+        followRootSymlink: false,
         query: "notes",
         limit: 1000,
         includeFiles: true,
@@ -4520,6 +4521,7 @@ describe("public thread data routes", () => {
             name: "notes",
             score: 100,
             positions: [0, 1, 2, 3, 4],
+            rootPath: threadStoragePath,
           },
           {
             kind: "file",
@@ -4527,6 +4529,7 @@ describe("public thread data routes", () => {
             name: "plan.md",
             score: 75,
             positions: [0, 1, 2, 3, 4],
+            rootPath: threadStoragePath,
           },
         ],
         truncated: false,

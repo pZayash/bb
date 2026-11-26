@@ -1,6 +1,9 @@
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import type { Environment } from "@bb/domain";
-import type { WorkspacePathListResponse } from "@bb/server-contract";
+import type {
+  WorkspacePathSearchFolders,
+  WorkspaceSearchPathListResponse,
+} from "@bb/server-contract";
 import type {
   EnvironmentCommitsResult,
 } from "@bb/sdk/browser";
@@ -153,6 +156,7 @@ interface UseEnvironmentPathSuggestionsArgs {
   limit?: number;
   includeFiles: boolean;
   includeDirectories: boolean;
+  folders: WorkspacePathSearchFolders;
 }
 
 export function useEnvironmentPathSuggestions(
@@ -169,16 +173,18 @@ export function useEnvironmentPathSuggestions(
   const enabled = Boolean(environmentId) && trimmedQuery.length > 0;
   useEnvironmentDetailRealtimeSubscription(environmentId, { enabled });
 
-  return useQuery<WorkspacePathListResponse>({
+  return useQuery<WorkspaceSearchPathListResponse>({
     queryKey: environmentPathsQueryKey(
       environmentId ?? undefined,
       trimmedQuery,
       limit,
       includeFiles,
       includeDirectories,
+      args.folders,
     ),
     queryFn: ({ signal }) =>
       sdk.environments.paths({
+        folders: args.folders,
         environmentId: requireEnvironmentId(
           environmentId,
           "useEnvironmentPathSuggestions",
@@ -194,4 +200,3 @@ export function useEnvironmentPathSuggestions(
     placeholderData: (previousData) => previousData,
   });
 }
-

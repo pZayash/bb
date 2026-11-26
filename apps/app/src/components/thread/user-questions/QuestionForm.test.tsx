@@ -101,7 +101,6 @@ function render(
     draftKey?: string;
     density?: "default" | "compact";
     promptShownAbove?: string;
-    closeInline?: () => void;
   } = {},
   options: { draftKey?: string } = {},
 ) {
@@ -110,7 +109,6 @@ function render(
       <ThreadQuestionFormHost
         density={handlers.density ?? "default"}
         promptShownAbove={handlers.promptShownAbove ?? null}
-        closeInline={handlers.closeInline ?? null}
       >
         <QuestionForm
           draftKey={options.draftKey}
@@ -295,21 +293,6 @@ describe("answering a single-select question", () => {
     const slot = render(singleSelect, { density: "compact" });
     expect(getButtonByText(slot, "Submit")).toBeTruthy();
     expect(slot.queryByText("Submit answer")).toBeNull();
-  });
-
-  it("closes the inline form on Cancel without cancelling the question", () => {
-    const cancel = vi.fn(async () => undefined);
-    const closeInline = vi.fn();
-    const slot = render(singleSelect, {
-      density: "compact",
-      cancel,
-      closeInline,
-    });
-
-    fireEvent.click(getButtonByText(slot, "Cancel"));
-
-    expect(closeInline).toHaveBeenCalledTimes(1);
-    expect(cancel).not.toHaveBeenCalled();
   });
 
   it("hides the compact prompt only when the host already shows that text", () => {

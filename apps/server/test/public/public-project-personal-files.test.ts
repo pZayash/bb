@@ -30,6 +30,7 @@ const routes = [
           kind: "file",
           positions: [],
           score: 1,
+          folderPath: null,
         },
       ],
       truncated: false,
@@ -64,7 +65,7 @@ describe("Personal project file access", () => {
                   },
                 };
               case "host.list_paths":
-                expect(request.command.path).toBe(environment.path);
+                expect(request.command.rootPaths).toEqual([environment.path]);
                 return {
                   ok: true,
                   result: {
@@ -75,6 +76,7 @@ describe("Personal project file access", () => {
                         kind: "file",
                         positions: [],
                         score: 1,
+                        rootPath: "/personal/workspace",
                       },
                     ],
                     truncated: false,

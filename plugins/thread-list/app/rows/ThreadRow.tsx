@@ -95,7 +95,6 @@ import type { SidebarSortableDragBindings } from "@/components/ui/sortable-motio
 import { SidebarThreadDragChip } from "../dnd/sidebarThreadDragChip.js";
 import { SplitPaneMiniMap } from "@/components/ui/split-pane-mini-map";
 import { ThreadRowQuickActions } from "./ThreadRowQuickActions.js";
-import { toThreadActionTarget } from "./threadActionTarget.js";
 import {
   useIsSelectionHidingActiveRow,
   useIsThreadSelected,
@@ -390,8 +389,7 @@ function ThreadRowComponent({
     openThreadInSplit(thread.id);
   }, [openThreadInSplit, thread.id]);
   const rowActionKeys = useAtomValue(threadRowActionsAtom);
-  const actionTarget = toThreadActionTarget(thread);
-  const quickActions = experimental_useThreadActions(actionTarget, {
+  const quickActions = experimental_useThreadActions(thread, {
     keys: thread.archivedAt !== null ? ARCHIVED_ROW_ACTION_KEYS : rowActionKeys,
     requestRename: () => {
       startEditing();
@@ -426,8 +424,6 @@ function ThreadRowComponent({
   const isParentCollapsed = parentOptions?.isCollapsed ?? false;
   const childCount = parentOptions?.childCount ?? 0;
   const hasChildren = childCount > 0;
-  const reserveActionSpace =
-    crossProjectLabel !== null || (isParentRow && hasChildren);
   const hasHiddenChildren = isParentRow && isParentCollapsed && hasChildren;
   const hiddenThreads =
     hasHiddenChildren && parentOptions
@@ -468,7 +464,7 @@ function ThreadRowComponent({
         ? COARSE_POINTER_COMPACT_ROW_HEIGHT_CLASS
         : COARSE_POINTER_ROW_HEIGHT_CLASS,
     showRowMetadata &&
-      "h-auto min-h-[var(--bb-sidebar-row-height)] max-md:pointer-coarse:h-auto max-md:pointer-coarse:min-h-[var(--bb-sidebar-row-height-coarse)]",
+      "has-[[data-thread-row-metadata][data-has-items]]:h-auto has-[[data-thread-row-metadata][data-has-items]]:min-h-[var(--bb-sidebar-row-height)] max-md:pointer-coarse:has-[[data-thread-row-metadata][data-has-items]]:min-h-[var(--bb-sidebar-row-height-coarse)]",
     showActive
       ? SIDEBAR_ROW_SELECTED_STATE_CLASS
       : SIDEBAR_ROW_INTERACTIVE_STATE_CLASS,
@@ -545,7 +541,7 @@ function ThreadRowComponent({
         className={cn(
           "relative flex min-w-0 flex-1 items-center gap-1.5 self-stretch",
           showRowMetadata &&
-            "flex-wrap content-center gap-y-0 py-1 has-[[data-thread-row-metadata][data-has-items]]:py-1.25 has-[[data-thread-row-metadata][data-has-items]]:[&_.bb-thread-title]:leading-4",
+            "has-[[data-thread-row-metadata][data-has-items]]:flex-wrap has-[[data-thread-row-metadata][data-has-items]]:content-center has-[[data-thread-row-metadata][data-has-items]]:gap-y-0 has-[[data-thread-row-metadata][data-has-items]]:py-1.25 has-[[data-thread-row-metadata][data-has-items]]:[&_.bb-thread-title]:leading-4",
           // bb-fork(windows): MERGE SEAM — the model line below relies on this
           // container wrapping. If a future upstream layout drops flex-wrap or
           // moves the model line into a no-wrap flex, its w-full squeezes the
@@ -556,7 +552,7 @@ function ThreadRowComponent({
           !shortcut &&
             !isEditing &&
             !isCustomizingActions &&
-            (reserveActionSpace
+            (hasHiddenChildren
               ? "pr-(--bb-sidebar-hover-actions-inset) [@media(hover:none)]:pr-0"
               : SIDEBAR_HOVER_ACTIONS_INSET_CLASS),
         )}
@@ -686,12 +682,13 @@ function ThreadRowComponent({
           {parentOptions && hasChildren ? (
             <SidebarChildToggleChevron
               disabled={isEditing}
-              className={isEditing ? "hidden" : undefined}
+              className={cn("-my-0.5", isEditing && "hidden")}
               isCollapsed={isParentCollapsed}
               expandLabel={`Expand ${labelTitle} threads`}
               collapseLabel={`Collapse ${labelTitle} threads`}
               onToggle={() => parentOptions.onToggleCollapsed(thread.id)}
               revealOnHover={!isParentCollapsed}
+              collapseAtRest={!isParentCollapsed}
             />
           ) : null}
         </span>
@@ -715,7 +712,7 @@ function ThreadRowComponent({
         {!showRowMetadata || isEditing || isCustomizingActions ? null : (
           <span
             className={cn(
-              "mt-px flex min-w-0 basis-full",
+              "mt-px hidden min-w-0 basis-full has-[[data-thread-row-metadata][data-has-items]]:flex",
               provider !== undefined && "pl-6",
             )}
           >
@@ -751,7 +748,7 @@ function ThreadRowComponent({
               )}
             >
               <ThreadActionsMenu
-                thread={actionTarget}
+                thread={thread}
                 trigger={renderThreadActionsTrigger}
                 inline={inlineMenuActions}
                 requestRename={requestRenameFromMenu}
@@ -840,7 +837,7 @@ function ThreadRowComponent({
                   }
                 >
                   <ThreadActionsMenu
-                    thread={actionTarget}
+                    thread={thread}
                     trigger={renderThreadActionsTrigger}
                     inline={inlineMenuActions}
                     requestRename={requestRenameFromMenu}
@@ -893,7 +890,7 @@ function ThreadRowComponent({
 
   return (
     <ThreadActionsContextMenu
-      thread={actionTarget}
+      thread={thread}
       inline={selectionMenu?.inline ?? inlineMenuActions}
       requestRename={requestRenameFromMenu}
       onOpenChange={setIsContextActionsOpen}

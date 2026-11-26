@@ -2,7 +2,7 @@ import { useCallback, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Thread } from "@bb/domain";
 import { sdk } from "@/lib/sdk";
-import { getThreadRoutePath } from "@/lib/route-paths";
+import { getThreadLocationPath } from "@/lib/route-paths";
 import { useRouteNavigate } from "@/components/ui/app-route-anchor";
 import { appToast } from "@/components/ui/app-toast";
 import { useCreateThread } from "@/hooks/mutations/thread-runtime-mutations";
@@ -75,7 +75,7 @@ export function useCreateChildThread(): (thread: Thread) => Promise<void> {
         }
         const created = await createThread.mutateAsync(request);
         navigate(
-          getThreadRoutePath({
+          getThreadLocationPath({
             projectId: created.projectId,
             threadId: created.id,
           }),

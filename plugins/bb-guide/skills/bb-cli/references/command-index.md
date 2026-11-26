@@ -46,6 +46,11 @@ This index lists every command path that the core CLI registers, including alias
 - `bb project source add`
 - `bb project source update`
 - `bb project source delete`
+- `bb project folder`
+- `bb project folder list`
+- `bb project folder add`
+- `bb project folder update`
+- `bb project folder remove`
 - `bb project attachment`
 - `bb project attachment upload`
 - `bb project attachment download`
@@ -105,6 +110,11 @@ Use `--selected-model <model-id>` to discover its reasoning choices and include 
 ## server
 
 - `bb server`
+- `bb server access`
+- `bb server access list`
+- `bb server access add`
+- `bb server access remove`
+- `bb server access order`
 - `bb server move`
 - `bb server move status`
 - `bb server move cancel`
@@ -194,6 +204,8 @@ Use `--selected-model <model-id>` to discover its reasoning choices and include 
 - `bb thread archive`
 - `bb thread unarchive`
 - `bb thread restore-environment`
+- `bb thread export`
+- `bb thread import`
 - `bb thread pin`
 - `bb thread unpin`
 - `bb thread regenerate-title`
@@ -224,10 +236,12 @@ Use `--selected-model <model-id>` to discover its reasoning choices and include 
 
 - `bb environment`
 - `bb environment providers`
+- `bb environment create`
 - `bb environment list`
 - `bb environment delete`
 - `bb environment cleanup`
 - `bb environment show`
+- `bb environment repos`
 - `bb environment get`
 - `bb environment commits`
 - `bb environment paths`
@@ -295,6 +309,8 @@ Use `--selected-model <model-id>` to discover its reasoning choices and include 
 
 - `bb marketplace`
 - `bb marketplace add`
+- `bb marketplace disable`
+- `bb marketplace enable`
 - `bb marketplace list`
 - `bb marketplace refresh`
 - `bb marketplace remove`

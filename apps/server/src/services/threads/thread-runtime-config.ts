@@ -36,6 +36,13 @@ import {
   readDataDirAgentInstructions,
 } from "./workspace-agent-instructions.js";
 import { readWorkspaceAgentContext } from "./workspace-agent-context.js";
+import { renderWorkspaceFolderInstructions } from "./workspace-folder-instructions.js";
+import { reportMissingWorkspaceFolders } from "./workspace-folder-notices.js";
+import { listEnvironmentExtraFolderPaths } from "../environments/environment-workspace-folders.js";
+import {
+  resolveEnvironmentRepos,
+  type EnvironmentReposTarget,
+} from "../environments/environment-repos.js";
 import { resolveDeprecatedWorkspaceProvisionType } from "../environments/environment-response.js";
 import { markTurnTraceSpan } from "../system/turn-trace.js";
 import { sliceUtf16Head } from "@bb/text-utils";
@@ -61,6 +68,7 @@ interface ResolvePermissionEscalationArgs {
 }
 
 export interface ResolvedThreadRuntimeCommandConfig {
+  additionalWorkspaceFolders: string[];
   contributedEnv: HostDaemonContributedEnvEntry[];
   dynamicTools: DynamicTool[];
   injectedSkillSources: HostDaemonInjectedSkillSource[];
@@ -115,6 +123,32 @@ export function resolvePermissionEscalation(
   return "ask";
 }
 
+const REPO_DISCOVERY_WAIT_MS = 3_000;
+
+async function findReposInsideWorkspaceFolders(
+  deps: LoggedWorkSessionDeps,
+  environment: EnvironmentReposTarget,
+): Promise<string[]> {
+  try {
+    const found = await Promise.race([
+      resolveEnvironmentRepos(deps, environment),
+      new Promise<null>((resolve) => {
+        setTimeout(() => resolve(null), REPO_DISCOVERY_WAIT_MS).unref();
+      }),
+    ]);
+    if (found === null) return [];
+    return found.repos
+      .filter((repo) => repo.source === "discovered")
+      .map((repo) => repo.path);
+  } catch (error) {
+    deps.logger.warn(
+      { err: error, environmentId: environment.id },
+      "Could not find git repositories inside the workspace folders",
+    );
+    return [];
+  }
+}
+
 export async function resolveThreadRuntimeCommandConfig(
   deps: LoggedWorkSessionDeps,
   args: ResolveThreadRuntimeCommandConfigArgs,
@@ -134,12 +168,31 @@ export async function resolveThreadRuntimeCommandConfig(
     throw new ApiError(404, "host_not_found", "Host not found");
   }
 
+  const candidateFolders = listEnvironmentExtraFolderPaths(deps.db, {
+    additionalPaths: environment.additionalPaths,
+    hostId: args.environment.hostId,
+    mainPath: workspacePath,
+    projectId: project.id,
+  });
   const workspaceAgentContext = await readWorkspaceAgentContext(deps, {
     includeAgentInstructions: true,
     hostId: args.environment.hostId,
     workspacePath,
+    folderPaths:
+      candidateFolders.length > 0 ? [workspacePath, ...candidateFolders] : [],
   });
   markTurnTraceSpan("runtimeConfig.workspaceRead");
+  const [, ...additionalFolderStatuses] = workspaceAgentContext.folders;
+  const additionalWorkspaceFolders = additionalFolderStatuses
+    .filter((folder) => folder.exists)
+    .map((folder) => folder.path);
+  reportMissingWorkspaceFolders(deps, {
+    environmentId: environment.id,
+    missingPaths: additionalFolderStatuses
+      .filter((folder) => !folder.exists)
+      .map((folder) => folder.path),
+    threadId: args.thread.id,
+  });
   const pluginSkillRoots = getPluginSkillRootContributions();
   const skillIdsByPlugin = await discoverPluginSkillIds(deps.logger, {
     pluginSkillRoots,
@@ -219,6 +272,25 @@ export async function resolveThreadRuntimeCommandConfig(
     (contribution) => contribution.tool,
   );
   const instructionSections: string[] = [];
+  const reposInsideFolders =
+    candidateFolders.length > 0 || environment.isGitRepo !== true
+      ? await findReposInsideWorkspaceFolders(deps, {
+          additionalPaths: environment.additionalPaths,
+          hostId: args.environment.hostId,
+          id: environment.id,
+          path: workspacePath,
+          projectId: project.id,
+        })
+      : [];
+  const workspaceFolderInstructions = renderWorkspaceFolderInstructions(
+    workspaceAgentContext.folders.length > 0
+      ? workspaceAgentContext.folders
+      : [{ path: workspacePath, exists: true, isGitRepo: false }],
+    reposInsideFolders,
+  );
+  if (workspaceFolderInstructions !== null) {
+    instructionSections.push(workspaceFolderInstructions);
+  }
   for (const contribution of dynamicToolContributions) {
     if (!contribution.instructions) continue;
     if (contribution.pluginId === null) {
@@ -231,23 +303,10 @@ export async function resolveThreadRuntimeCommandConfig(
     }
   }
   for (const contribution of listPluginInstructionContributions()) {
-    let text: string | null;
-    try {
-      text = contribution.provider({
-        threadId: args.thread.id,
-        projectId: args.thread.projectId,
-      });
-    } catch (error) {
-      deps.logger.warn(
-        {
-          err: error,
-          pluginId: contribution.pluginId,
-          threadId: args.thread.id,
-        },
-        "Plugin instruction contribution threw; skipping",
-      );
-      continue;
-    }
+    let text = contribution.provider({
+      threadId: args.thread.id,
+      projectId: args.thread.projectId,
+    });
     if (text === null || text.trim().length === 0) continue;
     text = sliceUtf16Head(text, PLUGIN_DYNAMIC_INSTRUCTIONS_MAX_CHARS);
     instructionSections.push(
@@ -280,6 +339,7 @@ export async function resolveThreadRuntimeCommandConfig(
   });
   markTurnTraceSpan("runtimeConfig.built");
   return {
+    additionalWorkspaceFolders,
     contributedEnv,
     dynamicTools,
     injectedSkillSources,

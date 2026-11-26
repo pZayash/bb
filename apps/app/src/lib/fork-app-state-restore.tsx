@@ -7,7 +7,10 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { PERSONAL_PROJECT_ID } from "@bb/domain";
 import { useRouteState } from "@/hooks/useRouteState";
 import { withLocalStorage } from "@/lib/browser-storage";
-import { getRootComposeRoutePath, getThreadRoutePath } from "@/lib/route-paths";
+import {
+  getRootComposeRoutePath,
+  getThreadLocationPath,
+} from "@/lib/route-paths";
 import {
   MAX_CACHED_SIDEBAR_THREADS_PER_PROJECT,
   readCachedSidebarBootstrap,
@@ -101,7 +104,7 @@ export function ForkAppStateRestore() {
       clearForkLastThread();
       return;
     }
-    void navigate(getThreadRoutePath(stored), { replace: true });
+    void navigate(getThreadLocationPath(stored), { replace: true });
   }, [location.pathname, navigate]);
 
   return null;

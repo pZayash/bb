@@ -130,6 +130,8 @@ function createThreadListEntry(
     statusChangedAt: args.thread.updatedAt,
     environmentBranchName: null,
     environmentPath: null,
+    environmentStatus: null,
+    environmentHostLifecycle: null,
     environmentProviderId: null,
     environmentIsWorktree: null,
     environmentHostId: args.environmentHostId,

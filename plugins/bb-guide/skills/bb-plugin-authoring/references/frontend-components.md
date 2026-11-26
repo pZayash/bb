@@ -173,8 +173,9 @@ experimental_expandUnchanged?, className? }` —
 - `experimental_InfoSection`, `experimental_DetailRow`, `experimental_InfoList`,
   `experimental_InfoListRow` — the thread Info tab's building blocks, the ones
   bb's own rows and sections use. `experimental_InfoSection` takes
-  `{ label, count?, accessory?, trailing?, children }` and collapses inside an
-  `experimental_threadInfoSection`. `experimental_DetailRow` takes
+  `{ label, count?, accessory?, trailing?, children }`; it collapses inside an
+  `experimental_threadInfoSection` and folds in the card's style inside an
+  `experimental_threadContextCardSection`. `experimental_DetailRow` takes
   `{ label, icon?, align?, children }`, where `icon` is any name
   `experimental_Icon` accepts. `experimental_InfoList` takes
   `{ items, getKey, renderItem, limit? }`. `experimental_InfoListRow` takes
@@ -300,7 +301,10 @@ className?, draftKey? }` — the `default*` props are SEEDS, not controlled
   render; changing any of them after mount re-seeds every selection
   (including ones the user touched), so switching between two saved records
   in one mounted composer reloads that record's values. `initialPrompt`
-  seeds the draft only while it is still empty; `layout` is `"contained"`
+  seeds the draft only while it is still empty, as a string or as
+  `ComposerInsertPart[]` (the same parts `useComposer().insert()` takes, so
+  path, attachment, and your own mentions arrive as pills; parts `insert()`
+  would reject leave the draft empty and log a warning); `layout` is `"contained"`
   (default) or `"document"` like `ThreadChat`; `focusRequest` is a
   change-detected nonce that focuses the editor; `draftKey` picks where the
   draft persists (default: a key scoped to your plugin). The project selector
@@ -362,7 +366,9 @@ className?, draftKey? }` — the `default*` props are SEEDS, not controlled
   `{ projectId, providerId, model, reasoningLevel, permissionMode,
 serviceTier?, sessionOptions?, executionInputSources, environment, input }`
   (`sessionOptions` only when the user changed an agent option the provider
-  declares). Hand it to
+  declares), plus `sendAt` for a scheduled send and `pluginSubmission` when a
+  plugin row such as Drafts' "Save draft" submitted with `experimental_data`;
+  keep both, or those rows turn into ordinary sends. Hand it to
   `useSdk().threads.spawn` from the frontend (or forward it verbatim to your
   backend rpc and `bb.sdk.threads.spawn` when the create needs server-side
   work), adding `sectionId` / `parentThreadId` / `title` / `visibility`

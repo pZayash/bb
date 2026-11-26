@@ -173,7 +173,6 @@ function buildPromptAreaElement({
         providerCommands={null}
         sessionOptions={sessionOptions}
         modelFallback={modelFallback}
-        parentThreadSection={null}
         pendingInteractions={pendingInteractions}
         queuedMessageCount={queuedMessageCount}
         pendingTodos={null}
@@ -1245,6 +1244,55 @@ describe("ThreadDetailPromptArea", () => {
     ).toBe("First plugin update + second plugin update");
   });
 
+  it("scopes thread and queued-message composers to the thread's project and current environment", () => {
+    mocks.queuedMessages = [makeQueuedMessage({ id: "qmsg_1" })];
+    const thread = makeThread({ projectId: "proj_vault", environmentId: null });
+    const mounted = renderPromptArea({ thread });
+    const captureBottomHost = () => {
+      fireEvent.click(
+        within(mounted.container).getByRole("button", {
+          name: "Capture plugin host",
+        }),
+      );
+      return mocks.pluginComposerHost;
+    };
+    expect(captureBottomHost()?.scope).toEqual({
+      kind: "thread",
+      threadId: thread.id,
+      projectId: "proj_vault",
+      environmentId: null,
+    });
+
+    mounted.rerender(
+      buildPromptAreaElement({
+        thread: { ...thread, environmentId: "env_vault" },
+      }),
+    );
+    expect(captureBottomHost()?.scope).toEqual({
+      kind: "thread",
+      threadId: thread.id,
+      projectId: "proj_vault",
+      environmentId: "env_vault",
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit queued message 1" }),
+    );
+    fireEvent.click(
+      within(screen.getByTestId("inline-queued-message-editor")).getByRole(
+        "button",
+        { name: "Capture plugin host" },
+      ),
+    );
+    expect(mocks.pluginComposerHost?.scope).toEqual({
+      kind: "queued-message",
+      threadId: thread.id,
+      queuedMessageId: "qmsg_1",
+      projectId: "proj_vault",
+      environmentId: "env_vault",
+    });
+  });
+
   it("renders text effects only for the active queued edit session", () => {
     mocks.queuedMessages = [
       makeQueuedMessage({ id: "qmsg_1" }),
@@ -2131,6 +2179,33 @@ describe("ThreadDetailPromptArea", () => {
       ),
     );
     expect(mocks.sendMessageMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("creates the handoff of a child thread next to its source", async () => {
+    mocks.promptDraft.text = "Keep going";
+    mocks.createThreadMutateAsync.mockResolvedValue({
+      id: "thr_new",
+      projectId: "proj_1",
+    });
+    renderPromptArea({
+      thread: makeThread({
+        parentThreadId: "thr_coordinator",
+        parentNotifications: "stuck",
+        sectionId: "sec_work",
+      }),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Start handoff" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit composer" }));
+
+    await waitFor(() =>
+      expect(mocks.createThreadMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          parentThreadId: "thr_coordinator",
+          parentNotifications: "stuck",
+          sectionId: "sec_work",
+        }),
+      ),
+    );
   });
 
   it("marks a supported handoff service tier explicit", async () => {

@@ -53,6 +53,9 @@ function thread(
     originKind: null,
     originPluginId: null,
     providerId: "codex",
+    // bb-fork(thread-row-metadata): the fork's sidebar thread carries both.
+    model: null,
+    reasoningLevel: null,
     status: "idle",
     runtimeStatus: "idle",
     queuedWork: "none",
@@ -90,6 +93,7 @@ function thread(
     updatedAt: options.createdAt ?? 0,
     lastReadAt: null,
     latestAttentionAt: 0,
+    experimental_statusChangedAt: 0,
   };
 }
 

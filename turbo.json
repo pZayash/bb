@@ -629,6 +629,15 @@
     "typecheck": {
       "dependsOn": ["topo"]
     },
+    "@bb/db#typecheck": {
+      "dependsOn": ["topo"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/plugins/account-pool/src/**",
+        "$TURBO_ROOT$/plugins/automations/src/**",
+        "$TURBO_ROOT$/plugins/workflows/src/**"
+      ]
+    },
     "@bb/app#typecheck": {
       "dependsOn": ["topo"],
       "inputs": [
@@ -1220,6 +1229,7 @@
       "dependsOn": [
         "//#ensure-native-modules",
         "@get-bb/plugin-sdk#build",
+        "@get-bb/plugin-sdk#build:types",
         "topo"
       ],
       "inputs": [
@@ -1397,6 +1407,17 @@
     "bb-plugin-connect#typecheck": {
       "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
     },
+    "bb-plugin-bb--tailscale#typecheck": {
+      "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
+    },
+    "bb-plugin-bb--tailscale#test": {
+      "env": ["VITEST_MAX_WORKERS"],
+      "dependsOn": [
+        "//#ensure-native-modules",
+        "@get-bb/plugin-sdk#build",
+        "topo"
+      ]
+    },
     "bb-plugin-bb-account#typecheck": {
       "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
     },
@@ -1411,6 +1432,7 @@
       "dependsOn": [
         "//#ensure-native-modules",
         "@get-bb/plugin-sdk#build",
+        "@get-bb/plugin-sdk#build:types",
         "topo"
       ]
     },
@@ -1526,6 +1548,21 @@
         "@get-bb/plugin-sdk#build",
         "topo"
       ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/plugin-registry/flavors/**"
+      ]
+    },
+    "bb-plugin-bb--server-switcher#typecheck": {
+      "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/plugin-registry/flavors/**"
+      ]
+    },
+    "bb-plugin-bb--server-switcher#test": {
+      "env": ["VITEST_MAX_WORKERS"],
+      "dependsOn": ["@get-bb/plugin-sdk#build", "topo"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/packages/plugin-registry/flavors/**"

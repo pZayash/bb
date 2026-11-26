@@ -574,6 +574,7 @@ export const threadSearchResultSchema = z
 export const threadSearchResultGroupSchema = z
   .object({
     total: z.number().int().nonnegative(),
+    totalCapped: z.boolean(),
     results: z.array(threadSearchResultSchema),
   })
   .strict();
@@ -1413,6 +1414,7 @@ export type ThreadConversationOutlineAttachmentSummary = z.infer<
 export const threadConversationOutlineItemSchema = z
   .object({
     id: z.string().min(1),
+    messageSeq: z.number().int(),
     role: z.enum(["user", "assistant"]),
     preview: z.string(),
     attachmentSummary:

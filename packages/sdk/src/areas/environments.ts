@@ -7,18 +7,22 @@ import { createRetiredEnvironmentMembers } from "./retired-environment-members.j
 import {
   environmentSchema,
   type Environment,
+  type EnvironmentHolder,
   type EnvironmentStatus,
+  type JsonValue,
 } from "@bb/domain";
 import {
   commitActionResponseSchema,
+  environmentReposResponseSchema,
   updateEnvironmentRequestSchema,
   type CommitActionResponse,
   // bb-fork(thread-start-ref): recent commits for the start-commit picker.
   type EnvironmentCommitsResponse,
   type EnvironmentArchiveThreadsResponse,
   type EnvironmentPathsQuery,
+  type EnvironmentReposResponse,
   type UpdateEnvironmentRequest,
-  type WorkspacePathListResponse,
+  type WorkspaceSearchPathListResponse,
   type SystemEnvironmentProvider,
 } from "@bb/server-contract";
 import { signalRequestArgs, type CreateSdkAreaArgs } from "./common.js";
@@ -79,16 +83,28 @@ export interface EnvironmentPathsArgs extends EnvironmentPathsQuery {
   signal?: AbortSignal;
 }
 
+export interface EnvironmentReposArgs {
+  environmentId: string;
+  signal?: AbortSignal;
+}
+
 export type EnvironmentArchiveThreadsResult = EnvironmentArchiveThreadsResponse;
 export type EnvironmentCommitResult = CommitActionResponse;
 export type EnvironmentGetResult = Environment;
-export type EnvironmentPathsResult = WorkspacePathListResponse;
+export type EnvironmentPathsResult = WorkspaceSearchPathListResponse;
 export type EnvironmentUpdateResult = Environment;
 export interface EnvironmentListArgs {
   environmentProviderId?: string;
+  /** Only environments with this holder: `"user"` or `"plugin:<pluginId>"`. */
+  heldBy?: EnvironmentHolder;
   hostId?: string;
   instanceKey?: string;
-  limit?: number;
+  /**
+   * Page size. A caller that needs every row pages with `offset` until a
+   * page comes back shorter than its `limit`.
+   */
+  limit: number;
+  /** Rows to skip, in the list's own order; defaults to 0. */
   offset?: number;
   path?: string;
   projectId?: string;
@@ -96,6 +112,24 @@ export interface EnvironmentListArgs {
   status?: EnvironmentStatus;
 }
 export type EnvironmentListResult = Environment[];
+interface EnvironmentCreateBaseArgs {
+  projectId: string;
+  /** Defaults to the project's default checkout machine. */
+  hostId?: string;
+  /** Defaults to the Worktree provider (Personal workspace for the personal project). */
+  provider?: { id: string; inputs?: JsonValue };
+  name?: string;
+}
+/**
+ * `hold: "user"` keeps the environment until the user deletes it and lets
+ * threads join it. `hold: "plugin"` keeps it for plugin `pluginId`: threads
+ * cannot join it, and it loses the hold when that plugin's provider hands it
+ * to a new thread from `create`, or when that plugin is disabled or
+ * uninstalled.
+ */
+export type EnvironmentCreateArgs = EnvironmentCreateBaseArgs &
+  ({ hold: "user" } | { hold: "plugin"; pluginId: string });
+export type EnvironmentCreateResult = Environment;
 export interface EnvironmentDeleteArgs {
   environmentId: string;
 }
@@ -108,6 +142,10 @@ export interface EnvironmentListProvidersArgs {
 export type EnvironmentListProvidersResult = SystemEnvironmentProvider[];
 
 export interface EnvironmentsArea {
+  /** Create an environment before any thread exists; setup runs as for a thread. Experimental: see docs/api_to_audit.md. */
+  experimental_create(
+    args: EnvironmentCreateArgs,
+  ): Promise<EnvironmentCreateResult>;
   experimental_cleanup(
     args: EnvironmentActionArgs & { recover?: boolean },
   ): Promise<OperationResponse>;
@@ -118,12 +156,16 @@ export interface EnvironmentsArea {
   // bb-fork(thread-start-ref): recent commits for the start-commit picker.
   commits(args: EnvironmentCommitsArgs): Promise<EnvironmentCommitsResult>;
   get(args: EnvironmentGetArgs): Promise<EnvironmentGetResult>;
-  list(args?: EnvironmentListArgs): Promise<EnvironmentListResult>;
+  list(args: EnvironmentListArgs): Promise<EnvironmentListResult>;
   listProviders(
     args?: EnvironmentListProvidersArgs,
   ): Promise<EnvironmentListProvidersResult>;
   delete(args: EnvironmentDeleteArgs): Promise<EnvironmentDeleteResult>;
   paths(args: EnvironmentPathsArgs): Promise<EnvironmentPathsResult>;
+  /** Git repositories of a ready environment: its main folder, extra folders, and repos found inside them. Experimental: see docs/api_to_audit.md. */
+  experimental_repos(
+    args: EnvironmentReposArgs,
+  ): Promise<EnvironmentReposResponse>;
   update(args: EnvironmentUpdateArgs): Promise<EnvironmentUpdateResult>;
 }
 
@@ -158,6 +200,7 @@ function environmentPathsQuery(
     includeFiles: args.includeFiles,
     limit: args.limit,
     query: args.query,
+    ...(args.folders === undefined ? {} : { folders: args.folders }),
   };
 }
 
@@ -196,6 +239,7 @@ export function createEnvironmentsArea(
               ...(input?.environmentProviderId === undefined
                 ? {}
                 : { environmentProviderId: input.environmentProviderId }),
+              ...(input?.heldBy === undefined ? {} : { heldBy: input.heldBy }),
               ...(input?.instanceKey === undefined
                 ? {}
                 : { instanceKey: input.instanceKey }),
@@ -229,6 +273,22 @@ export function createEnvironmentsArea(
       );
       return response.providers;
     },
+    async experimental_create(input) {
+      const body = await transport.readJson(
+        transport.api.v1.environments.$post({
+          json: {
+            projectId: input.projectId,
+            ...(input.hostId === undefined ? {} : { hostId: input.hostId }),
+            ...(input.provider === undefined
+              ? {}
+              : { provider: input.provider }),
+            ...(input.name === undefined ? {} : { name: input.name }),
+            heldBy: input.hold === "user" ? "user" : `plugin:${input.pluginId}`,
+          },
+        }),
+      );
+      return environmentSchema.parse(body);
+    },
     async experimental_cleanup(input) {
       return transport.readJson(
         transport.api.v1.environments[":id"]["cleanup"].$post({
@@ -255,6 +315,15 @@ export function createEnvironmentsArea(
         ),
       );
       return environmentSchema.parse(body);
+    },
+    async experimental_repos(input) {
+      const body = await transport.readJson(
+        transport.api.v1.environments[":id"].repos.$get(
+          { param: { id: input.environmentId } },
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+      return environmentReposResponseSchema.parse(body);
     },
     async paths(input) {
       return transport.readJson(

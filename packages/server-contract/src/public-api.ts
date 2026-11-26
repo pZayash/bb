@@ -65,6 +65,7 @@ import {
   type PendingInteraction,
   type ProjectExecutionDefaults,
   type ProjectSource,
+  type ProjectSourceFolder,
   type ResolvedThreadExecutionOptions,
   type ThreadEventRow,
   type ThreadQueuedMessage,
@@ -108,6 +109,8 @@ import {
   type CreateTerminalRequest,
   type CreateProjectRequest,
   type CreateProjectSourceRequest,
+  type CreateProjectSourceFolderRequest,
+  type UpdateProjectSourceFolderRequest,
   type CreateQueuedMessageRequest,
   type CreateThreadSectionRequest,
   type CreateThreadRequest,
@@ -122,6 +125,7 @@ import {
   type EnvironmentActionResponse,
   type EnvironmentArchiveThreadsResponse,
   type EnvironmentPathsQuery,
+  type EnvironmentReposResponse,
   type HostDirectoryListing,
   type HostDirectoryQuery,
   type HostDiscoveredReposResponse,
@@ -240,6 +244,8 @@ import {
   type TerminalOutputResponse,
   type TerminalResizeRequest,
   type ThreadArchiveAllResponse,
+  type ThreadImportForm,
+  type ThreadImportResponse,
   type ThreadChildSummaryResponse,
   type ThreadEventWaitQuery,
   type ThreadEventsQuery,
@@ -288,6 +294,7 @@ import {
   type TimelineTurnSummaryDetailsQuery,
   type TimelineTurnSummaryDetailsResponse,
   type ListEnvironmentsQuery,
+  type CreateEnvironmentRequest,
   type UpdateEnvironmentRequest,
   type UpdateThreadSectionRequest,
   type UpdateTerminalRequest,
@@ -300,7 +307,7 @@ import {
   type UpdateQueuedMessageRequest,
   type UploadedPromptAttachment,
   type WorkspaceFileListResponse,
-  type WorkspacePathListResponse,
+  type WorkspaceSearchPathListResponse,
   closeTerminalRequestSchema,
   copyProjectAttachmentsRequestSchema,
   createFilePreviewRequestSchema,
@@ -313,6 +320,8 @@ import {
   createHostJoinCodeRequestSchema,
   createMachineRequestSchema,
   createProjectSourceRequestSchema,
+  createProjectSourceFolderRequestSchema,
+  updateProjectSourceFolderRequestSchema,
   createQueuedMessageRequestSchema,
   queuedMessageListQuerySchema,
   updateQueuedMessageRequestSchema,
@@ -399,6 +408,7 @@ import {
   threadConversationOutlineQuerySchema,
   timelineTurnSummaryDetailsQuerySchema,
   listEnvironmentsQuerySchema,
+  createEnvironmentRequestSchema,
   updateEnvironmentRequestSchema,
   updateHostRequestSchema,
   updateHostPermissionCeilingRequestSchema,
@@ -438,6 +448,9 @@ import {
 import type { ApiError } from "./errors.js";
 
 type PathProjectSourceId = { param: { id: string; sourceId: string } };
+type PathProjectSourceFolderId = {
+  param: { id: string; sourceId: string; folderId: string };
+};
 type PathThreadMessage = { param: { id: string; seq: string } };
 type PathThreadInteractionId = {
   param: { id: string; interactionId: string };
@@ -576,6 +589,36 @@ export const publicApiRoutes = {
       request: noRequest<PathProjectSourceId>(),
       response: jsonResponse<OperationResponse>(),
     }),
+    listSourceFolders: defineRoute({
+      path: "/projects/:id/sources/:sourceId/folders",
+      method: "get",
+      request: noRequest<PathProjectSourceId>(),
+      response: jsonResponse<ProjectSourceFolder[]>(),
+    }),
+    addSourceFolder: defineRoute({
+      path: "/projects/:id/sources/:sourceId/folders",
+      method: "post",
+      request: jsonRequest<
+        PathProjectSourceId,
+        CreateProjectSourceFolderRequest
+      >(createProjectSourceFolderRequestSchema),
+      response: jsonResponse<ProjectSourceFolder>({ status: 201 }),
+    }),
+    updateSourceFolder: defineRoute({
+      path: "/projects/:id/sources/:sourceId/folders/:folderId",
+      method: "patch",
+      request: jsonRequest<
+        PathProjectSourceFolderId,
+        UpdateProjectSourceFolderRequest
+      >(updateProjectSourceFolderRequestSchema),
+      response: jsonResponse<ProjectSourceFolder>(),
+    }),
+    removeSourceFolder: defineRoute({
+      path: "/projects/:id/sources/:sourceId/folders/:folderId",
+      method: "delete",
+      request: noRequest<PathProjectSourceFolderId>(),
+      response: jsonResponse<OperationResponse>(),
+    }),
     files: defineRoute({
       path: "/projects/:id/files",
       method: "get",
@@ -602,7 +645,7 @@ export const publicApiRoutes = {
       request: queryRequest<PathProjectId, ProjectPathsQuery>(
         projectPathsQuerySchema,
       ),
-      response: jsonResponse<WorkspacePathListResponse>(),
+      response: jsonResponse<WorkspaceSearchPathListResponse>(),
     }),
     commands: defineRoute({
       path: "/projects/:id/commands",
@@ -1227,6 +1270,18 @@ export const publicApiRoutes = {
       ),
       response: jsonResponse<Environment[]>(),
     }),
+    create: defineRoute({
+      path: "/environments",
+      method: "post",
+      request: jsonRequest<EmptyInput, CreateEnvironmentRequest>(
+        createEnvironmentRequestSchema,
+      ),
+      response: [
+        jsonResponse<Environment>({ status: 201 }),
+        jsonResponse<ApiError>({ status: 404 }),
+        jsonResponse<ApiError>({ status: 409 }),
+      ],
+    }),
     delete: defineRoute({
       path: "/environments/:id",
       method: "delete",
@@ -1261,13 +1316,19 @@ export const publicApiRoutes = {
       request: noRequest<PathId>(),
       response: jsonResponse<EnvironmentCommitsResponse>(),
     }),
+    repos: defineRoute({
+      path: "/environments/:id/repos",
+      method: "get",
+      request: noRequest<PathId>(),
+      response: jsonResponse<EnvironmentReposResponse>(),
+    }),
     paths: defineRoute({
       path: "/environments/:id/paths",
       method: "get",
       request: queryRequest<PathId, EnvironmentPathsQuery>(
         environmentPathsQuerySchema,
       ),
-      response: jsonResponse<WorkspacePathListResponse>(),
+      response: jsonResponse<WorkspaceSearchPathListResponse>(),
     }),
     file: defineRoute({
       path: "/environments/:id/files/:filePath{.+}",
@@ -1772,6 +1833,31 @@ export const publicApiRoutes = {
       method: "post",
       request: noRequest<PathId>(),
       response: jsonResponse<OperationResponse>(),
+    }),
+    /**
+     * Download the thread as a self-contained thread file: zstd-compressed JSONL
+     * with a header line naming the thread, then the thread's rows, every event
+     * in sequence order, and its attachments. A deleted thread can still be
+     * exported until its purge starts; 409 after that.
+     */
+    exportThread: defineRoute({
+      path: "/threads/:id/export",
+      method: "get",
+      request: noRequest<PathId>(),
+      response: binaryResponse<Uint8Array>(),
+    }),
+    /**
+     * Import a thread file, recreating a deleted thread in its project. A
+     * recreated archived thread counts as archived now. 404 when the project
+     * is not on this server; 400 when the file is not a thread file or uses an
+     * unknown format version; 409 when the thread still exists, is still being
+     * deleted, or another import or export of it is running.
+     */
+    importThread: defineRoute({
+      path: "/threads/import",
+      method: "post",
+      request: formRequest<EmptyInput, ThreadImportForm>(),
+      response: jsonResponse<ThreadImportResponse>(),
     }),
     /**
      * Ask the environment provider to restore a thread's destroyed environment

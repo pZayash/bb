@@ -225,6 +225,7 @@ export function renderThreadRow({
   rerenderThreadRow(nextThread: PluginSidebarThread): void;
 } {
   getDefaultStore().set(sidebarShowProviderIconsAtom, showProviderIcons);
+  renderedRowThreads.set(thread.id, thread);
   const slot = renderSlot(
     { component: ThreadRowHarness },
     { thread, projects, providers, ...harness },
@@ -256,6 +257,7 @@ export function renderThreadRow({
   );
   return Object.assign(slot, {
     rerenderThreadRow(nextThread: PluginSidebarThread) {
+      renderedRowThreads.set(nextThread.id, nextThread);
       slot.lifecycle.rerender(
         <ThreadRowHarness
           thread={nextThread}
@@ -332,6 +334,12 @@ export function deferred() {
   return { promise, resolve, reject };
 }
 
+const renderedRowThreads = new Map<string, PluginSidebarThread>();
+
+export function resetRenderedRowThreadsForTest(): void {
+  renderedRowThreads.clear();
+}
+
 export interface RanThreadAction {
   key: string;
   threadId: string;
@@ -344,7 +352,9 @@ export function hostThreadActions({
   ran?: RanThreadAction[];
   archiveRun?: () => Promise<void>;
 } = {}): TestThreadActionsResolver {
-  return (thread, { requestRename }) => {
+  return ({ id }, { requestRename }) => {
+    const thread = renderedRowThreads.get(id);
+    if (thread === undefined) return [];
     const entry = (
       key: string,
       label: string,

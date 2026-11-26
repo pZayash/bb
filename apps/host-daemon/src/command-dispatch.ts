@@ -60,6 +60,7 @@ import {
 import { listHostTerminalShells } from "./command-handlers/terminal-shells.js";
 import { writeHostFile } from "./command-handlers/file-write.js";
 import { discoverRepos } from "./command-handlers/discover-repos.js";
+import { findGitRepos } from "./command-handlers/find-git-repos.js";
 import {
   mkdirHostPath,
   moveHostPath,
@@ -591,7 +592,14 @@ const commandHandlers: CommandHandlerMap = {
         options.emitEnvironmentHookProgress?.({
           type: "environment.hook.progress",
           operationId: command.operationId,
-          entry: { type: "output", text, status: null },
+          entry: {
+            type: "output",
+            key: "clone-output",
+            text,
+            status: null,
+            startedAt: null,
+            metadata: null,
+          },
         }),
       ...userExecutableProcessOptions(options.runtimeManager.getShellEnv()),
       ...(command.targetPath !== undefined
@@ -655,6 +663,7 @@ const onlineRpcHandlers: OnlineRpcHandlerMap = {
   "host.paths_exist": checkHostPathsExist,
   // bb-fork(windows): shell enumeration for the Start terminal picker.
   "host.list_terminal_shells": listHostTerminalShells,
+  "host.find_git_repos": findGitRepos,
   "project.inspect": async (command, options) =>
     inspectProjectPath(
       command.path,

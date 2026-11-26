@@ -679,6 +679,8 @@ export const pluginMarketplaceSchema = z.object({
   displayName: z.string(),
   description: z.string().nullable(),
   official: z.boolean(),
+  enabled: z.boolean(),
+  canDisable: z.boolean(),
   sourceKind: pluginMarketplaceSourceKindSchema,
   source: z.string(),
   subdirectory: z.string().nullable().default(null),
@@ -710,6 +712,12 @@ export const pluginMarketplaceRemoveResponseSchema = z.object({
   ok: z.literal(true),
   convertedPluginIds: z.array(z.string()),
 });
+
+export const pluginMarketplaceSetEnabledRequestSchema = z
+  .object({
+    enabled: z.boolean(),
+  })
+  .strict();
 
 export const pluginMarketplaceRefreshRequestSchema = z
   .object({
