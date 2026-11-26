@@ -97,6 +97,8 @@ const ARGUMENTS_BY_COMMAND: Record<string, readonly string[]> = {
   "environment update": [IDS.environment, "--name", "x"],
   "plugin install": ["path:/tmp/x", "--yes"],
   "terminal close": [IDS.terminal, "--if-clean"],
+  // bb-fork(windows): the shell picker needs a machine to list shells for.
+  "terminal shells": ["--machine", IDS.host],
   "file write": ["/tmp/x", "--host", IDS.host, "--content", "x"],
   "project create": ["--name", "x", "--root", "/tmp/x", "--host", IDS.host],
   "project discover": ["--host", IDS.host],

@@ -11,14 +11,26 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, it } from "vitest";
 import { createConnection, migrate, type DbConnection } from "../src/index.js";
 import {
+  dropEnvironmentHoldColumns,
   dropEnvironmentStartRefColumn,
+  dropForkHistoryCopyIndex,
   dropIdleLifecycleIndexes,
   dropMarketplaceSourceGitSubdirectoryColumn,
   dropPluginEnabledFollowsDefaultColumn,
+  dropPluginFailureLabelColumns,
+  dropPluginMarketplaceEnabledColumn,
+  dropProjectFolderSchema,
   dropQueuedMessageEditHeldUntilColumn,
+  dropQueuedMessageRecheckAtColumn,
+  dropQueuedMessageSourcesAndCompactFirstColumns,
+  dropServerAccessRouteTables,
   dropThreadParentNotificationsColumn,
+  dropThreadRunStateTables,
+  dropThreadSearchOrderIndex,
   dropThreadStatusChangedAtColumn,
+  rewindMachineTeardownRecoveryColumns,
   rewindThreadPruningWork,
+  rewindThreadPurgeStartedColumn,
 } from "./helpers/rewind.js";
 
 const LEGACY_MUTED_AT_MIGRATION_WHEN = 1790254777753;
@@ -199,6 +211,18 @@ it("reconciles the pre-merge 0131 muted-at migration with upstream's renumbered 
     dropEnvironmentStartRefColumn(db);
     dropThreadParentNotificationsColumn(db);
     dropThreadStatusChangedAtColumn(db);
+    dropPluginFailureLabelColumns(db);
+    dropThreadRunStateTables(db);
+    rewindMachineTeardownRecoveryColumns(db);
+    dropPluginMarketplaceEnabledColumn(db);
+    dropEnvironmentHoldColumns(db);
+    dropQueuedMessageRecheckAtColumn(db);
+    dropForkHistoryCopyIndex(db);
+    dropThreadSearchOrderIndex(db);
+    dropProjectFolderSchema(db);
+    dropServerAccessRouteTables(db);
+    rewindThreadPurgeStartedColumn(db);
+    dropQueuedMessageSourcesAndCompactFirstColumns(db);
     dropMarketplaceSourceGitSubdirectoryColumn(db);
     rewindThreadPruningWork(db);
     db.$client
@@ -482,8 +506,10 @@ async function setupSyntheticWatermarkCopy(tmp: string): Promise<{
     recursive: true,
   });
   const syntheticTag = "0156_synthetic_upstream_watermark";
-  const syntheticWhen =
-    LEGACY_PUBLISHED_CONSOLIDATED_MIGRATION_WHEN - 100_000_000;
+  // bb-fork(parent-mute): the synthetic entry must sit above every upstream
+  // migration's `when` and just below the applied consolidated row, so the
+  // consolidated row is the only watermark that can crowd it out.
+  const syntheticWhen = consolidatedMigrationWhen() - 1_000;
   const migrationsFolder = join(tmp, "drizzle");
   const journalPath = join(migrationsFolder, "meta", "_journal.json");
   const journal = JSON.parse(readFileSync(journalPath, "utf-8")) as {
@@ -522,17 +548,6 @@ async function setupSyntheticWatermarkCopy(tmp: string): Promise<{
   };
 }
 
-function applyPublishedConsolidatedRow(db: DbConnection): void {
-  db.$client
-    .prepare<[number, number]>(
-      "UPDATE __drizzle_migrations SET created_at = ? WHERE created_at = ?",
-    )
-    .run(
-      LEGACY_PUBLISHED_CONSOLIDATED_MIGRATION_WHEN,
-      consolidatedMigrationWhen(),
-    );
-}
-
 // bb-fork(parent-mute): a synthetic upstream migration journaled below the
 // applied fork watermark must be replayed through the exclusion + staging
 // path, preserving the staged column data.
@@ -548,7 +563,6 @@ it("replays a synthetic upstream migration crowded out by the applied fork water
       mutedAt: 313131,
       startRef: "refs/heads/watermark",
     });
-    applyPublishedConsolidatedRow(db);
 
     expect(() => migrateAgainstTempFolder(db)).not.toThrow();
 
@@ -599,7 +613,6 @@ it("heals when a crash lands between the watermark exclusion and the drizzle rep
       mutedAt: 777777,
       startRef: "refs/heads/watermark-crash",
     });
-    applyPublishedConsolidatedRow(db);
 
     expect(
       excludeConsolidatedMigrationRowsFromWatermark(db, migrationsFolder),
@@ -608,9 +621,7 @@ it("heals when a crash lands between the watermark exclusion and the drizzle rep
       "parent_notifications_muted_at",
     );
     expect(tableColumns(db, "environments")).toContain("start_ref");
-    expect(appliedCreatedAts(db)).not.toContain(
-      LEGACY_PUBLISHED_CONSOLIDATED_MIGRATION_WHEN,
-    );
+    expect(appliedCreatedAts(db)).not.toContain(consolidatedMigrationWhen());
 
     expect(() => migrateAgainstTempFolder(db)).not.toThrow();
 

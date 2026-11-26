@@ -87,6 +87,7 @@ describe("server-contract fork schema deltas", () => {
           deletedAt: null,
           lastReadAt: null,
           latestAttentionAt: 2,
+          statusChangedAt: 2,
           createdAt: 1,
           updatedAt: 2,
           runtime: {
@@ -103,6 +104,8 @@ describe("server-contract fork schema deltas", () => {
           environmentName: null,
           environmentBranchName: "bb/test",
           environmentPath: null,
+          environmentStatus: "provisioning",
+          environmentHostLifecycle: "active",
           environmentProviderId: "git-worktree",
           environmentIsWorktree: true,
           environmentWorkspaceDisplayKind: "managed-worktree",

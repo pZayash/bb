@@ -4646,9 +4646,10 @@ describe("public thread data routes", () => {
             ok: true,
             result: {
               path: command.path,
-              content: Buffer.from(pngBytes)
-                .subarray(command.offset, command.offset + command.length)
-                .toString("base64"),
+              content: pngBytes.subarray(
+                command.offset,
+                command.offset + command.length,
+              ),
               offset: command.offset,
               mimeType: "image/png",
               modifiedAtMs: 1234,
@@ -4681,18 +4682,19 @@ describe("public thread data routes", () => {
         handle: (request) => {
           if (request.command.type !== "host.read_file_chunk")
             throw new Error("Unexpected command");
-          expect(request.command.length).toBeLessThanOrEqual(2);
+          // bb-fork(windows): the route reads a full chunk and slices the range.
+          expect(request.command.length).toBeLessThanOrEqual(64 * 1024);
           expect(request.command.rootPath).toContain(thread.id);
           return {
             ok: true,
             result: {
               path: "/tmp/clip.mp4",
-              content: bytes
-                .subarray(
+              content: new Uint8Array(
+                bytes.subarray(
                   request.command.offset,
                   request.command.offset + request.command.length,
-                )
-                .toString("base64"),
+                ),
+              ),
               offset: request.command.offset,
               modifiedAtMs: 1234,
               mimeType: "video/mp4",
@@ -4775,9 +4777,9 @@ describe("public thread data routes", () => {
             ok: true,
             result: {
               path: command.path,
-              content: Buffer.from(html)
-                .subarray(command.offset, command.offset + command.length)
-                .toString("base64"),
+              content: new TextEncoder()
+                .encode(html)
+                .subarray(command.offset, command.offset + command.length),
               offset: command.offset,
               mimeType: "text/html",
               modifiedAtMs: 1234,
@@ -4847,9 +4849,10 @@ describe("public thread data routes", () => {
             ok: true,
             result: {
               path: command.path,
-              content: Buffer.from(fileBytes)
-                .subarray(command.offset, command.offset + command.length)
-                .toString("base64"),
+              content: fileBytes.subarray(
+                command.offset,
+                command.offset + command.length,
+              ),
               offset: command.offset,
               mimeType: "text/markdown",
               modifiedAtMs: 1234,
