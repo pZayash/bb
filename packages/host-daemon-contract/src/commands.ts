@@ -396,6 +396,13 @@ const threadPlanCancelCommandSchema = hostDaemonThreadTargetSchema
   })
   .strict();
 
+const threadBackgroundTaskStopCommandSchema = hostDaemonThreadTargetSchema
+  .extend({
+    type: z.literal("thread.background_task.stop"),
+    itemId: z.string().min(1),
+  })
+  .strict();
+
 const threadRenameCommandSchema = hostDaemonThreadTargetSchema
   .extend({
     type: z.literal("thread.rename"),
@@ -1620,6 +1627,15 @@ export const hostDaemonCommandRegistry = {
     type: "thread.plan.cancel",
     schema: threadPlanCancelCommandSchema,
     resultSchema: z.object({ cancelled: z.boolean() }).strict(),
+    transport: "settled",
+    retryable: false,
+    flushEventsBeforeResult: true,
+    envLane: null,
+  }),
+  "thread.background_task.stop": defineHostDaemonCommandDescriptor({
+    type: "thread.background_task.stop",
+    schema: threadBackgroundTaskStopCommandSchema,
+    resultSchema: z.object({ stopped: z.boolean() }).strict(),
     transport: "settled",
     retryable: false,
     flushEventsBeforeResult: true,

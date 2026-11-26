@@ -29,6 +29,7 @@ import {
   dropThreadSearchOrderIndex,
   dropThreadStatusChangedAtColumn,
   rewindMachineTeardownRecoveryColumns,
+  rewindThreadFailureKindColumn,
   rewindThreadPruningWork,
   rewindThreadPurgeStartedColumn,
 } from "./helpers/rewind.js";
@@ -224,6 +225,7 @@ it("reconciles the pre-merge 0131 muted-at migration with upstream's renumbered 
     rewindThreadPurgeStartedColumn(db);
     dropQueuedMessageSourcesAndCompactFirstColumns(db);
     dropMarketplaceSourceGitSubdirectoryColumn(db);
+    rewindThreadFailureKindColumn(db);
     rewindThreadPruningWork(db);
     db.$client
       .prepare<[number]>(

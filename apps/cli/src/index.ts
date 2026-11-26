@@ -217,11 +217,24 @@ async function main(): Promise<void> {
     return;
   }
 
-  const [contextEnv, ...registrars] = await Promise.all([
-    import("./context-env.js"),
-    ...groups.map((group) => group.load()),
-  ]);
+  const contextEnv = await import("./context-env.js");
   const deps = createCommandGroupDeps(contextEnv);
+
+  const candidate = pluginProxyCandidate(firstArg, KNOWN_COMMAND_NAMES);
+  if (candidate !== null) {
+    const { TOP_LEVEL_SOFT_ALIASES } = await import("./command-resolution.js");
+    const aliasTarget = TOP_LEVEL_SOFT_ALIASES[candidate];
+    // bb-fork(windows): return instead of process.exit so stdout flushes.
+    const handled = await tryPluginCommandProxy(
+      candidate,
+      deps.getUrl,
+      aliasTarget !== undefined,
+    );
+    if (handled) return;
+    if (aliasTarget !== undefined) process.argv[2] = aliasTarget;
+  }
+
+  const registrars = await Promise.all(groups.map((group) => group.load()));
 
   program.addHelpText("after", () => {
     const context = deps.getContext();
@@ -247,20 +260,6 @@ Quick start:
     register(program, deps);
   }
   await addJsonShapeHelp();
-
-  const candidate = pluginProxyCandidate(firstArg, KNOWN_COMMAND_NAMES);
-  if (candidate !== null) {
-    const { TOP_LEVEL_SOFT_ALIASES } = await import("./command-resolution.js");
-    const aliasTarget = TOP_LEVEL_SOFT_ALIASES[candidate];
-    // bb-fork(windows): return instead of process.exit so stdout flushes.
-    const handled = await tryPluginCommandProxy(
-      candidate,
-      deps.getUrl,
-      aliasTarget !== undefined,
-    );
-    if (handled) return;
-    if (aliasTarget !== undefined) process.argv[2] = aliasTarget;
-  }
   await rejectHelpForUnknownSubcommand(deps.getUrl);
   await parseProgram(deps.getUrl);
 }

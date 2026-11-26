@@ -480,6 +480,15 @@ export function useCompactThread() {
   });
 }
 
+export function useStopThreadBackgroundTask() {
+  return useMutation({
+    meta: { errorMessage: "Failed to stop background task." },
+    mutationFn: async (args: { threadId: string; itemId: string }) => {
+      await sdk.threads.experimental_backgroundTasks.stop(args);
+    },
+  });
+}
+
 export function cancelThreadPlanMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
     meta: { showErrorToast: false },

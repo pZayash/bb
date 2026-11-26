@@ -124,6 +124,8 @@ function createThreadListEntry(
 ): ThreadWithPendingInteractionState {
   return {
     ...args.thread,
+    // bb-fork(windows): upstream added the failure kind to the list-entry type.
+    failureKind: null,
     modelOverride: null,
     reasoningLevelOverride: null,
     storageDeletedAt: null,

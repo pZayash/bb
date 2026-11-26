@@ -2243,7 +2243,6 @@ describe("@bb/sdk", () => {
         threadId: "thr_wait",
         status: "idle",
         timeoutMs: 1_000,
-        pollIntervalMs: 1,
       }),
     ).resolves.toMatchObject({
       matched: true,
@@ -2251,9 +2250,11 @@ describe("@bb/sdk", () => {
       threadId: "thr_wait",
     });
 
-    expect(queue.requests.map((request) => request.url)).toEqual([
-      "http://bb.test/api/v1/threads/thr_wait",
-      "http://bb.test/api/v1/threads/thr_wait",
+    expect(
+      queue.requests.map((request) => new URL(request.url).pathname),
+    ).toEqual([
+      "/api/v1/threads/thr_wait",
+      "/api/v1/threads/thr_wait/status/wait",
     ]);
   });
 
@@ -2274,7 +2275,6 @@ describe("@bb/sdk", () => {
         threadId: "thr_wait",
         status: "idle",
         timeoutMs: 0,
-        pollIntervalMs: 1,
       }),
     ).rejects.toBeInstanceOf(ThreadWaitTimeoutError);
   });

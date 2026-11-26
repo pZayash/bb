@@ -4,15 +4,11 @@ import { useMemo, useRef, useState } from "react";
 import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
 import { Input } from "@bb/shared-ui/input";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@bb/shared-ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@bb/shared-ui/popover";
 import { LIST_HOVER_TRANSITION } from "@bb/shared-ui/motion";
 import { cn } from "@bb/shared-ui/lib/utils";
 import { useSystemExecutionOptions } from "@/hooks/queries/system-queries";
-import { searchPickerOptions } from "@bb/shared-ui/picker-search";
+import { searchPickerOptions } from "@bb/fuzzy-match";
 import { PickerLoadingRows } from "@/components/pickers/PickerLoadingRows";
 import { useResetPickerScroll } from "@bb/shared-ui/hooks/use-reset-picker-scroll";
 import { formatModelLabel } from "@/hooks/useThreadCreationOptions";
@@ -77,8 +73,7 @@ export function PluginModelSettingPicker({
 
   const selectedOption = options.find((option) => option.value === value);
   const valueLabel =
-    selectedOption?.label ??
-    (value.length > 0 ? value : "Thread's own model");
+    selectedOption?.label ?? (value.length > 0 ? value : "Thread's own model");
   const isLoading = catalog.isLoading || catalog.isPlaceholderData;
   const loadFailed = catalog.isError || catalog.data?.modelLoadError != null;
 
@@ -177,9 +172,7 @@ export function PluginModelSettingPicker({
                 )}
                 onClick={() => select(option.value)}
               >
-                <span className="min-w-0 flex-1 truncate">
-                  {option.label}
-                </span>
+                <span className="min-w-0 flex-1 truncate">{option.label}</span>
                 {option.qualifier ? (
                   <span className="shrink-0 text-[10px] text-muted-foreground">
                     {option.qualifier}

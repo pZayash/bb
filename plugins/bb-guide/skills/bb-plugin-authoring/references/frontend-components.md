@@ -217,6 +217,11 @@ experimental_expandUnchanged?, className? }` —
   `DiffChangeRailToggleProps`: `{ className? }`. It flips the shared preference
   for every change map in bb, including bb's own, and remembers the choice.
   Experimental: see `docs/api_to_audit.md`.
+- `experimental_searchPickerOptions({ options, query, getLabel, getAliases? })`
+  — bb's own picker search: fuzzy matches on each option's label and aliases,
+  best first, non-matches dropped, `options` unchanged for a blank query. Use
+  it so a plugin picker ranks like bb's. Experimental: see
+  `docs/api_to_audit.md`.
 
 - `experimental_ThreadContextCardRow` — the thread context card's row, the one
   bb's own rows use: `{ icon?, leading?, label, trailing?, title?, disabled?,

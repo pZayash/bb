@@ -878,7 +878,7 @@ export function PluginPanelRightPanelHost({
         <LazyThreadSecondaryPanel
           drawerFallback={drawerFallback}
           activeTab={activeTab}
-          metadataContent={null}
+          threadInfo={null}
           tabs={panelTabs}
           splitPanelStateId={panelStateId}
           onTabReorder={reorderTab}

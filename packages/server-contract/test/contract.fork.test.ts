@@ -72,6 +72,8 @@ describe("server-contract fork schema deltas", () => {
           titleFallback: "Pending thread",
           sectionId: null,
           status: "idle",
+          // bb-fork(windows): upstream added the thread failure kind.
+          failureKind: null,
           parentThreadId: null,
           // bb-fork(parent-mute): default = parent notifications on
           parentNotificationsMutedAt: null,
@@ -92,6 +94,8 @@ describe("server-contract fork schema deltas", () => {
           updatedAt: 2,
           runtime: {
             displayStatus: "idle",
+            // bb-fork(windows): upstream added the provisioning failure marker.
+            failure: null,
           },
           activity: {
             activeWorkflowCount: 0,

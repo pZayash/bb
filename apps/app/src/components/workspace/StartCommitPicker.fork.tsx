@@ -12,7 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@bb/shared-ui/popover";
 import { cn } from "@bb/shared-ui/lib/utils";
 import { useEnvironmentCommits } from "@/hooks/queries/environment-queries";
 import { PromptBannerActionButton } from "@bb/shared-ui/prompt-banner-actions";
-import { searchPickerOptions } from "@bb/shared-ui/picker-search";
+import { searchPickerOptions } from "@bb/fuzzy-match";
 
 interface StartCommitPickerProps {
   environmentId: string | null | undefined;

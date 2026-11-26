@@ -23,6 +23,7 @@ import {
   dropQueuedMessageRecheckAtColumn,
   dropProjectFolderSchema,
   dropThreadSearchOrderIndex,
+  rewindThreadFailureKindColumn,
   rewindThreadPurgeStartedColumn,
   dropQueuedMessageSourcesAndCompactFirstColumns,
   dropThreadRunStateTables,
@@ -84,6 +85,7 @@ function upgradeDatabase(overrides: AppKeybindingOverrides | undefined) {
   dropForkHistoryCopyIndex(db);
   dropEnvironmentHoldColumns(db);
   dropThreadSearchOrderIndex(db);
+  rewindThreadFailureKindColumn(db);
   rewindThreadPurgeStartedColumn(db);
   dropQueuedMessageSourcesAndCompactFirstColumns(db);
   db.$client

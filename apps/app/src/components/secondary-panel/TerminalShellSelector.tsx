@@ -1,10 +1,7 @@
 // bb-fork(windows): shell picker beside the Start terminal action.
 import { useMemo } from "react";
 import type { TerminalShellOption } from "@bb/domain";
-import {
-  OptionPicker,
-  type PickerOption,
-} from "@/components/pickers/OptionPicker";
+import { OptionPicker, type PickerOption } from "@bb/shared-ui/option-picker";
 
 const CONTROL_CLASS_NAME = "h-6 max-w-40 px-1.5 text-xs";
 

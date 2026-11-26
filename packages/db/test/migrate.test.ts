@@ -19,6 +19,7 @@ import {
   dropQueuedMessageRecheckAtColumn,
   dropProjectFolderSchema,
   dropThreadSearchOrderIndex,
+  rewindThreadFailureKindColumn,
   rewindThreadPurgeStartedColumn,
   dropQueuedMessageSourcesAndCompactFirstColumns,
   dropThreadRunStateTables,
@@ -788,6 +789,7 @@ function rewindEnvironmentProvisioningMigration(db: DbConnection): void {
   dropForkHistoryCopyIndex(db);
   dropEnvironmentHoldColumns(db);
   dropThreadSearchOrderIndex(db);
+  rewindThreadFailureKindColumn(db);
   rewindThreadPurgeStartedColumn(db);
   dropQueuedMessageSourcesAndCompactFirstColumns(db);
   db.$client.exec("DROP TRIGGER IF EXISTS threads_lifecycle_owner_insert");
@@ -851,6 +853,7 @@ function dropQueuedMessageAttemptColumns(db: DbConnection): void {
   dropForkHistoryCopyIndex(db);
   dropEnvironmentHoldColumns(db);
   dropThreadSearchOrderIndex(db);
+  rewindThreadFailureKindColumn(db);
   rewindThreadPurgeStartedColumn(db);
   dropQueuedMessageSourcesAndCompactFirstColumns(db);
   const columns = db.$client
@@ -944,6 +947,7 @@ function rewindMachineProvidersMigration(db: DbConnection): void {
   dropForkHistoryCopyIndex(db);
   dropEnvironmentHoldColumns(db);
   dropThreadSearchOrderIndex(db);
+  rewindThreadFailureKindColumn(db);
   rewindThreadPurgeStartedColumn(db);
   dropQueuedMessageSourcesAndCompactFirstColumns(db);
   db.$client.exec("DROP TABLE IF EXISTS ui_preference_defaults");
@@ -1942,6 +1946,7 @@ describe("migrate", () => {
         steerActiveThreadOnEnter: true,
         terminalCopyOnSelect: true,
         confirmThreadArchive: true,
+        confirmDesktopQuit: true,
         showDiagnosticEvents: true,
         keepHistoryAfterContextClear: false,
         summarizeShellCommands: true,
@@ -2760,6 +2765,7 @@ describe("migrate", () => {
       dropForkHistoryCopyIndex(db);
       dropEnvironmentHoldColumns(db);
       dropThreadSearchOrderIndex(db);
+      rewindThreadFailureKindColumn(db);
       rewindThreadPurgeStartedColumn(db);
       dropQueuedMessageSourcesAndCompactFirstColumns(db);
       restoreDiffViewedFilesTable(db);
@@ -3607,6 +3613,7 @@ describe("migrate", () => {
       dropForkHistoryCopyIndex(db);
       dropEnvironmentHoldColumns(db);
       dropThreadSearchOrderIndex(db);
+      rewindThreadFailureKindColumn(db);
       rewindThreadPurgeStartedColumn(db);
       dropQueuedMessageSourcesAndCompactFirstColumns(db);
       db.$client.prepare("DROP INDEX projects_deleted_idx").run();
@@ -4037,6 +4044,7 @@ describe("migrate", () => {
       dropForkHistoryCopyIndex(db);
       dropEnvironmentHoldColumns(db);
       dropThreadSearchOrderIndex(db);
+      rewindThreadFailureKindColumn(db);
       rewindThreadPurgeStartedColumn(db);
       dropQueuedMessageSourcesAndCompactFirstColumns(db);
 

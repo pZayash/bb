@@ -34,6 +34,8 @@ describe("toPluginSidebarThread (fork)", () => {
           hasPendingInteraction: true,
           runtime: {
             displayStatus: "active",
+            // bb-fork(windows): upstream added the provisioning failure marker.
+            failure: null,
           },
         }),
       ).indicator,
@@ -44,6 +46,8 @@ describe("toPluginSidebarThread (fork)", () => {
         makeThread({
           runtime: {
             displayStatus: "active",
+            // bb-fork(windows): upstream added the provisioning failure marker.
+            failure: null,
           },
         }),
       ).indicator,
